@@ -7,7 +7,8 @@
 #include <cctype>
 #include <stdexcept>
 
-enum class TokenType {
+enum class TokenType
+{
     // Keywords
     Let,
     Struct,
@@ -42,7 +43,7 @@ enum class TokenType {
     OperatorLParen,      // (
     OperatorRParen,      // )
     OperatorLBrace,      // {
-    OperatorRBrace,     // }
+    OperatorRBrace,      // }
     OperatorLBracket,    // [
     OperatorRBracket,    // ]
     OperatorPlus,        // +
@@ -61,7 +62,8 @@ enum class TokenType {
     Eof,
 };
 
-struct Token {
+struct Token
+{
 
     TokenType type;
     int startLine;
@@ -70,12 +72,13 @@ struct Token {
     int endCol;
     std::string lexeme;
 
-    Token(TokenType type, int startLine, int startCol, int endLine, int endCol, const std::string& lexeme);
+    Token(TokenType type, int startLine, int startCol, int endLine, int endCol, const std::string &lexeme);
 };
 
-class Lexer {
+class Lexer
+{
 public:
-    Lexer(const std::string& input);
+    Lexer(const std::string &input);
     Token nextToken();
 
 private:
@@ -101,23 +104,24 @@ private:
     Token parseGeOrGt();
     Token parseAnd();
     Token parseOr();
-    Token parseSingleChar(TokenType type, const std::string& lexeme);
+    Token parseSingleChar(TokenType type, const std::string &lexeme);
 };
 
-class LexerError : public std::exception {
-    public:
-        explicit LexerError(const std::string& message)
-            : message_(message) {}
-    
-        virtual const char* what() const noexcept override {
-            return message_.c_str();
-        }
-    
-    private:
-        std::string message_;
-    };
+class LexerError : public std::exception
+{
+public:
+    explicit LexerError(const std::string &message)
+        : message_(message) {}
 
+    virtual const char *what() const noexcept override
+    {
+        return message_.c_str();
+    }
 
-std::string tokenToString(const Token& token);
+private:
+    std::string message_;
+};
+
+std::string tokenToString(const Token &token);
 
 #endif // LEXER_H
