@@ -5,6 +5,6 @@
 # For more details, please check https://github.com/bazelbuild/bazel/issues/18958
 ###############################################################################
 # MODULE.bazel
-module(name = "cast")
+module(name = "mo")
 
 bazel_dep(name = "googletest", version = "1.16.0")
