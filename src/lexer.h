@@ -123,5 +123,6 @@ private:
 };
 
 std::string tokenToString(const Token &token);
+std::string tokenTypeToString(TokenType type);
 
 #endif // LEXER_H

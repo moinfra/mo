@@ -391,7 +391,17 @@ Token Lexer::parseSingleChar(TokenType type, const std::string &lexeme)
 std::string tokenToString(const Token &token)
 {
     std::string result = token.lexeme;
-    switch (token.type)
+    if (result.empty())
+    {
+        return tokenTypeToString(token.type);
+    }
+    return result;
+}
+
+std::string tokenTypeToString(TokenType type)
+{
+    std::string result;
+    switch (type)
     {
     case TokenType::Let:
         result = "let";
@@ -436,13 +446,16 @@ std::string tokenToString(const Token &token)
         result = "for";
         break;
     case TokenType::Identifier:
+        result = "<id>";
         break;
     case TokenType::IntegerLiteral:
+        result = "<integer>";
         break;
     case TokenType::FloatLiteral:
+        result = "<float>";
         break;
     case TokenType::StringLiteral:
-        result = "\"" + result + "\"";
+        result = "<string>";
         break;
     case TokenType::OperatorDot:
         result = ".";
@@ -526,8 +539,9 @@ std::string tokenToString(const Token &token)
         result = "||";
         break;
     case TokenType::Eof:
-        result = "end of file";
+        result = "<eof>";
         break;
     }
+
     return result;
 }
