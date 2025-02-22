@@ -7,69 +7,71 @@
 #include <cctype>
 #include <stdexcept>
 
-struct Token {
-    enum class Type {
-        // Keywords
-        Let,
-        Struct,
-        Impl,
-        Fn,
-        Return,
-        Int,
-        Float,
-        Const,
-        Sizeof,
-        Cast,
-        If,
-        Else,
-        While,
-        For,
-        // Identifiers
-        Identifier,
-        // Literals
-        IntegerLiteral,
-        FloatLiteral,
-        StringLiteral,
-        // Operators
-        OperatorDot,         // .
-        OperatorArrow,       // ->
-        OperatorDoubleColon, // ::
-        OperatorAssign,      // =
-        OperatorColon,       // :
-        OperatorSemicolon,   // ;
-        OperatorComma,       // ,
-        OperatorStar,        // *
-        OperatorAmpersand,   // &
-        OperatorLParen,      // (
-        OperatorRParen,      // )
-        OperatorLBrace,      // {
-        OperatorRBrace,     // }
-        OperatorLBracket,    // [
-        OperatorRBracket,    // ]
-        OperatorPlus,        // +
-        OperatorMinus,       // -
-        OperatorDivide,      // /
-        OperatorModulo,      // %
-        OperatorEq,          // ==
-        OperatorNe,          // !=
-        OperatorLt,          // <
-        OperatorLe,          // <=
-        OperatorGt,          // >
-        OperatorGe,          // >=
-        OperatorAnd,         // &&
-        OperatorOr,          // ||
-        // End of File
-        Eof,
-    };
 
-    Type type;
+enum class TokenType {
+    // Keywords
+    Let,
+    Struct,
+    Impl,
+    Fn,
+    Return,
+    Int,
+    Float,
+    Const,
+    Sizeof,
+    Cast,
+    If,
+    Else,
+    While,
+    For,
+    // Identifiers
+    Identifier,
+    // Literals
+    IntegerLiteral,
+    FloatLiteral,
+    StringLiteral,
+    // Operators
+    OperatorDot,         // .
+    OperatorArrow,       // ->
+    OperatorDoubleColon, // ::
+    OperatorAssign,      // =
+    OperatorColon,       // :
+    OperatorSemicolon,   // ;
+    OperatorComma,       // ,
+    OperatorStar,        // *
+    OperatorAmpersand,   // &
+    OperatorLParen,      // (
+    OperatorRParen,      // )
+    OperatorLBrace,      // {
+    OperatorRBrace,     // }
+    OperatorLBracket,    // [
+    OperatorRBracket,    // ]
+    OperatorPlus,        // +
+    OperatorMinus,       // -
+    OperatorDivide,      // /
+    OperatorModulo,      // %
+    OperatorEq,          // ==
+    OperatorNe,          // !=
+    OperatorLt,          // <
+    OperatorLe,          // <=
+    OperatorGt,          // >
+    OperatorGe,          // >=
+    OperatorAnd,         // &&
+    OperatorOr,          // ||
+    // End of File
+    Eof,
+};
+
+struct Token {
+
+    TokenType type;
     int startLine;
     int startCol;
     int endLine;
     int endCol;
     std::string lexeme;
 
-    Token(Type type, int startLine, int startCol, int endLine, int endCol, const std::string& lexeme);
+    Token(TokenType type, int startLine, int startCol, int endLine, int endCol, const std::string& lexeme);
 };
 
 class Lexer {
@@ -100,7 +102,7 @@ private:
     Token parseGeOrGt();
     Token parseAnd();
     Token parseOr();
-    Token parseSingleChar(Token::Type type, const std::string& lexeme);
+    Token parseSingleChar(TokenType type, const std::string& lexeme);
 };
 
 #endif // LEXER_H

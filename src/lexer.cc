@@ -1,6 +1,6 @@
 #include "lexer.h"
 
-Token::Token(Type type, int startLine, int startCol, int endLine, int endCol, const std::string& lexeme)
+Token::Token(TokenType type, int startLine, int startCol, int endLine, int endCol, const std::string& lexeme)
     : type(type), startLine(startLine), startCol(startCol), endLine(endLine), endCol(endCol), lexeme(lexeme) {}
 
 Lexer::Lexer(const std::string& input) : input(input), pos(0), currentLine(1), currentCol(1) {}
@@ -9,7 +9,7 @@ Token Lexer::nextToken() {
     skipWhitespaceAndComments();
 
     if (pos >= input.size()) {
-        return Token(Token::Type::Eof, currentLine, currentCol, currentLine, currentCol, "");
+        return Token(TokenType::Eof, currentLine, currentCol, currentLine, currentCol, "");
     }
 
     char c = input[pos];
@@ -27,24 +27,24 @@ Token Lexer::nextToken() {
         case '-': return parseArrowOrMinus();
         case ':': return parseDoubleColonOrColon();
         case '.': return parseDot();
-        case ';': return parseSingleChar(Token::Type::OperatorSemicolon, ";");
-        case ',': return parseSingleChar(Token::Type::OperatorComma, ",");
+        case ';': return parseSingleChar(TokenType::OperatorSemicolon, ";");
+        case ',': return parseSingleChar(TokenType::OperatorComma, ",");
         case '=': return parseEqualOrEq();
         case '!': return parseNe();
         case '<': return parseLeOrLt();
         case '>': return parseGeOrGt();
         case '&': return parseAnd();
         case '|': return parseOr();
-        case '(': return parseSingleChar(Token::Type::OperatorLParen, "(");
-        case ')': return parseSingleChar(Token::Type::OperatorRParen, ")");
-        case '{': return parseSingleChar(Token::Type::OperatorLBrace, "{");
-        case '}': return parseSingleChar(Token::Type::OperatorRBrace, "}");
-        case '[': return parseSingleChar(Token::Type::OperatorLBracket, "[");
-        case ']': return parseSingleChar(Token::Type::OperatorRBracket, "]");
-        case '*': return parseSingleChar(Token::Type::OperatorStar, "*");
-        case '+': return parseSingleChar(Token::Type::OperatorPlus, "+");
-        case '/': return parseSingleChar(Token::Type::OperatorDivide, "/");
-        case '%': return parseSingleChar(Token::Type::OperatorModulo, "%");
+        case '(': return parseSingleChar(TokenType::OperatorLParen, "(");
+        case ')': return parseSingleChar(TokenType::OperatorRParen, ")");
+        case '{': return parseSingleChar(TokenType::OperatorLBrace, "{");
+        case '}': return parseSingleChar(TokenType::OperatorRBrace, "}");
+        case '[': return parseSingleChar(TokenType::OperatorLBracket, "[");
+        case ']': return parseSingleChar(TokenType::OperatorRBracket, "]");
+        case '*': return parseSingleChar(TokenType::OperatorStar, "*");
+        case '+': return parseSingleChar(TokenType::OperatorPlus, "+");
+        case '/': return parseSingleChar(TokenType::OperatorDivide, "/");
+        case '%': return parseSingleChar(TokenType::OperatorModulo, "%");
         default: throw std::runtime_error("Unexpected character: " + std::string(1, c));
     }
 }
@@ -120,7 +120,7 @@ Token Lexer::parseNumber() {
         advance();
     }
 
-    Token::Type type = isFloat ? Token::Type::FloatLiteral : Token::Type::IntegerLiteral;
+    TokenType type = isFloat ? TokenType::FloatLiteral : TokenType::IntegerLiteral;
     return Token(type, startLine, startCol, currentLine, currentCol - 1, numStr);
 }
 
@@ -147,7 +147,7 @@ Token Lexer::parseString() {
             escape = true;
         } else if (c == '"') {
             advance(); // Skip closing "
-            return Token(Token::Type::StringLiteral, startLine, startCol, currentLine, currentCol - 1, str);
+            return Token(TokenType::StringLiteral, startLine, startCol, currentLine, currentCol - 1, str);
         } else {
             str += c;
         }
@@ -167,25 +167,25 @@ Token Lexer::parseIdentifierOrKeyword() {
         advance();
     }
 
-    static const std::unordered_map<std::string, Token::Type> keywords = {
-        {"let", Token::Type::Let},
-        {"struct", Token::Type::Struct},
-        {"impl", Token::Type::Impl},
-        {"fn", Token::Type::Fn},
-        {"return", Token::Type::Return},
-        {"int", Token::Type::Int},
-        {"float", Token::Type::Float},
-        {"const", Token::Type::Const},
-        {"sizeof", Token::Type::Sizeof},
-        {"cast", Token::Type::Cast},
-        {"if", Token::Type::If},
-        {"else", Token::Type::Else},
-        {"while", Token::Type::While},
-        {"for", Token::Type::For},
+    static const std::unordered_map<std::string, TokenType> keywords = {
+        {"let", TokenType::Let},
+        {"struct", TokenType::Struct},
+        {"impl", TokenType::Impl},
+        {"fn", TokenType::Fn},
+        {"return", TokenType::Return},
+        {"int", TokenType::Int},
+        {"float", TokenType::Float},
+        {"const", TokenType::Const},
+        {"sizeof", TokenType::Sizeof},
+        {"cast", TokenType::Cast},
+        {"if", TokenType::If},
+        {"else", TokenType::Else},
+        {"while", TokenType::While},
+        {"for", TokenType::For},
     };
 
     auto it = keywords.find(ident);
-    Token::Type type = (it != keywords.end()) ? it->second : Token::Type::Identifier;
+    TokenType type = (it != keywords.end()) ? it->second : TokenType::Identifier;
     return Token(type, startLine, startCol, currentLine, currentCol - 1, ident);
 }
 
@@ -195,9 +195,9 @@ Token Lexer::parseArrowOrMinus() {
     advance(); // Skip '-'
     if (peek() == '>') {
         advance(); // Skip '>'
-        return Token(Token::Type::OperatorArrow, startLine, startCol, currentLine, currentCol - 1, "->");
+        return Token(TokenType::OperatorArrow, startLine, startCol, currentLine, currentCol - 1, "->");
     }
-    return Token(Token::Type::OperatorMinus, startLine, startCol, currentLine, currentCol - 1, "-");
+    return Token(TokenType::OperatorMinus, startLine, startCol, currentLine, currentCol - 1, "-");
 }
 
 Token Lexer::parseDoubleColonOrColon() {
@@ -206,13 +206,13 @@ Token Lexer::parseDoubleColonOrColon() {
     advance(); // Skip ':'
     if (peek() == ':') {
         advance(); // Skip ':'
-        return Token(Token::Type::OperatorDoubleColon, startLine, startCol, currentLine, currentCol - 1, "::");
+        return Token(TokenType::OperatorDoubleColon, startLine, startCol, currentLine, currentCol - 1, "::");
     }
-    return Token(Token::Type::OperatorColon, startLine, startCol, currentLine, currentCol - 1, ":");
+    return Token(TokenType::OperatorColon, startLine, startCol, currentLine, currentCol - 1, ":");
 }
 
 Token Lexer::parseDot() {
-    return parseSingleChar(Token::Type::OperatorDot, ".");
+    return parseSingleChar(TokenType::OperatorDot, ".");
 }
 
 Token Lexer::parseEqualOrEq() {
@@ -221,9 +221,9 @@ Token Lexer::parseEqualOrEq() {
     advance(); // Skip '='
     if (peek() == '=') {
         advance(); // Skip '='
-        return Token(Token::Type::OperatorEq, startLine, startCol, currentLine, currentCol - 1, "==");
+        return Token(TokenType::OperatorEq, startLine, startCol, currentLine, currentCol - 1, "==");
     }
-    return Token(Token::Type::OperatorAssign, startLine, startCol, currentLine, currentCol - 1, "=");
+    return Token(TokenType::OperatorAssign, startLine, startCol, currentLine, currentCol - 1, "=");
 }
 
 Token Lexer::parseNe() {
@@ -232,7 +232,7 @@ Token Lexer::parseNe() {
     advance(); // Skip '!'
     if (peek() == '=') {
         advance(); // Skip '='
-        return Token(Token::Type::OperatorNe, startLine, startCol, currentLine, currentCol - 1, "!=");
+        return Token(TokenType::OperatorNe, startLine, startCol, currentLine, currentCol - 1, "!=");
     }
     throw std::runtime_error("Unexpected '!'");
 }
@@ -243,9 +243,9 @@ Token Lexer::parseLeOrLt() {
     advance(); // Skip '<'
     if (peek() == '=') {
         advance(); // Skip '='
-        return Token(Token::Type::OperatorLe, startLine, startCol, currentLine, currentCol - 1, "<=");
+        return Token(TokenType::OperatorLe, startLine, startCol, currentLine, currentCol - 1, "<=");
     }
-    return Token(Token::Type::OperatorLt, startLine, startCol, currentLine, currentCol - 1, "<");
+    return Token(TokenType::OperatorLt, startLine, startCol, currentLine, currentCol - 1, "<");
 }
 
 Token Lexer::parseGeOrGt() {
@@ -254,9 +254,9 @@ Token Lexer::parseGeOrGt() {
     advance(); // Skip '>'
     if (peek() == '=') {
         advance(); // Skip '='
-        return Token(Token::Type::OperatorGe, startLine, startCol, currentLine, currentCol - 1, ">=");
+        return Token(TokenType::OperatorGe, startLine, startCol, currentLine, currentCol - 1, ">=");
     }
-    return Token(Token::Type::OperatorGt, startLine, startCol, currentLine, currentCol - 1, ">");
+    return Token(TokenType::OperatorGt, startLine, startCol, currentLine, currentCol - 1, ">");
 }
 
 Token Lexer::parseAnd() {
@@ -265,9 +265,9 @@ Token Lexer::parseAnd() {
     advance(); // Skip '&'
     if (peek() == '&') {
         advance(); // Skip '&'
-        return Token(Token::Type::OperatorAnd, startLine, startCol, currentLine, currentCol - 1, "&&");
+        return Token(TokenType::OperatorAnd, startLine, startCol, currentLine, currentCol - 1, "&&");
     }
-    return Token(Token::Type::OperatorAmpersand, startLine, startCol, currentLine, currentCol - 1, "&");
+    return Token(TokenType::OperatorAmpersand, startLine, startCol, currentLine, currentCol - 1, "&");
 }
 
 Token Lexer::parseOr() {
@@ -276,12 +276,12 @@ Token Lexer::parseOr() {
     advance(); // Skip '|'
     if (peek() == '|') {
         advance(); // Skip '|'
-        return Token(Token::Type::OperatorOr, startLine, startCol, currentLine, currentCol - 1, "||");
+        return Token(TokenType::OperatorOr, startLine, startCol, currentLine, currentCol - 1, "||");
     }
     throw std::runtime_error("Unexpected '|'");
 }
 
-Token Lexer::parseSingleChar(Token::Type type, const std::string& lexeme) {
+Token Lexer::parseSingleChar(TokenType type, const std::string& lexeme) {
     int startLine = currentLine;
     int startCol = currentCol;
     advance();
