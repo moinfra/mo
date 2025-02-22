@@ -45,7 +45,7 @@ Token Lexer::nextToken() {
         case '+': return parseSingleChar(TokenType::OperatorPlus, "+");
         case '/': return parseSingleChar(TokenType::OperatorDivide, "/");
         case '%': return parseSingleChar(TokenType::OperatorModulo, "%");
-        default: throw std::runtime_error("Unexpected character: " + std::string(1, c));
+        default: throw LexerError("Unexpected character: " + std::string(1, c));
     }
 }
 
@@ -102,7 +102,7 @@ void Lexer::skipBlockComment() {
         }
         advance();
     }
-    throw std::runtime_error("Unclosed block comment");
+    throw LexerError("Unclosed block comment");
 }
 
 Token Lexer::parseNumber() {
@@ -154,7 +154,7 @@ Token Lexer::parseString() {
         advance();
     }
 
-    throw std::runtime_error("Unclosed string literal");
+    throw LexerError("Unclosed string literal");
 }
 
 Token Lexer::parseIdentifierOrKeyword() {
@@ -234,7 +234,7 @@ Token Lexer::parseNe() {
         advance(); // Skip '='
         return Token(TokenType::OperatorNe, startLine, startCol, currentLine, currentCol - 1, "!=");
     }
-    throw std::runtime_error("Unexpected '!'");
+    throw LexerError("Unexpected '!'");
 }
 
 Token Lexer::parseLeOrLt() {
@@ -278,7 +278,7 @@ Token Lexer::parseOr() {
         advance(); // Skip '|'
         return Token(TokenType::OperatorOr, startLine, startCol, currentLine, currentCol - 1, "||");
     }
-    throw std::runtime_error("Unexpected '|'");
+    throw LexerError("Unexpected '|'");
 }
 
 Token Lexer::parseSingleChar(TokenType type, const std::string& lexeme) {

@@ -7,7 +7,6 @@
 #include <cctype>
 #include <stdexcept>
 
-
 enum class TokenType {
     // Keywords
     Let,
@@ -104,5 +103,18 @@ private:
     Token parseOr();
     Token parseSingleChar(TokenType type, const std::string& lexeme);
 };
+
+class LexerError : public std::exception {
+    public:
+        explicit LexerError(const std::string& message)
+            : message_(message) {}
+    
+        virtual const char* what() const noexcept override {
+            return message_.c_str();
+        }
+    
+    private:
+        std::string message_;
+    };
 
 #endif // LEXER_H
