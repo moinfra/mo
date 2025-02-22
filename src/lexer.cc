@@ -287,3 +287,145 @@ Token Lexer::parseSingleChar(TokenType type, const std::string& lexeme) {
     advance();
     return Token(type, startLine, startCol, currentLine, currentCol - 1, lexeme);
 }
+
+std::string tokenToString(const Token& token)  {
+    std::string result = token.lexeme;
+    switch (token.type) {
+        case TokenType::Let:
+            result = "let";
+            break;
+        case TokenType::Struct:
+            result = "struct";
+            break;
+        case TokenType::Impl:
+            result = "impl";
+            break;
+        case TokenType::Fn:
+            result = "fn";
+            break;
+        case TokenType::Return:
+            result = "return";
+            break;
+        case TokenType::Int:
+            result = "int";
+            break;
+        case TokenType::Float:
+            result = "float";
+            break;
+        case TokenType::Const:
+            result = "const";
+            break;
+        case TokenType::Sizeof:
+            result = "sizeof";
+            break;
+        case TokenType::Cast:
+            result = "cast";
+            break;
+        case TokenType::If:
+            result = "if";
+            break;
+        case TokenType::Else:
+            result = "else";
+            break;
+        case TokenType::While:
+            result = "while";
+            break;
+        case TokenType::For:
+            result = "for";
+            break;
+        case TokenType::Identifier:
+            break;
+        case TokenType::IntegerLiteral:
+            break;
+        case TokenType::FloatLiteral:
+            break;
+        case TokenType::StringLiteral:
+            result = "\"" + result + "\"";
+            break;
+        case TokenType::OperatorDot:
+            result = ".";
+            break;
+        case TokenType::OperatorArrow:
+            result = "->";
+            break;
+        case TokenType::OperatorDoubleColon:
+            result = "::";
+            break;
+        case TokenType::OperatorAssign:
+            result = "=";
+            break;
+        case TokenType::OperatorColon:
+            result = ":";
+            break;
+        case TokenType::OperatorSemicolon:
+            result = ";";
+            break;
+        case TokenType::OperatorComma:
+            result = ",";
+            break;
+        case TokenType::OperatorStar:
+            result = "*";
+            break;
+        case TokenType::OperatorAmpersand:
+            result = "&";
+            break;
+        case TokenType::OperatorLParen:
+            result = "(";
+            break;
+        case TokenType::OperatorRParen:
+            result = ")";
+            break;
+        case TokenType::OperatorLBrace:
+            result = "{";
+            break;
+        case TokenType::OperatorRBrace:
+            result = "}";
+            break;
+        case TokenType::OperatorLBracket:
+            result = "[";
+            break;
+        case TokenType::OperatorRBracket:
+            result = "]";
+            break;
+        case TokenType::OperatorPlus:
+            result = "+";
+            break;
+        case TokenType::OperatorMinus:
+            result = "-";
+            break;
+        case TokenType::OperatorDivide:
+            result = "/";
+            break;
+        case TokenType::OperatorModulo:
+            result = "%";
+            break;
+        case TokenType::OperatorEq:
+            result = "==";
+            break;
+        case TokenType::OperatorNe:
+            result = "!=";
+            break;
+        case TokenType::OperatorLt:
+            result = "<";
+            break;
+        case TokenType::OperatorLe:
+            result = "<=";
+            break;
+        case TokenType::OperatorGt:
+            result = ">";
+            break;
+        case TokenType::OperatorGe:
+            result = ">=";
+            break;
+        case TokenType::OperatorAnd:
+            result = "&&";
+            break;
+        case TokenType::OperatorOr:
+            result = "||";
+            break;
+        case TokenType::Eof:
+            result = "end of file";
+            break;
+    }
+    return result;
+}

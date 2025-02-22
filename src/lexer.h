@@ -117,4 +117,7 @@ class LexerError : public std::exception {
         std::string message_;
     };
 
+
+std::string tokenToString(const Token& token);
+
 #endif // LEXER_H
