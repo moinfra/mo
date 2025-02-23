@@ -6,3 +6,12 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "parser_test",
+    srcs = ["parser_test.cc"],
+    deps = [
+        "//src:parser",
+        "@googletest//:gtest_main",
+    ],
+)

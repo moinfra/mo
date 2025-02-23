@@ -7,4 +7,12 @@
 # MODULE.bazel
 module(name = "mo")
 
+cc_common = use_extension("@bazel_tools//tools/cpp:cc_toolchain_config_lib.bzl", "cc_common")
+
+cc_common.flag_set(
+    name = "cpp_standard",
+    flags = ["-std=c++23"],
+    actions = ["c++-compile"],
+)
+
 bazel_dep(name = "googletest", version = "1.16.0")
