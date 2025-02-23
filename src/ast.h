@@ -33,16 +33,19 @@ struct Program {
 struct Type {
     enum class Kind {
         Unknown,
-        Basic,
-        Pointer,
-        Array,
-        Function,
-        Struct
+        Basic,      // Int/Float/String
+        Pointer,    // T*
+        Array,      // T[N]
+        Function,   // fn() -> T
+        Struct,     // struct { ... }
+        Alias       // 类型别名（如 typedef）
     };
+    enum class BasicKind { Int, Float, String };
 
-    Kind kind = Kind::Basic;
+    Kind kind = Kind::Unknown;
     std::string name;
     bool is_const = false;
+    BasicKind basic_kind;           // 基本类型的种类
 
     // for pointer type
     std::unique_ptr<Type> pointee;

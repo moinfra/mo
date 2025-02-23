@@ -16,7 +16,7 @@ bool Type::operator==(const Type &other) const
     switch (kind)
     {
     case Kind::Basic:
-        return name == other.name;
+        return name == other.name && basic_kind == other.basic_kind;
     case Kind::Pointer:
         return pointee && other.pointee && (*pointee == *other.pointee);
     case Kind::Array:
@@ -44,6 +44,7 @@ Type &Type::operator=(Type &&other) noexcept
         kind = std::exchange(other.kind, Type::Kind::Unknown);
         name = std::move(other.name);
         is_const = std::exchange(other.is_const, false);
+        basic_kind = std::exchange(other.basic_kind, Type::BasicKind::Int);
         pointee = std::move(other.pointee);
         element_type = std::move(other.element_type);
         array_size = std::exchange(other.array_size, 0);
@@ -68,6 +69,7 @@ Type &Type::operator=(const Type &other)
 Type::Type(const Type &other) : kind(other.kind),
                                 name(other.name),
                                 is_const(other.is_const),
+                                basic_kind(other.basic_kind),
                                 array_size(other.array_size)
 {
     if (other.pointee)
@@ -100,6 +102,7 @@ void Type::swap(Type &a, Type &b) noexcept
     swap(a.kind, b.kind);
     swap(a.name, b.name);
     swap(a.is_const, b.is_const);
+    swap(a.basic_kind, b.basic_kind);
     swap(a.pointee, b.pointee);
     swap(a.element_type, b.element_type);
     swap(a.array_size, b.array_size);
