@@ -15,8 +15,14 @@ cc_library(
 
 cc_library(
     name = "ast_printer",
-    srcs = ["ast_printer.cc"],
-    hdrs = ["ast_printer.h"],
+    srcs = ["ast_printer_json.cc"],
+    hdrs = ["ast_printer_json.h", "ast_printer.h"],
     deps = [":parser"],
     visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "print_ast",
+    srcs = ["ast_printer_bin.cc"],
+    deps = [":ast_printer"],
 )

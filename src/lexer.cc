@@ -1,6 +1,7 @@
 #include "lexer.h"
 
-void debug(const char* fmt, ...) {
+void debug(const char *fmt, ...)
+{
     std::printf("[DEBUG] ");
     va_list args;
     va_start(args, fmt);
@@ -17,7 +18,7 @@ Token::Token(TokenType type, int start_line, int start_col, int end_line, int en
 Lexer::Lexer(const std::string &input) : input(input), pos(0), current_line(1), current_col(1) {}
 
 Lexer::Lexer(Lexer &&other) noexcept : input(std::move(other.input)),
-                              pos(other.pos), current_line(other.current_line), current_col(other.current_col)
+                                       pos(other.pos), current_line(other.current_line), current_col(other.current_col)
 {
 }
 
@@ -419,6 +420,9 @@ std::string token_type_to_string(TokenType type)
     std::string result;
     switch (type)
     {
+    case TokenType::Invalid:
+        result = "<invalid>";
+        break;
     case TokenType::Let:
         result = "let";
         break;
