@@ -8,41 +8,30 @@ bool Type::operator!=(const Type &other) const
     return !(*this == other);
 }
 
-
 bool Type::operator==(const Type &other) const
 {
-    if (kind != other.kind)
+    if (kind != other.kind || is_const != other.is_const)
         return false;
 
     switch (kind)
     {
     case Kind::Basic:
-        return name == other.name && is_const == other.is_const;
+        return name == other.name;
     case Kind::Pointer:
         return pointee && other.pointee && (*pointee == *other.pointee);
     case Kind::Array:
-        return element_type && other.element_type && (*element_type == *other.element_type) &&
+        return element_type && other.element_type &&
+               (*element_type == *other.element_type) &&
                array_size == other.array_size;
     case Kind::Function:
         if (params.size() != other.params.size())
             return false;
         for (size_t i = 0; i < params.size(); ++i)
-        {
-            if (!params[i] || !other.params[i] || (*params[i] != *other.params[i]))
+            if (!params[i] || !other.params[i] || !(*params[i] == *other.params[i]))
                 return false;
-        }
         return return_type && other.return_type && (*return_type == *other.return_type);
     case Kind::Struct:
-        if (members.size() != other.members.size())
-            return false;
-        for (const auto &[name, ty] : members)
-        {
-            if (other.members.count(name) == 0)
-                return false;
-            if (ty != other.members.at(name))
-                return false;
-        }
-        return true;
+        return members == other.members;
     default:
         return false;
     }

@@ -83,7 +83,7 @@ struct Expr {
     };
 
     virtual ~Expr() = default;
-    Category exprCategory;
+    Category expr_category;
 };
 
 struct VariableExpr : Expr {
