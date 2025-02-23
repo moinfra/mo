@@ -9,6 +9,8 @@ void debug(const char* fmt, ...) {
     std::printf("\n");
 }
 
+Token::Token() : type(TokenType::Invalid), start_line(0), start_col(0), end_line(0), end_col(0), lexeme("") {}
+
 Token::Token(TokenType type, int start_line, int start_col, int end_line, int end_col, const std::string &lexeme)
     : type(type), start_line(start_line), start_col(start_col), end_line(end_line), end_col(end_col), lexeme(lexeme) {}
 

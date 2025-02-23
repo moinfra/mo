@@ -33,6 +33,7 @@ struct Program {
 struct Type {
     enum class Kind {
         Unknown,
+        Void,
         Basic,      // Int/Float/String
         Pointer,    // T*
         Array,      // T[N]
@@ -76,6 +77,10 @@ struct Type {
     void swap(Type &a, Type &b) noexcept;
 
     std::unique_ptr<Type> clone() const;
+
+    static Type get_void_type();
+    static Type get_int_type();
+    static Type get_float_type();
 };
 
 // Expressions
@@ -86,7 +91,7 @@ struct Expr {
     };
 
     virtual ~Expr() = default;
-    Category expr_category;
+    Category expr_category = Category::RValue;
 };
 
 struct VariableExpr : Expr {
@@ -134,7 +139,6 @@ struct CallExpr : Expr {
 struct MemberAccessExpr : Expr {
     std::unique_ptr<Expr> object;
     std::string member;
-    bool isPointerAccess;
     TokenType accessor;
 };
 
@@ -170,6 +174,12 @@ struct StructLiteralExpr : Expr {
 // Statements
 struct Statement {
     virtual ~Statement() = default;
+};
+
+struct ExprStmt : Statement {
+    ExprPtr expr;
+
+    ExprStmt(ExprPtr expr) : expr(std::move(expr)) {}
 };
 
 struct BlockStmt : Statement {
@@ -249,12 +259,12 @@ public:
 
 struct FunctionDecl {
     std::string name;
-    std::unique_ptr<Type> return_type;
+    std::unique_ptr<Type> return_type = nullptr;
     std::vector<TypedField> params;
     std::vector<StmtPtr> body;
 
     bool is_method = false;
-    std::unique_ptr<Type> receiver_type;
+    std::unique_ptr<Type> receiver_type = nullptr;;
 
     void add_param(const std::string &name, std::unique_ptr<Type> type);
     Type &get_param_type(const std::string &name);

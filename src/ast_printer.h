@@ -37,7 +37,7 @@ private:
     std::string visit(const WhileStmt &stmt);
     std::string visit(const BreakStmt &stmt);
     std::string visit(const ContinueStmt &stmt);
-
+    std::string visit(const ExprStmt &stmt);
     std::string indent() const;
     void enter_scope();
     void leave_scope();
