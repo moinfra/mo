@@ -245,8 +245,7 @@ string ASTPrinter::visit(const CallExpr &expr)
 
 string ASTPrinter::visit(const MemberAccessExpr &expr)
 {
-    string accessor = expr.isPointerAccess ? "->" : ".";
-    return print(*expr.object) + accessor + expr.member;
+    return print(*expr.object) + token_type_to_string(expr.accessor) + expr.member;
 }
 
 string ASTPrinter::visit(const CastExpr &expr)

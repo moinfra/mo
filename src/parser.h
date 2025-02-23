@@ -46,6 +46,7 @@ private:
     void advance();
     bool match(TokenType type);
     void consume(TokenType type, const std::string &message);
+    bool try_consume(TokenType type);
     void error(const std::string &message) const;
     void synchronize();
 

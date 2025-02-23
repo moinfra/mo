@@ -39,3 +39,15 @@ TEST(ParserTest, PointerVarDecl) {
     std::string ast_text = printer.print(ast);
     EXPECT_EQ(ast_text, "let ptr: *<type-name> = malloc(sizeof(<type-name>));\n");
 }
+
+
+TEST(ParserTest, StaticMethodCall) {
+    std::string input = "let v: Vector2 = Vector2::new(1.0, 2.0);";
+    Lexer lexer(input);
+    Parser parser(std::move(lexer));
+    
+    auto ast = parser.parse();
+    ASTPrinter printer;
+    std::string ast_text = printer.print(ast);
+    EXPECT_EQ(ast_text, "let v: <type-name> = Vector2::new(1, 2);\n");
+}

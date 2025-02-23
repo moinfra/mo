@@ -47,6 +47,8 @@ void Parser::init_pratt_rules()
              { return parse_member_access(std::move(l)); });
     add_rule(TokenType::Arrow, 30, nullptr, [&](ExprPtr l)
              { return parse_member_access(std::move(l)); });
+    add_rule(TokenType::DoubleColon, 30, nullptr, [&](ExprPtr l)
+             { return parse_member_access(std::move(l)); });
     add_rule(TokenType::LParen, 40, nullptr, [&](ExprPtr l)
              { return parse_call(std::move(l)); });
 }
@@ -55,22 +57,30 @@ ExprPtr Parser::parse_expression(int precedence)
 {
     debug("parser: parsing expression with precedence %d", precedence);
     auto token_type = current_.type;
-    auto &rule = pratt_rules_.at(token_type);
-    if (!rule.prefix)
+
+    // 检查前缀规则是否存在
+    auto it = pratt_rules_.find(token_type);
+    if (it == pratt_rules_.end() || !it->second.prefix)
     {
-        error("Unexpected token in expression");
+        error(vstring("Unexpected token ", token_to_string(current_), " in expression"));
         return nullptr;
     }
 
-    auto left = rule.prefix();
+    auto left = it->second.prefix();
+
+    debug("parser: parsed prefix expression. new token is %s (precedence %d)",
+          token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
 
     while (precedence < get_precedence(current_.type))
     {
-        auto &infix_rule = pratt_rules_.at(current_.type);
-        if (!infix_rule.infix)
+        // 检查中缀规则是否存在
+        auto infix_it = pratt_rules_.find(current_.type);
+        if (infix_it == pratt_rules_.end() || !infix_it->second.infix)
             break;
 
-        left = infix_rule.infix(std::move(left));
+        left = infix_it->second.infix(std::move(left));
+        debug("parser: parsed infix expression. new token is %s (precedence %d)",
+              token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
     }
 
     return left;
@@ -88,7 +98,8 @@ ExprPtr Parser::parse_member_access(ExprPtr left)
 
     // 处理链式访问 Handle chained member access
     if (current_.type == TokenType::Dot ||
-        current_.type == TokenType::Arrow)
+        current_.type == TokenType::Arrow ||
+        current_.type == TokenType::DoubleColon)
     {
         return parse_expression(get_precedence(expr->accessor));
     }
@@ -110,7 +121,7 @@ ExprPtr Parser::parse_call(ExprPtr left)
         do
         {
             call_expr->args.push_back(parse_expression());
-        } while (match(TokenType::Comma));
+        } while (try_consume(TokenType::Comma));
     }
 
     consume(TokenType::RParen, "Expected ')' after arguments");
@@ -131,6 +142,19 @@ void Parser::consume(TokenType type, const std::string &message)
     {
         error(message);
     }
+}
+
+bool Parser::try_consume(TokenType type)
+{
+    if (current_.type == type)
+    {
+        Token consumed = current_;
+        debug("parser: consumed token %s", token_to_string(consumed).c_str());
+        advance();
+        return true;
+    }
+
+    return false;
 }
 
 bool Parser::match(TokenType type)
@@ -639,6 +663,7 @@ int Parser::get_precedence(TokenType type)
     case TokenType::LBracket:
     case TokenType::Dot:
     case TokenType::Arrow:
+    case TokenType::DoubleColon:
         return 999;
     default:
         return 0; // Default precedence for non-operators
@@ -852,6 +877,7 @@ void Parser::error(const std::string &message) const
 
 void Parser::advance()
 {
+    debug("parser: advancing to next token (from %s)", current_.lexeme.c_str());
     // previous_ = current_;
     current_ = lexer_.next_token();
 }

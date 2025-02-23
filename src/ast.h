@@ -134,7 +134,6 @@ struct CallExpr : Expr {
 struct MemberAccessExpr : Expr {
     std::unique_ptr<Expr> object;
     std::string member;
-    bool isPointerAccess;
     TokenType accessor;
 };
 
