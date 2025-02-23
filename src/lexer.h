@@ -1,5 +1,4 @@
-#ifndef LEXER_H
-#define LEXER_H
+#pragma once
 
 #include <string>
 #include <unordered_map>
@@ -132,5 +131,3 @@ private:
 
 std::string token_to_string(const Token &token);
 std::string token_type_to_string(TokenType type);
-
-#endif // LEXER_H
