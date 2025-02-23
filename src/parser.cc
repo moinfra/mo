@@ -53,6 +53,7 @@ void Parser::init_pratt_rules()
 
 ExprPtr Parser::parse_expression(int precedence)
 {
+    debug("parser: parsing expression with precedence %d", precedence);
     auto token_type = current_.type;
     auto &rule = pratt_rules_.at(token_type);
     if (!rule.prefix)
@@ -97,6 +98,7 @@ ExprPtr Parser::parse_member_access(ExprPtr left)
 
 ExprPtr Parser::parse_call(ExprPtr left)
 {
+    debug("parser: parsing call expression");
     auto call_expr = std::make_unique<CallExpr>();
     call_expr->callee = std::move(left);
 
@@ -204,129 +206,211 @@ Type::BasicKind basic_kind_from_string(const std::string &name)
         return Type::BasicKind::String;
 }
 
-std::unique_ptr<Type> Parser::parse_type()
+void apply_const_to_innermost(Type *type)
 {
-    auto type = std::make_unique<Type>();
-
-    // 处理顶层的 const（如 const int）
-    if (match(TokenType::Const))
+    Type *current = type;
+    while (current)
     {
-        type->is_const = true;
-        advance();
-    }
-
-    // 基本类型、函数或结构体
-    if (match(TokenType::Int) || match(TokenType::Float) || match(TokenType::String))
-    {
-        std::string name = current_.lexeme;
-
-        type->kind = Type::Kind::Basic;
-        type->name = name;
-        type->basic_kind = basic_kind_from_string(type->name);
-        advance();
-    }
-    else if (match(TokenType::Identifier))
-    {
-        std::string name = current_.lexeme;
-        if (auto it = type_aliases_.find(name); it != type_aliases_.end())
+        if (current->kind == Type::Kind::Pointer)
         {
-            return it->second->clone();
+            if (!current->pointee)
+                break;
+            current = current->pointee.get();
+        }
+        else if (current->kind == Type::Kind::Array)
+        {
+            current = current->element_type.get();
         }
         else
         {
-            error("Unexpected type name" + name);
+            current->is_const = true;
+            break;
         }
+    }
+}
+
+// 主入口：解析完整类型（可能含后缀修饰）
+std::unique_ptr<Type> Parser::parse_type()
+{
+    auto type = parse_prefix_type();
+    while (match(TokenType::LBracket))
+    {
+        type = parse_array_type(std::move(type));
+    }
+    return type;
+}
+
+// 解析可能含前缀修饰的类型（const/指针）
+std::unique_ptr<Type> Parser::parse_prefix_type()
+{
+    if (match(TokenType::LParen))
+    {
+        advance(); // Consume '('
+        auto type = parse_type();
+        consume(TokenType::RParen, "Expected ')' after grouped type");
+
+        // 处理括号后的指针修饰
+        while (match(TokenType::Star))
+        {
+            auto ptr_type = parse_pointer_type();
+            ptr_type->pointee = std::move(type);
+            type = std::move(ptr_type);
+        }
+        return type;
+    }
+
+    if (match(TokenType::Const))
+    {
         advance();
+        auto type = parse_prefix_type();
+        apply_const_to_innermost(type.get());
+        return type;
+    }
+
+    if (match(TokenType::Star))
+    {
+        return parse_pointer_type();
+    }
+
+    return parse_non_pointer_type();
+}
+
+// 解析指针类型（包含指针后的const）
+std::unique_ptr<Type> Parser::parse_pointer_type()
+{
+    consume(TokenType::Star, "Expected '*' in pointer type");
+    auto ptr_type = std::make_unique<Type>();
+    ptr_type->kind = Type::Kind::Pointer;
+
+    // 解析指针自身的const
+    if (match(TokenType::Const))
+    {
+        advance();
+        ptr_type->is_const = true;
+    }
+
+    // 递归解析底层类型（可能包含新的前缀）
+    ptr_type->pointee = parse_prefix_type();
+    return ptr_type;
+}
+
+// 解析非指针的基础类型（基本类型/结构体/函数/别名）
+std::unique_ptr<Type> Parser::parse_non_pointer_type()
+{
+    auto type = std::make_unique<Type>();
+
+    if (match(TokenType::Int) || match(TokenType::Float) || match(TokenType::String))
+    {
+        parse_basic_type(type);
+    }
+    else if (match(TokenType::Identifier))
+    {
+        parse_type_alias(type);
     }
     else if (match(TokenType::Fn))
     {
-        // Function type
-        type->kind = Type::Kind::Function;
-        advance();
-        consume(TokenType::LParen, "Expected '(' in function type");
-
-        // Param list
-        while (!match(TokenType::RParen))
-        {
-            type->params.push_back(parse_type());
-            if (!match(TokenType::Comma))
-                break;
-            advance();
-        }
-        consume(TokenType::RParen, "Expected ')' in function type");
-
-        // Return type
-        if (match(TokenType::Arrow))
-        {
-            advance();
-            type->return_type = parse_type();
-        }
+        parse_function_type(type);
     }
     else if (match(TokenType::Struct))
     {
-        // Anonymous struct type
-        type->kind = Type::Kind::Struct;
-        advance();
-        consume(TokenType::LBrace, "Expected '{' in struct type");
-
-        while (!match(TokenType::RBrace))
-        {
-            std::string field_name = current_.lexeme;
-            consume(TokenType::Identifier, "Expected field name");
-            consume(TokenType::Colon, "Expected ':' after field name");
-            type->members[field_name] = parse_type();
-            if (!match(TokenType::Comma))
-                break;
-            advance();
-        }
-        consume(TokenType::RBrace, "Expected '}' in struct type");
+        parse_struct_type(type);
     }
     else
     {
         error("Expected type name");
     }
-
-    // 处理指针（允许多级指针和指针后的 const）
-    while (match(TokenType::Star))
-    {
-        advance();
-        auto ptr_type = std::make_unique<Type>();
-        ptr_type->kind = Type::Kind::Pointer;
-
-        // 处理指针后的 const（如 int* const）
-        if (match(TokenType::Const))
-        {
-            ptr_type->is_const = true;
-            advance();
-        }
-
-        ptr_type->pointee = std::move(type);
-        type = std::move(ptr_type);
-    }
-
-    // 处理多维数组
-    while (match(TokenType::LBracket))
-    {
-        advance();
-        auto array_type = std::make_unique<Type>();
-        array_type->kind = Type::Kind::Array;
-        array_type->element_type = std::move(type);
-
-        if (match(TokenType::IntegerLiteral))
-        {
-            array_type->array_size = std::stoi(current_.lexeme);
-            advance();
-        }
-        else
-        {
-            array_type->array_size = -1; // 表示未指定大小
-        }
-
-        type = std::move(array_type);
-        consume(TokenType::RBracket, "Expected ']' in array type");
-    }
-
     return type;
+}
+
+// 解析数组类型（后缀处理）
+std::unique_ptr<Type> Parser::parse_array_type(std::unique_ptr<Type> base_type)
+{
+    consume(TokenType::LBracket, "Expected '[' in array type");
+    auto array_type = std::make_unique<Type>();
+    array_type->kind = Type::Kind::Array;
+    array_type->element_type = std::move(base_type);
+
+    if (array_type->is_const)
+    {
+        apply_const_to_innermost(array_type->element_type.get());
+    }
+
+    if (match(TokenType::IntegerLiteral))
+    {
+        array_type->array_size = std::stoi(current_.lexeme);
+        advance();
+    }
+    else
+    {
+        array_type->array_size = -1; // 动态数组
+    }
+
+    consume(TokenType::RBracket, "Expected ']' in array type");
+    return array_type;
+}
+
+//--- 具体类型解析实现 ---
+void Parser::parse_basic_type(std::unique_ptr<Type> &type)
+{
+    type->kind = Type::Kind::Basic;
+    type->name = current_.lexeme;
+    type->basic_kind = basic_kind_from_string(type->name);
+    advance();
+}
+
+void Parser::parse_type_alias(std::unique_ptr<Type> &type)
+{
+    std::string name = current_.lexeme;
+    type->kind = Type::Kind::Alias;
+    type->name = name;
+    // if (auto it = type_aliases_.find(name); it != type_aliases_.end()) {
+    //     type = it->second->clone();
+    // } else {
+    //     error("Undefined type alias: " + name);
+    // }
+    advance();
+}
+
+void Parser::parse_function_type(std::unique_ptr<Type> &type)
+{
+    type->kind = Type::Kind::Function;
+    advance();
+    consume(TokenType::LParen, "Expected '(' in function type");
+
+    while (!match(TokenType::RParen))
+    {
+        type->params.push_back(parse_type());
+
+        if (!match(TokenType::Comma))
+            break;
+        advance();
+    }
+    consume(TokenType::RParen, "Expected ')' in function type");
+
+    if (match(TokenType::Arrow))
+    {
+        advance();
+        type->return_type = parse_type();
+    }
+}
+
+void Parser::parse_struct_type(std::unique_ptr<Type> &type)
+{
+    type->kind = Type::Kind::Struct;
+    advance();
+    consume(TokenType::LBrace, "Expected '{' in struct type");
+
+    while (!match(TokenType::RBrace))
+    {
+        std::string field_name = current_.lexeme;
+        consume(TokenType::Identifier, "Expected field name");
+        consume(TokenType::Colon, "Expected ':' after field name");
+        type->members[field_name] = parse_type();
+        if (!match(TokenType::Comma))
+            break;
+        advance();
+    }
+    consume(TokenType::RBrace, "Expected '}' in struct type");
 }
 
 ExprPtr Parser::parse_function_pointer_expr()
@@ -419,8 +503,10 @@ std::unique_ptr<Type> Parser::parse_type_safe()
     {
         return parse_type();
     }
-    catch (const ParseError &)
+    catch (const ParseError &e)
     {
+        debug("parse_type_safe error");
+        errors_.push_back(e.what());
         synchronize_type();
         // Placeholder
         return std::make_unique<Type>();
@@ -429,6 +515,7 @@ std::unique_ptr<Type> Parser::parse_type_safe()
 
 ExprPtr Parser::parse_identifier()
 {
+    debug("parser: parsing identifier");
     auto expr = std::make_unique<VariableExpr>(current_.lexeme);
     advance();
     return expr;
@@ -500,7 +587,7 @@ ExprPtr Parser::parse_init_list()
         }
         else if (current_.type != TokenType::RBrace)
         {
-            throw std::runtime_error("Expected ',' or '}' in initializer list");
+            error("Expected ',' or '}' in initializer list");
         }
     }
 
@@ -548,6 +635,11 @@ int Parser::get_precedence(TokenType type)
         return 2;
     // case TokenType::Caret: // Exponentiation
     //     return 3;
+    case TokenType::LParen:
+    case TokenType::LBracket:
+    case TokenType::Dot:
+    case TokenType::Arrow:
+        return 999;
     default:
         return 0; // Default precedence for non-operators
     }
@@ -690,7 +782,7 @@ VarDeclStmt Parser::parse_var_decl()
         stmt.init_expr = parse_expression();
     }
 
-    consume(TokenType::Semicolon, "Expected ';' after declaration");
+    consume(TokenType::Semicolon, vstring("Expected ';' after variable declaration for ", stmt.name, ", but got ", current_.lexeme));
     return stmt;
 }
 
@@ -819,6 +911,7 @@ Program Parser::parse()
         }
         catch (const ParseError &e)
         {
+            debug(e.what());
             errors_.push_back(e.what());
             synchronize();
         }

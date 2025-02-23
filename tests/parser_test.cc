@@ -3,20 +3,39 @@
 #include "src/ast_printer.h"
 #include <gtest/gtest.h>
 
+void expect_no_errors(const Parser& parser) {
+    const auto& errors = parser.errors();
+    if (!errors.empty()) {
+        std::cout << "Expected no errors, but got " << errors.size() << " errors: " << std::endl;
+        for (const auto& error : errors) {
+            std::cout << error << std::endl;
+        }
+        FAIL();
+    }
+}
+
 TEST(ParserTest, BasicVarDecl) {
     std::string input = "let x: int = 10;";
     Lexer lexer(input);
     Parser parser(std::move(lexer));
     
     auto ast = parser.parse();
+    expect_no_errors(parser);
     ASTPrinter printer;
-    std::cout << "errors: " << std::endl;
-    for (const auto &error : parser.errors()) {
-        std::cout << error << std::endl;
-    }
-
     std::cout << "ast: " << std::endl;
-    std::cout << printer.print(ast) << std::endl;
-    // EXPECT_EQ(varDecl->type->toString(), "int");
-    // EXPECT_EQ(varDecl->init_expr->toString(), "10");
+    auto ast_text = printer.print(ast);
+    std::cout << ast_text << std::endl;
+    EXPECT_EQ(ast_text, "let x: int = 10;\n");
+}
+
+TEST(ParserTest, PointerVarDecl) {
+    std::string input = "let ptr: *MyStruct = malloc(sizeof(MyStruct));";
+    Lexer lexer(input);
+    Parser parser(std::move(lexer));
+    
+    auto ast = parser.parse();
+    expect_no_errors(parser);
+    ASTPrinter printer;
+    std::string ast_text = printer.print(ast);
+    EXPECT_EQ(ast_text, "let ptr: *<type-name> = malloc(sizeof(<type-name>));\n");
 }

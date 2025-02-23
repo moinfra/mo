@@ -15,4 +15,5 @@ cc_test(
         "//src:ast_printer",
         "@googletest//:gtest_main",
     ],
+    features = ["cpp_standard"],
 )

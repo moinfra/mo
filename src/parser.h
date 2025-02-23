@@ -5,6 +5,15 @@
 #include <memory>
 #include <functional>
 #include <unordered_map>
+#include <sstream>
+#include <string>
+
+template<typename... Args>
+std::string vstring(Args... args) {
+    std::stringstream ss;
+    (ss << ... << args);
+    return ss.str();
+}
 
 class Parser
 {
@@ -40,8 +49,17 @@ private:
     void error(const std::string &message) const;
     void synchronize();
 
-    std::unique_ptr<Type> parse_type();
-    std::unique_ptr<Type> parse_type_safe();
+
+    TypePtr parse_type();
+    TypePtr parse_type_safe();
+    TypePtr parse_prefix_type();
+    TypePtr parse_pointer_type();
+    TypePtr parse_array_type(std::unique_ptr<Type> base_type);
+    TypePtr parse_non_pointer_type();
+    void parse_basic_type(std::unique_ptr<Type> &type);
+    void parse_function_type(std::unique_ptr<Type> &type);
+    void parse_struct_type(std::unique_ptr<Type> &type);
+    void parse_type_alias(std::unique_ptr<Type> &type);
     void synchronize_type();
 
     StructDecl parse_struct_decl();
@@ -70,6 +88,7 @@ private:
     ExprPtr parse_primary();
     ExprPtr parse_call(ExprPtr left);
     ExprPtr parse_member_access(ExprPtr left);
+
 };
 
 struct ParseError : std::exception
