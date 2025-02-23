@@ -62,3 +62,14 @@ TEST(ParserTest, StructMemberAccess) {
     std::string ast_text = printer.print(ast);
     EXPECT_EQ(ast_text, "fn f(v: <type-name>) -> void {\n  (v.x = 3);\n}\n\n");
 }
+
+TEST(ParserTest, PointerMemberAccess) {
+    std::string input = "fn f(ptr: *MyStruct) { ptr->x = 3.0; }";
+    Lexer lexer(input);
+    Parser parser(std::move(lexer));
+    
+    auto ast = parser.parse();
+    ASTPrinter printer;
+    std::string ast_text = printer.print(ast);
+    EXPECT_EQ(ast_text, "fn f(ptr: *<type-name>) -> void {\n  (ptr->x = 3);\n}\n\n");
+}
