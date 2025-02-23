@@ -27,6 +27,7 @@ public:
 private:
     Lexer lexer_;
     Token current_;
+    Token previous_;
     std::vector<std::string> errors_;
     std::unordered_map<std::string, std::unique_ptr<Type>> type_aliases_;
 
@@ -73,6 +74,7 @@ private:
     VarDeclStmt parse_var_decl();
     StmtPtr parse_return();
     StmtPtr parse_if();
+    StmtPtr parse_while();
     std::unique_ptr<BlockStmt> parse_block();
     ExprPtr parse_function_pointer_expr();
     ExprPtr parse_struct_literal();
@@ -88,6 +90,7 @@ private:
     ExprPtr parse_binary(ExprPtr left, int min_precedence);
     ExprPtr parse_primary();
     ExprPtr parse_call(ExprPtr left);
+    ExprPtr parse_assignment(ExprPtr left);
     ExprPtr parse_member_access(ExprPtr left);
 
 };

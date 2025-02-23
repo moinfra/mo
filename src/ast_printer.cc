@@ -77,6 +77,8 @@ string ASTPrinter::print(const Statement &stmt)
         return visit(*p);
     if (auto p = dynamic_cast<const StructDecl *>(&stmt))
         return print(*p);
+    if (auto p = dynamic_cast<const ExprStmt *>(&stmt))
+        return visit(*p);
     return "unknown_statement";
 }
 
@@ -118,6 +120,9 @@ string ASTPrinter::print(const Type &type)
     case Type::Kind::Alias:
         result += "<type-name>";
         break;
+    case Type::Kind::Void:
+        result += "void";
+        break;
     default:
         result += "unknown_type";
         break;
@@ -140,11 +145,11 @@ string ASTPrinter::print(const StructDecl &struct_decl)
 
 string ASTPrinter::print(const FunctionDecl &func_decl)
 {
-    string result = (func_decl.is_method ? "method " : "function ") + func_decl.name + "(";
+    string result = (func_decl.is_method ? "method " : "fn ") + func_decl.name + "(";
     for (size_t i = 0; i < func_decl.params.size(); ++i)
     {
         const auto &param = func_decl.params[i];
-        result += print(*param.type) + " " + param.name;
+        result += param.name + ": " + print(*param.type);
         if (i != func_decl.params.size() - 1)
         {
             result += ", ";
@@ -347,6 +352,11 @@ string ASTPrinter::visit(const BreakStmt &stmt)
 string ASTPrinter::visit(const ContinueStmt &stmt)
 {
     return "continue;";
+}
+
+string ASTPrinter::visit(const ExprStmt &stmt)
+{
+    return print(*stmt.expr) + ";";
 }
 
 string ASTPrinter::indent() const

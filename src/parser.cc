@@ -39,6 +39,8 @@ void Parser::init_pratt_rules()
              { return parse_init_list(); }, nullptr);
 
     // 中缀表达式
+    add_rule(TokenType::Assign, 1, nullptr, [&](ExprPtr l)
+             { return parse_binary(std::move(l), 1); });
     add_rule(TokenType::Plus, 10, nullptr, [&](ExprPtr l)
              { return parse_binary(std::move(l), 10); });
     add_rule(TokenType::Star, 20, nullptr, [&](ExprPtr l)
@@ -51,6 +53,22 @@ void Parser::init_pratt_rules()
              { return parse_member_access(std::move(l)); });
     add_rule(TokenType::LParen, 40, nullptr, [&](ExprPtr l)
              { return parse_call(std::move(l)); });
+}
+
+std::unique_ptr<Expr> Parser::parse_assignment(std::unique_ptr<Expr> left) {
+    // if (!is_valid_lvalue(*left)) {
+    //     error("Invalid assignment target");
+    // }
+
+    auto equals_token = previous_;
+    advance(); // Skip =
+    auto value = parse_expression(1); // 使用低优先级解析右值
+
+    return std::make_unique<BinaryExpr>(
+        equals_token.type,
+        std::move(left),
+        std::move(value)
+    );
 }
 
 ExprPtr Parser::parse_expression(int precedence)
@@ -228,6 +246,8 @@ Type::BasicKind basic_kind_from_string(const std::string &name)
         return Type::BasicKind::Float;
     if (name == "string")
         return Type::BasicKind::String;
+
+    throw std::runtime_error("Invalid basic type name: " + name);
 }
 
 void apply_const_to_innermost(Type *type)
@@ -651,20 +671,22 @@ int Parser::get_precedence(TokenType type)
 {
     switch (type)
     {
+    case TokenType::Assign:
+        return 1;
     case TokenType::Plus:
     case TokenType::Minus:
-        return 1;
+        return 2;
     case TokenType::Star:
     case TokenType::Divide:
-        return 2;
+        return 3;
     // case TokenType::Caret: // Exponentiation
-    //     return 3;
+    //     return 4;
     case TokenType::LParen:
     case TokenType::LBracket:
     case TokenType::Dot:
     case TokenType::Arrow:
     case TokenType::DoubleColon:
-        return 999;
+        return 9;
     default:
         return 0; // Default precedence for non-operators
     }
@@ -744,10 +766,15 @@ StmtPtr Parser::parse_statement()
     {
         return parse_if();
     }
+    else if (current_.type == TokenType::While)
+    {
+        return parse_while();
+    }
     else
     {
-        error("Unexpected statement.");
-        return nullptr;
+        auto expr = parse_expression();
+        consume(TokenType::Semicolon, "Expect ';' after expression");
+        return std::make_unique<ExprStmt>(std::move(expr));
     }
 }
 
@@ -777,6 +804,17 @@ StmtPtr Parser::parse_if()
     }
     return std::make_unique<IfStmt>(std::move(condition), std::move(then_branch), std::move(else_branch));
 }
+
+StmtPtr Parser::parse_while()
+{
+    advance(); // Move past the 'while' keyword
+    consume(TokenType::LParen, "Expect '(' after 'while'.");
+    ExprPtr condition = parse_expression();
+    consume(TokenType::RParen, "Expect ')' after condition.");
+    StmtPtr body = parse_statement();
+    return std::make_unique<WhileStmt>(std::move(condition), std::move(body));
+}
+
 
 VarDeclStmt Parser::parse_var_decl()
 {
@@ -819,7 +857,7 @@ FunctionDecl Parser::parse_function_decl()
     func.name = current_.lexeme;
     consume(TokenType::Identifier, "Expected function name");
 
-    // 解析参数
+    // Params
     consume(TokenType::LParen, "Expected (");
     while (!match(TokenType::RParen))
     {
@@ -840,6 +878,8 @@ FunctionDecl Parser::parse_function_decl()
     {
         advance();
         func.return_type = parse_type();
+    } else {
+        func.return_type = std::make_unique<Type>(Type::get_void_type());
     }
 
     // Receiver
@@ -878,7 +918,7 @@ void Parser::error(const std::string &message) const
 void Parser::advance()
 {
     debug("parser: advancing to next token (from %s)", current_.lexeme.c_str());
-    // previous_ = current_;
+    previous_ = current_;
     current_ = lexer_.next_token();
 }
 

@@ -118,6 +118,26 @@ std::unique_ptr<Type> Type::clone() const
     return result;
 }
 
+Type Type::get_void_type() {
+    Type result;
+    result.kind = Kind::Void;
+    return result;
+}
+
+Type Type::get_int_type() {
+    Type result;
+    result.kind = Kind::Basic;
+    result.basic_kind = BasicKind::Int;
+    return result;
+}
+
+Type Type::get_float_type() {
+    Type result;
+    result.kind = Kind::Basic;
+    result.basic_kind = BasicKind::Float;
+    return result;
+}
+
 // StructLiteralExpr methods
 void StructLiteralExpr::add_member(std::string name, ExprPtr expr)
 {

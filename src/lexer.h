@@ -14,6 +14,7 @@ void debug(const char* fmt, ...);
 
 enum class TokenType
 {
+    Invalid,
     // Keywords
     Let,
     Struct,
@@ -77,7 +78,7 @@ struct Token
     int end_line;
     int end_col;
     std::string lexeme;
-
+    Token();
     Token(TokenType type, int start_line, int start_col, int end_line, int end_col, const std::string &lexeme);
 };
 
