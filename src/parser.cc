@@ -121,6 +121,7 @@ void Parser::consume(TokenType type, const std::string &message)
     if (current_.type == type)
     {
         Token consumed = current_;
+        debug("parser: consumed token %s", token_to_string(consumed).c_str());
         advance();
         // return consumed;
     }
@@ -134,9 +135,10 @@ bool Parser::match(TokenType type)
 {
     if (current_.type == type)
     {
-        advance();
+        debug("parser: matched token %s", token_to_string(current_).c_str());
         return true;
     }
+    debug("parser: no match for token %s, actual token is %s", token_type_to_string(type).c_str(), token_to_string(current_).c_str());
     return false;
 }
 
@@ -192,32 +194,48 @@ TypedField Parser::parse_struct_member()
     return TypedField(std::move(type), name);
 }
 
+Type::BasicKind basic_kind_from_string(const std::string &name)
+{
+    if (name == "int")
+        return Type::BasicKind::Int;
+    if (name == "float")
+        return Type::BasicKind::Float;
+    if (name == "string")
+        return Type::BasicKind::String;
+}
+
 std::unique_ptr<Type> Parser::parse_type()
 {
     auto type = std::make_unique<Type>();
 
-    // Handle const qualification
+    // 处理顶层的 const（如 const int）
     if (match(TokenType::Const))
     {
         type->is_const = true;
         advance();
     }
 
-    // Handle pointer type
-    while (match(TokenType::Star))
+    // 基本类型、函数或结构体
+    if (match(TokenType::Int) || match(TokenType::Float) || match(TokenType::String))
     {
-        auto ptr_type = std::make_unique<Type>();
-        ptr_type->kind = Type::Kind::Pointer;
-        ptr_type->pointee = std::move(type);
-        type = std::move(ptr_type);
+        std::string name = current_.lexeme;
+
+        type->kind = Type::Kind::Basic;
+        type->name = name;
+        type->basic_kind = basic_kind_from_string(type->name);
         advance();
     }
-
-    // Basic type or struct type
-    if (match(TokenType::Identifier))
+    else if (match(TokenType::Identifier))
     {
-        type->kind = Type::Kind::Basic;
-        type->name = current_.lexeme;
+        std::string name = current_.lexeme;
+        if (auto it = type_aliases_.find(name); it != type_aliases_.end())
+        {
+            return it->second->clone();
+        }
+        else
+        {
+            error("Unexpected type name" + name);
+        }
         advance();
     }
     else if (match(TokenType::Fn))
@@ -263,19 +281,47 @@ std::unique_ptr<Type> Parser::parse_type()
         }
         consume(TokenType::RBrace, "Expected '}' in struct type");
     }
+    else
+    {
+        error("Expected type name");
+    }
 
-    // Dimension of array type
-    if (match(TokenType::LBracket))
+    // 处理指针（允许多级指针和指针后的 const）
+    while (match(TokenType::Star))
+    {
+        advance();
+        auto ptr_type = std::make_unique<Type>();
+        ptr_type->kind = Type::Kind::Pointer;
+
+        // 处理指针后的 const（如 int* const）
+        if (match(TokenType::Const))
+        {
+            ptr_type->is_const = true;
+            advance();
+        }
+
+        ptr_type->pointee = std::move(type);
+        type = std::move(ptr_type);
+    }
+
+    // 处理多维数组
+    while (match(TokenType::LBracket))
     {
         advance();
         auto array_type = std::make_unique<Type>();
         array_type->kind = Type::Kind::Array;
         array_type->element_type = std::move(type);
+
         if (match(TokenType::IntegerLiteral))
         {
             array_type->array_size = std::stoi(current_.lexeme);
             advance();
         }
+        else
+        {
+            array_type->array_size = -1; // 表示未指定大小
+        }
+
         type = std::move(array_type);
         consume(TokenType::RBracket, "Expected ']' in array type");
     }
@@ -806,7 +852,6 @@ ImplBlock Parser::parse_impl_block()
     return impl;
 }
 
-// 解析全局变量声明
 GlobalDecl Parser::parse_global_decl()
 {
     auto decl = GlobalDecl(parse_var_decl());

@@ -6,6 +6,12 @@
 #include <vector>
 #include <cctype>
 #include <stdexcept>
+#include <cstdio>
+
+#define DEBUG
+#include <cstdarg>
+
+void debug(const char* fmt, ...);
 
 enum class TokenType
 {
@@ -17,6 +23,7 @@ enum class TokenType
     Return,
     Int,
     Float,
+    String,
     Const,
     Sizeof,
     Cast,

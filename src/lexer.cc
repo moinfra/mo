@@ -1,5 +1,14 @@
 #include "lexer.h"
 
+void debug(const char* fmt, ...) {
+    std::printf("[DEBUG] ");
+    va_list args;
+    va_start(args, fmt);
+    std::vprintf(fmt, args);
+    va_end(args);
+    std::printf("\n");
+}
+
 Token::Token(TokenType type, int start_line, int start_col, int end_line, int end_col, const std::string &lexeme)
     : type(type), start_line(start_line), start_col(start_col), end_line(end_line), end_col(end_col), lexeme(lexeme) {}
 

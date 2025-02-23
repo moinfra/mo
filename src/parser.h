@@ -13,11 +13,13 @@ public:
 
     Program parse();
     ExprPtr parse_expr();
+    std::vector<std::string> errors() const { return errors_; }
 
 private:
     Lexer lexer_;
     Token current_;
     std::vector<std::string> errors_;
+    std::unordered_map<std::string, std::unique_ptr<Type>> type_aliases_;
 
     struct PrattRule
     {
