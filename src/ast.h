@@ -203,6 +203,18 @@ struct IfStmt : Statement {
           else_branch(std::move(else_branch)) {}
 };
 
+struct WhileStmt : Statement {
+    ExprPtr condition;
+    StmtPtr body;
+
+    WhileStmt(ExprPtr condition, StmtPtr body)
+        : condition(std::move(condition)), body(std::move(body)) {}
+};
+
+struct BreakStmt : Statement {};
+
+struct ContinueStmt : Statement {};
+
 struct TypedField {
     TypePtr type;
     std::string name;
