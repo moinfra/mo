@@ -30,34 +30,34 @@ enum class TokenType
     IntegerLiteral,
     FloatLiteral,
     StringLiteral,
-    // Operators
-    OperatorDot,         // .
-    OperatorArrow,       // ->
-    OperatorDoubleColon, // ::
-    OperatorAssign,      // =
-    OperatorColon,       // :
-    OperatorSemicolon,   // ;
-    OperatorComma,       // ,
-    OperatorStar,        // *
-    OperatorAmpersand,   // &
-    OperatorLParen,      // (
-    OperatorRParen,      // )
-    OperatorLBrace,      // {
-    OperatorRBrace,      // }
-    OperatorLBracket,    // [
-    OperatorRBracket,    // ]
-    OperatorPlus,        // +
-    OperatorMinus,       // -
-    OperatorDivide,      // /
-    OperatorModulo,      // %
-    OperatorEq,          // ==
-    OperatorNe,          // !=
-    OperatorLt,          // <
-    OperatorLe,          // <=
-    OperatorGt,          // >
-    OperatorGe,          // >=
-    OperatorAnd,         // &&
-    OperatorOr,          // ||
+    // s
+    Dot,         // .
+    Arrow,       // ->
+    DoubleColon, // ::
+    Assign,      // =
+    Colon,       // :
+    Semicolon,   // ;
+    Comma,       // ,
+    Star,        // *
+    Ampersand,   // &
+    LParen,      // (
+    RParen,      // )
+    LBrace,      // {
+    RBrace,      // }
+    LBracket,    // [
+    RBracket,    // ]
+    Plus,        // +
+    Minus,       // -
+    Divide,      // /
+    Modulo,      // %
+    Eq,          // ==
+    Ne,          // !=
+    Lt,          // <
+    Le,          // <=
+    Gt,          // >
+    Ge,          // >=
+    And,         // &&
+    Or,          // ||
     // End of File
     Eof,
 };
@@ -66,45 +66,46 @@ struct Token
 {
 
     TokenType type;
-    int startLine;
-    int startCol;
-    int endLine;
-    int endCol;
+    int start_line;
+    int start_col;
+    int end_line;
+    int end_col;
     std::string lexeme;
 
-    Token(TokenType type, int startLine, int startCol, int endLine, int endCol, const std::string &lexeme);
+    Token(TokenType type, int start_line, int start_col, int end_line, int end_col, const std::string &lexeme);
 };
 
 class Lexer
 {
 public:
     Lexer(const std::string &input);
-    Token nextToken();
+    Lexer(Lexer &&other) noexcept;
+    Token next_token();
 
 private:
     std::string input;
     size_t pos;
-    int currentLine;
-    int currentCol;
+    int current_line;
+    int current_col;
 
     void advance();
     char peek(size_t offset = 0) const;
-    void skipWhitespaceAndComments();
-    void skipLineComment();
-    void skipBlockComment();
-    Token parseNumber();
-    Token parseString();
-    Token parseIdentifierOrKeyword();
-    Token parseArrowOrMinus();
-    Token parseDoubleColonOrColon();
-    Token parseDot();
-    Token parseEqualOrEq();
-    Token parseNe();
-    Token parseLeOrLt();
-    Token parseGeOrGt();
-    Token parseAnd();
-    Token parseOr();
-    Token parseSingleChar(TokenType type, const std::string &lexeme);
+    void skip_whitespace_and_comments();
+    void skip_line_comment();
+    void skip_block_comment();
+    Token parse_number();
+    Token parse_string();
+    Token parse_identifier_or_keyword();
+    Token parse_arrow_or_minus();
+    Token parse_double_colon_or_colon();
+    Token parse_dot();
+    Token parse_equal_or_eq();
+    Token parse_ne();
+    Token parse_le_or_lt();
+    Token parse_ge_or_gt();
+    Token parse_and();
+    Token parse_or();
+    Token parse_single_char(TokenType type, const std::string &lexeme);
 };
 
 class LexerError : public std::exception
@@ -122,7 +123,7 @@ private:
     std::string message_;
 };
 
-std::string tokenToString(const Token &token);
-std::string tokenTypeToString(TokenType type);
+std::string token_to_string(const Token &token);
+std::string token_type_to_string(TokenType type);
 
 #endif // LEXER_H
