@@ -393,17 +393,17 @@ Token Lexer::parse_single_char(TokenType type, const std::string &lexeme)
     return Token(type, start_line, start_col, current_line, current_col - 1, lexeme);
 }
 
-std::string tokenToString(const Token &token)
+std::string token_to_string(const Token &token)
 {
     std::string result = token.lexeme;
     if (result.empty())
     {
-        return tokenTypeToString(token.type);
+        return token_type_to_string(token.type);
     }
     return result;
 }
 
-std::string tokenTypeToString(TokenType type)
+std::string token_type_to_string(TokenType type)
 {
     std::string result;
     switch (type)

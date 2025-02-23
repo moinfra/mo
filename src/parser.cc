@@ -283,45 +283,6 @@ std::unique_ptr<Type> Parser::parse_type()
     return type;
 }
 
-bool Type::operator==(const Type &other) const
-{
-    if (kind != other.kind)
-        return false;
-
-    switch (kind)
-    {
-    case Kind::Basic:
-        return name == other.name && is_const == other.is_const;
-    case Kind::Pointer:
-        return *pointee == *other.pointee;
-    case Kind::Array:
-        return *element_type == *other.element_type &&
-               array_size == other.array_size;
-    case Kind::Function:
-        if (params.size() != other.params.size())
-            return false;
-        for (size_t i = 0; i < params.size(); ++i)
-        {
-            if (params[i] != other.params[i])
-                return false;
-        }
-        return *return_type == *other.return_type;
-    case Kind::Struct:
-        if (members.size() != other.members.size())
-            return false;
-        for (const auto &[name, ty] : members)
-        {
-            if (other.members.count(name) == 0)
-                return false;
-            if (ty != other.members.at(name))
-                return false;
-        }
-        return true;
-    default:
-        return false;
-    }
-}
-
 ExprPtr Parser::parse_function_pointer_expr()
 {
     consume(TokenType::Fn, "Expected 'fn'");
@@ -593,7 +554,7 @@ ExprPtr Parser::parse_primary()
     }
     else if (current_.type == TokenType::LParen)
     {
-        advance();                        
+        advance();
         ExprPtr expr = parse_expression();
         consume(TokenType::RParen, "Expect ')' after expression.");
         return expr;
@@ -703,7 +664,7 @@ FunctionDecl Parser::parse_function_decl()
         consume(TokenType::Identifier, "Expected parameter name");
         consume(TokenType::Colon, "Expected : after parameter name");
         auto type = parse_type();
-        func.params.emplace_back(name, std::move(type));
+        func.params.emplace_back(std::move(type), name);
 
         if (!match(TokenType::Comma))
             break;

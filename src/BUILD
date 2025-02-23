@@ -7,7 +7,7 @@ cc_library(
 
 cc_library(
     name = "parser",
-    srcs = ["parser.cc"],
+    srcs = ["parser.cc", "ast.cc"],
     hdrs = ["parser.h", "ast.h"],
     deps = [":lexer"],
     visibility = ["//visibility:public"],
