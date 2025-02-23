@@ -29,6 +29,10 @@ void Parser::init_pratt_rules()
              { return parse_literal(); }, nullptr);
     add_rule(TokenType::FloatLiteral, 0, [&]
              { return parse_literal(); }, nullptr);
+    add_rule(TokenType::StringLiteral, 0, [&]
+             { return parse_literal(); }, nullptr);
+    // add_rule(TokenType::Minus, 0, [&]
+    //          { return parse_prefix_expr(); }, nullptr);
     add_rule(TokenType::LParen, 0, [&]
              { return parse_grouped(); }, nullptr);
     add_rule(TokenType::Cast, 0, [&]

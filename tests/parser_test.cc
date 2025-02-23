@@ -37,6 +37,7 @@ TEST(ParserTest, PointerVarDecl) {
     expect_no_errors(parser);
     ASTPrinter printer;
     std::string ast_text = printer.print(ast);
+    std::cout << ast_text << std::endl;
     EXPECT_EQ(ast_text, "let ptr: *<type-name> = malloc(sizeof(<type-name>));\n");
 }
 
@@ -49,6 +50,7 @@ TEST(ParserTest, StaticMethodCall) {
     auto ast = parser.parse();
     ASTPrinter printer;
     std::string ast_text = printer.print(ast);
+    std::cout << ast_text << std::endl;
     EXPECT_EQ(ast_text, "let v: <type-name> = Vector2::new(1, 2);\n");
 }
 
@@ -60,5 +62,30 @@ TEST(ParserTest, StructMemberAccess) {
     auto ast = parser.parse();
     ASTPrinter printer;
     std::string ast_text = printer.print(ast);
+    std::cout << ast_text << std::endl;
     EXPECT_EQ(ast_text, "fn f(v: <type-name>) -> void {\n  (v.x = 3);\n}\n\n");
+}
+
+TEST(ParserTest, PointerMemberAccess) {
+    std::string input = "fn f(ptr: *MyStruct) { ptr->x = 3.0; }";
+    Lexer lexer(input);
+    Parser parser(std::move(lexer));
+    
+    auto ast = parser.parse();
+    ASTPrinter printer;
+    std::string ast_text = printer.print(ast);
+    std::cout << ast_text << std::endl;
+    EXPECT_EQ(ast_text, "fn f(ptr: *<type-name>) -> void {\n  (ptr->x = 3);\n}\n\n");
+}
+
+TEST(ParserTest, HelloWorld) {
+    std::string input = "fn main() -> int { print(\"Hello, World!\"); return 0; }";
+    Lexer lexer(input);
+    Parser parser(std::move(lexer));
+    
+    auto ast = parser.parse();
+    ASTPrinter printer;
+    std::string ast_text = printer.print(ast);
+    std::cout << ast_text << std::endl;
+    EXPECT_EQ(ast_text, "fn main() -> int {\n  print(\"Hello, World!\");\n  return 0;\n}\n\n");
 }
