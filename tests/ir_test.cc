@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 #include "src/ir.h"
+#define NOP(x) ((void)(x))
 
 TEST(TypeSystem, VoidType)
 {
@@ -107,6 +108,7 @@ TEST(BasicBlockInstruction, ControlFlow)
     EXPECT_EQ(bb1->successors()[0], bb2);
     EXPECT_EQ(bb2->predecessors().size(), 1);
     EXPECT_EQ(bb2->predecessors()[0], bb1);
+    NOP(br);
 }
 
 TEST(Function, FunctionParameters)
@@ -176,4 +178,55 @@ TEST(InstructionSubclasses, PhiInst) {
     
     EXPECT_EQ(phi->get_incoming_block(0), bb1);
     EXPECT_EQ(phi->get_incoming_block(1), bb2);
+}
+
+TEST(InstructionSubclasses, ICmpInst) {
+    Module m;
+    IntegerType *i32 = IntegerType::get(&m, 32);
+    Function *f = m.create_function("func", i32, {});
+    BasicBlock *bb = f->create_basic_block("bb");
+
+    ConstantInt *c1 = ConstantInt::get(&m, i32, 1);
+    ConstantInt *c2 = ConstantInt::get(&m, i32, 2);
+    ICmpInst *icmp = ICmpInst::create(ICmpInst::Predicate::SLT, c1, c2, bb);
+
+    EXPECT_EQ(icmp->predicate(), ICmpInst::Predicate::SLT);
+    EXPECT_EQ(icmp->operand(0), c1);
+    EXPECT_EQ(icmp->operand(1), c2);
+}
+
+TEST(InstructionSubclasses, MemoryOperations) {
+    Module m;
+    IntegerType *i32 = IntegerType::get(&m, 32);
+    Function *f = m.create_function("func", i32, {});
+    BasicBlock *bb = f->create_basic_block("bb");
+
+    AllocaInst *alloca = AllocaInst::create(i32, bb);
+    EXPECT_EQ(alloca->allocated_type(), i32);
+
+    LoadInst *load = LoadInst::create(alloca, bb);
+    EXPECT_EQ(load->pointer(), alloca);
+
+    StoreInst *store = StoreInst::create(ConstantInt::get(&m, i32, 42), alloca, bb);
+    auto stored_value = store->stored_value();
+    ConstantInt *c = dynamic_cast<ConstantInt *>(stored_value);
+    EXPECT_EQ(c->value(), 42);
+    EXPECT_EQ(store->pointer(), alloca);
+}
+
+TEST(InstructionSubclasses, GEPInstruction) {
+    Module m;
+    IntegerType *i32 = IntegerType::get(&m, 32);
+    ArrayType *arrayType = ArrayType::get(&m, i32, 10);
+    Function *f = m.create_function("func", i32, {});
+    BasicBlock *bb = f->create_basic_block("bb");
+
+    AllocaInst *alloca = AllocaInst::create(arrayType, bb);
+    GetElementPtrInst *gep = GetElementPtrInst::create(alloca, {ConstantInt::get(&m, i32, 5)}, bb);
+
+    EXPECT_EQ(gep->base_pointer(), alloca);
+    EXPECT_EQ(gep->indices().size(), 1);
+    auto index = gep->indices()[0];
+    ConstantInt *c = dynamic_cast<ConstantInt *>(index);
+    EXPECT_EQ(c->value(), 5);
 }

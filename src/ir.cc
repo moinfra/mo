@@ -533,6 +533,10 @@ GetElementPtrInst::GetElementPtrInst(Type *result_type, BasicBlock *parent,
     operands_.insert(operands_.end(), indices.begin(), indices.end());
 }
 
+const std::vector<Value *> &GetElementPtrInst::indices() const {
+    return std::vector<Value *>(operands_.begin() + 1, operands_.end());
+}
+
 Type *GetElementPtrInst::get_result_type(Type *base_type,
                                          const std::vector<Value *> &indices)
 {
