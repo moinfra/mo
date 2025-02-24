@@ -57,14 +57,14 @@ class Type
 public:
     enum TypeID
     {
-        void_ty_id,
-        integer_ty_id,
-        float_ty_id,
-        pointer_ty_id,
-        function_ty_id,
-        array_ty_id,
-        struct_ty_id,
-        vector_ty_id,
+        VoidTy,
+        IntTy,
+        FpTy,
+        PtrTy,
+        FuncTy,
+        ArrayTy,
+        StructTy,
+        VecTy,
     };
 
     // Modified constructor: Module* is now a required parameter
@@ -136,7 +136,7 @@ public:
     unsigned bits() const override { return 0; }
 
 private:
-    explicit VoidType(Module *m) : Type(void_ty_id, m) {}
+    explicit VoidType(Module *m) : Type(VoidTy, m) {}
 
     Module *module_;
 
@@ -192,7 +192,7 @@ public:
 
 private:
     FunctionType(Module *m, Type *return_type, const std::vector<Type *> &param_types)
-        : Type(function_ty_id, m), return_type_(return_type), param_types_(param_types) {}
+        : Type(FuncTy, m), return_type_(return_type), param_types_(param_types) {}
 
     Type *return_type_;
     std::vector<Type *> param_types_;
@@ -302,7 +302,7 @@ public:
 
 private:
     VectorType(Module *m, Type *element_type, uint64_t num_elements)
-        : Type(vector_ty_id, m), element_type_(element_type), num_elements_(num_elements) {}
+        : Type(VecTy, m), element_type_(element_type), num_elements_(num_elements) {}
 
     Type *element_type_;
     uint64_t num_elements_;

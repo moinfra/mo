@@ -9,7 +9,7 @@ Type *Type::get_void_type(Module *m)
 }
 
 IntegerType::IntegerType(Module *m, unsigned bits)
-    : Type(integer_ty_id, m), bits_(bits) {}
+    : Type(IntTy, m), bits_(bits) {}
 
 IntegerType *IntegerType::get(Module *m, unsigned bits)
 {
@@ -17,7 +17,7 @@ IntegerType *IntegerType::get(Module *m, unsigned bits)
 }
 
 FloatType::FloatType(Module *m, FloatType::Precision precision)
-    : Type(float_ty_id, m), precision_(precision) {
+    : Type(FpTy, m), precision_(precision) {
         switch (precision)
         {
             case Half:
@@ -43,7 +43,7 @@ FloatType *FloatType::get(Module *m, FloatType::Precision precision)
 }
 
 PointerType::PointerType(Module *m, Type *element_type)
-    : Type(pointer_ty_id, m), element_type_(element_type) {}
+    : Type(PtrTy, m), element_type_(element_type) {}
 
 PointerType *PointerType::get(Module *m, Type *element_type)
 {
@@ -60,7 +60,7 @@ VoidType *VoidType::get(Module *m)
 }
 
 ArrayType::ArrayType(Module *m, Type *element_type, uint64_t num_elements)
-    : Type(array_ty_id, m), element_type_(element_type),
+    : Type(ArrayTy, m), element_type_(element_type),
       num_elements_(num_elements)
 {
     assert(element_type && "Invalid element type");
@@ -77,7 +77,7 @@ ArrayType *ArrayType::get(Module *m, Type *element_type, uint64_t num_elements)
 }
 
 StructType::StructType(Module *m)
-    : Type(struct_ty_id, m), is_opaque_(true), size_(0) {}
+    : Type(StructTy, m), is_opaque_(true), size_(0) {}
 
 void StructType::set_body(std::vector<Type *> members)
 {
