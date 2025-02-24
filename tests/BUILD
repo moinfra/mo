@@ -25,3 +25,13 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+
+cc_test(
+    name = "ir_builder_test",
+    srcs = ["ir_builder_test.cc"],
+    deps = [
+        "//src:ir_builder",
+        "@googletest//:gtest_main",
+    ],
+)

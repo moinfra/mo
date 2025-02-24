@@ -66,6 +66,29 @@ public:
         StructTy,
         VecTy,
     };
+    static const char* id_to_str(TypeID id) {
+        switch (id)
+        {
+            case VoidTy:
+                return "void";
+            case IntTy:
+                return "i";
+            case FpTy:
+                return "f";
+            case PtrTy:
+                return "ptr";
+            case FuncTy:
+                return "func";
+            case ArrayTy:
+                return "array";
+            case StructTy:
+                return "struct";
+            case VecTy:
+                return "vec";
+            default:
+                return "unknown";
+        }
+    }
 
     // Modified constructor: Module* is now a required parameter
     Type(TypeID tid, Module *m) : tid_(tid), module_(m) {}
