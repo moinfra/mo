@@ -17,7 +17,25 @@ IntegerType *IntegerType::get(Module *m, unsigned bits)
 }
 
 FloatType::FloatType(Module *m, FloatType::Precision precision)
-    : Type(float_ty_id, m), precision_(precision) {}
+    : Type(float_ty_id, m), precision_(precision) {
+        switch (precision)
+        {
+            case Half:
+                bits_ = 16;
+                break;
+            case Single:
+                bits_ = 32;
+                break;
+            case Double:
+                bits_ = 64;
+                break;
+            case Quad:
+                bits_ = 128;
+                break;
+            default:
+                assert(0 && "Invalid float precision");
+        }
+    }
 
 FloatType *FloatType::get(Module *m, FloatType::Precision precision)
 {
@@ -251,10 +269,19 @@ void BasicBlock::link_instruction(Instruction *inst)
 //                             Function Implementation
 //===----------------------------------------------------------------------===//
 Function::Function(const std::string &name, Module *parent, Type *return_type,
-                   const std::vector<Type *> &param_types)
-    : Value(Type::get_void_type(parent), name),
-      parent_(parent), return_type_(return_type),
-      param_types_(param_types) {}
+                   const ParamList &params)
+    : Value(return_type, name),
+      parent_(parent),
+      return_type_(return_type)
+{
+    // Create arguments
+    for (const auto &[param_name, param_type] : params)
+    {
+        arguments_.emplace_back(
+            std::make_unique<Argument>(param_name, param_type, this));
+        args_.push_back(arguments_.back().get());
+    }
+}
 
 Function::~Function() = default;
 
@@ -275,12 +302,13 @@ Module::Module()
 
 Module::~Module() = default;
 
-Function *Module::create_function(const std::string &name,
-                                  Type *return_type,
-                                  const std::vector<Type *> &param_types)
+Function *Module::create_function(
+    const std::string &name,
+    Type *return_type,
+    const std::vector<std::pair<std::string, Type *>> &params)
 {
     functions_.push_back(
-        std::make_unique<Function>(name, this, return_type, param_types));
+        std::make_unique<Function>(name, this, return_type, params));
     function_ptrs_.push_back(functions_.back().get());
     return function_ptrs_.back();
 }
@@ -313,6 +341,21 @@ PointerType *Module::get_pointer_type(Type *element_type)
         type = std::unique_ptr<PointerType>(new PointerType(this, element_type));
     }
     return type.get();
+}
+
+FunctionType *Module::get_function_type(Type *return_type, const std::vector<Type *> &param_types)
+{
+    auto key = std::make_pair(return_type, param_types);
+    auto it = function_types_.find(key);
+    if (it != function_types_.end())
+    {
+        return it->second.get();
+    }
+
+    auto function_type = std::unique_ptr<FunctionType>(new FunctionType(this, return_type, param_types));
+    auto *result = function_type.get();
+    function_types_[key] = std::move(function_type);
+    return result;
 }
 
 Type *Module::get_void_type()
@@ -350,6 +393,21 @@ StructType *Module::get_struct_type(const std::vector<Type *> &members)
     st->set_body(members);
     struct_types_.push_back(std::unique_ptr<StructType>(st));
     return st;
+}
+
+VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements)
+{
+    auto key = std::make_pair(element_type, num_elements);
+    auto it = vector_types_.find(key);
+    if (it != vector_types_.end())
+    {
+        return it->second.get();
+    }
+
+    auto vector_type = std::unique_ptr<VectorType>(new VectorType(this, element_type, num_elements));
+    auto *result = vector_type.get();
+    vector_types_[key] = std::move(vector_type);
+    return result;
 }
 
 ConstantInt *Module::get_constant_int(IntegerType *type, uint64_t value)
@@ -493,7 +551,7 @@ std::string ConstantAggregateZero::as_string() const
 //===----------------------------------------------------------------------===//
 BranchInst::BranchInst(BasicBlock *target, BasicBlock *parent,
                        std::vector<Value *> ops)
-    : Instruction(Opcode::br, Type::get_void_type(parent->parent()->parent()),
+    : Instruction(Opcode::Br, Type::get_void_type(parent->parent()->parent()),
                   parent, ops),
       false_bb_(nullptr) {}
 
@@ -524,7 +582,7 @@ BasicBlock *BranchInst::get_true_successor() const
 BasicBlock *BranchInst::get_false_successor() const { return false_bb_; }
 
 ReturnInst::ReturnInst(Value *value, BasicBlock *parent)
-    : Instruction(Opcode::ret, Type::get_void_type(parent->parent()->parent()),
+    : Instruction(Opcode::Ret, Type::get_void_type(parent->parent()->parent()),
                   parent, {value}) {}
 
 ReturnInst *ReturnInst::create(Value *value, BasicBlock *parent)
@@ -533,7 +591,7 @@ ReturnInst *ReturnInst::create(Value *value, BasicBlock *parent)
 }
 
 PhiInst::PhiInst(Type *type, BasicBlock *parent)
-    : Instruction(Opcode::phi, type, parent, {}) {}
+    : Instruction(Opcode::Phi, type, parent, {}) {}
 
 PhiInst *PhiInst::create(Type *type, BasicBlock *parent)
 {
@@ -553,7 +611,7 @@ BasicBlock *PhiInst::get_incoming_block(unsigned i) const
 }
 
 ICmpInst::ICmpInst(BasicBlock *parent, std::vector<Value *> ops)
-    : Instruction(Opcode::icmp, IntegerType::get(parent->parent()->parent(), 1),
+    : Instruction(Opcode::ICmp, IntegerType::get(parent->parent()->parent(), 1),
                   parent, ops),
       pred_(EQ) {}
 
@@ -567,7 +625,7 @@ ICmpInst *ICmpInst::create(Predicate pred, Value *lhs, Value *rhs,
 }
 
 FCmpInst::FCmpInst(Predicate pred, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
-    : Instruction(Opcode::fcmp, type, parent, operands, name), pred_(pred) {}
+    : Instruction(Opcode::FCmp, type, parent, operands, name), pred_(pred) {}
 
 FCmpInst *FCmpInst::create(Predicate pred, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
 {
@@ -575,7 +633,7 @@ FCmpInst *FCmpInst::create(Predicate pred, Value *lhs, Value *rhs, BasicBlock *p
 }
 
 AllocaInst::AllocaInst(Type *allocated_type, Type *ptr_type, BasicBlock *parent)
-    : Instruction(Opcode::alloca_, ptr_type, parent, {}),
+    : Instruction(Opcode::Alloca, ptr_type, parent, {}),
       allocated_type_(allocated_type) {}
 
 AllocaInst *AllocaInst::create(Type *allocated_type, BasicBlock *parent,
@@ -588,7 +646,7 @@ AllocaInst *AllocaInst::create(Type *allocated_type, BasicBlock *parent,
 }
 
 LoadInst::LoadInst(Type *loaded_type, BasicBlock *parent, Value *ptr)
-    : Instruction(Opcode::load, loaded_type, parent, {ptr}) {}
+    : Instruction(Opcode::Load, loaded_type, parent, {ptr}) {}
 
 LoadInst *LoadInst::create(Value *ptr, BasicBlock *parent,
                            const std::string &name)
@@ -600,7 +658,7 @@ LoadInst *LoadInst::create(Value *ptr, BasicBlock *parent,
 }
 
 StoreInst::StoreInst(BasicBlock *parent, Value *value, Value *ptr)
-    : Instruction(Opcode::store, Type::get_void_type(parent->parent()->parent()),
+    : Instruction(Opcode::Store, Type::get_void_type(parent->parent()->parent()),
                   parent, {value, ptr}) {}
 
 StoreInst *StoreInst::create(Value *value, Value *ptr, BasicBlock *parent)
@@ -611,7 +669,7 @@ StoreInst *StoreInst::create(Value *value, Value *ptr, BasicBlock *parent)
 
 GetElementPtrInst::GetElementPtrInst(Type *result_type, BasicBlock *parent,
                                      Value *ptr, std::vector<Value *> indices)
-    : Instruction(Opcode::getelementptr, result_type, parent, {ptr})
+    : Instruction(Opcode::GetElementPtr, result_type, parent, {ptr})
 {
     operands_.insert(operands_.end(), indices.begin(), indices.end());
 }
@@ -632,25 +690,43 @@ Type *GetElementPtrInst::get_result_type(Type *base_type,
         if (auto *ptr_ty = dynamic_cast<PointerType *>(current_type))
         {
             current_type = ptr_ty->element_type();
+            continue;
         }
 
         // Handle array type
         if (auto *array_ty = dynamic_cast<ArrayType *>(current_type))
         {
             current_type = array_ty->element_type();
+            continue;
         }
+
+        // Handle vector type
+        if (auto *vector_ty = dynamic_cast<VectorType *>(current_type))
+        {
+            current_type = vector_ty->element_type();
+            continue;
+        }
+
         // Handle struct type
-        else if (auto *struct_ty = dynamic_cast<StructType *>(current_type))
+        if (auto *struct_ty = dynamic_cast<StructType *>(current_type))
         {
             auto *index_val = dynamic_cast<ConstantInt *>(indices[i]);
             assert(index_val && "Struct indices must be constants");
             unsigned idx = index_val->value();
+            assert(idx < struct_ty->members().size() && "Struct index out of bounds");
             current_type = struct_ty->get_member_type(idx);
+            continue;
         }
-        else
+
+        // Handle function type
+        if (auto *func_ty = dynamic_cast<FunctionType *>(current_type))
         {
-            assert(false && "Invalid GEP index sequence");
+            (void)func_ty;
+            assert(false && "Cannot index into a function type");
+            continue;
         }
+
+        assert(false && "Invalid GEP index sequence");
     }
 
     return PointerType::get(base_type->module(), current_type);
@@ -671,8 +747,8 @@ BinaryInst::BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Va
 
 bool BinaryInst::isBinaryOp(Opcode op)
 {
-    return op == Opcode::add || op == Opcode::sub || op == Opcode::mul ||
-           op == Opcode::udiv || op == Opcode::sdiv;
+    return op == Opcode::Add || op == Opcode::Sub || op == Opcode::Mul ||
+           op == Opcode::UDiv || op == Opcode::SDiv;
 }
 
 BinaryInst *BinaryInst::create(Opcode op, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
@@ -686,7 +762,7 @@ ConversionInst::ConversionInst(Opcode op, Type *dest_type, BasicBlock *parent, s
 
 bool ConversionInst::isConversionOp(Opcode op)
 {
-    return op == Opcode::zext || op == Opcode::sext || op == Opcode::trunc;
+    return op == Opcode::ZExt || op == Opcode::SExt || op == Opcode::Trunc;
 }
 
 ConversionInst *ConversionInst::create(Opcode op, Value *val, Type *dest_type, BasicBlock *parent, const std::string &name)

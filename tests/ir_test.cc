@@ -52,6 +52,42 @@ TEST(TypeSystem, StructType)
     EXPECT_EQ(structType->size(), 8);
 }
 
+TEST(TypeSystem, VectorType)
+{
+    Module m;
+    Type *i32 = m.get_integer_type(32);
+    VectorType *vec4xi32 = m.get_vector_type(i32, 4);
+
+    std::cout << "Vector type: " << vec4xi32->name() << std::endl;
+    std::cout << "Size: " << vec4xi32->size() << " bytes" << std::endl;
+    std::cout << "Bits: " << vec4xi32->bits() << " bits" << std::endl;
+
+    EXPECT_EQ(vec4xi32->num_elements(), 4);
+    EXPECT_EQ(vec4xi32->element_type(), i32);
+    EXPECT_EQ(vec4xi32->name(), "<4 x i32>");
+    EXPECT_EQ(vec4xi32->size(), 16);  // 4 * 4 bytes
+    EXPECT_EQ(vec4xi32->bits(), 128); // 4 * 32 bits
+}
+
+TEST(TypeSystem, FunctionType)
+{
+    Module m;
+    Type *i32 = m.get_integer_type(32);
+    Type *f32 = m.get_float_type(FloatType::Single);
+
+    std::vector<Type *> param_types = {i32, f32};
+    FunctionType *func_type = m.get_function_type(i32, param_types);
+
+    std::cout << "Function type: " << func_type->name() << std::endl;
+
+    EXPECT_EQ(func_type->return_type(), i32);
+    EXPECT_EQ(func_type->param_types().size(), 2);
+    EXPECT_EQ(func_type->param_types()[0], i32);
+    EXPECT_EQ(func_type->param_types()[1], f32);
+    EXPECT_EQ(func_type->name(), "i32 (i32, f32)");
+}
+
+
 // TEST(ValueUser, ValueLifecycle) {
 //     Module m;
 //     IntegerType *i32 = IntegerType::get(&m, 32);
@@ -86,8 +122,8 @@ TEST(BasicBlockInstruction, InstructionList)
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb = f->create_basic_block("bb");
 
-    Instruction *inst1 = Instruction::create(Opcode::add, i32, {}, bb);
-    Instruction *inst2 = Instruction::create(Opcode::sub, i32, {}, bb);
+    Instruction *inst1 = Instruction::create(Opcode::Add, i32, {}, bb);
+    Instruction *inst2 = Instruction::create(Opcode::Sub, i32, {}, bb);
 
     EXPECT_EQ(bb->first_instruction(), inst1);
     EXPECT_EQ(bb->last_instruction(), inst2);
@@ -116,7 +152,7 @@ TEST(Function, FunctionParameters)
     Module m;
     IntegerType *i32 = IntegerType::get(&m, 32);
     PointerType *ptrType = PointerType::get(&m, i32);
-    Function *f = m.create_function("func", i32, {i32, ptrType});
+    Function *f = m.create_function("func", i32, {{"a", i32}, {"b", ptrType}});
 
     EXPECT_EQ(f->param_types().size(), 2);
     EXPECT_EQ(f->param_types()[0], i32);
@@ -147,7 +183,8 @@ TEST(Module, FunctionManagement)
     EXPECT_EQ(m.functions()[1], f2);
 }
 
-TEST(Constant, ConstantInt) {
+TEST(Constant, ConstantInt)
+{
     Module m;
     IntegerType *i32 = IntegerType::get(&m, 32);
     ConstantInt *c1 = ConstantInt::get(&m, i32, 42);
@@ -157,7 +194,8 @@ TEST(Constant, ConstantInt) {
     EXPECT_EQ(c1, c2); // should be the same object
 }
 
-TEST(InstructionSubclasses, PhiInst) {
+TEST(InstructionSubclasses, PhiInst)
+{
     Module m;
     IntegerType *i32 = IntegerType::get(&m, 32);
     Function *f = m.create_function("func", i32, {});
@@ -175,12 +213,13 @@ TEST(InstructionSubclasses, PhiInst) {
     auto v1 = phi->get_incoming_value(1);
     ConstantInt *c1 = dynamic_cast<ConstantInt *>(v1);
     EXPECT_EQ(c1->value(), 2);
-    
+
     EXPECT_EQ(phi->get_incoming_block(0), bb1);
     EXPECT_EQ(phi->get_incoming_block(1), bb2);
 }
 
-TEST(InstructionSubclasses, ICmpInst) {
+TEST(InstructionSubclasses, ICmpInst)
+{
     Module m;
     IntegerType *i32 = IntegerType::get(&m, 32);
     Function *f = m.create_function("func", i32, {});
@@ -195,7 +234,8 @@ TEST(InstructionSubclasses, ICmpInst) {
     EXPECT_EQ(icmp->operand(1), c2);
 }
 
-TEST(InstructionSubclasses, MemoryOperations) {
+TEST(InstructionSubclasses, MemoryOperations)
+{
     Module m;
     IntegerType *i32 = IntegerType::get(&m, 32);
     Function *f = m.create_function("func", i32, {});
@@ -214,7 +254,8 @@ TEST(InstructionSubclasses, MemoryOperations) {
     EXPECT_EQ(store->pointer(), alloca);
 }
 
-TEST(InstructionSubclasses, GEPInstruction) {
+TEST(InstructionSubclasses, GEPInstruction)
+{
     Module m;
     IntegerType *i32 = IntegerType::get(&m, 32);
     ArrayType *arrayType = ArrayType::get(&m, i32, 10);

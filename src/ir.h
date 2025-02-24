@@ -57,13 +57,14 @@ class Type
 public:
     enum TypeID
     {
-        void_ty_id,     // void type
-        integer_ty_id,  // integer type
-        float_ty_id,    // floating point type
-        pointer_ty_id,  // pointer type
-        function_ty_id, // function type
-        array_ty_id,    // array type ID
-        struct_ty_id    // struct type ID
+        void_ty_id,
+        integer_ty_id,
+        float_ty_id,
+        pointer_ty_id,
+        function_ty_id,
+        array_ty_id,
+        struct_ty_id,
+        vector_ty_id,
     };
 
     // Modified constructor: Module* is now a required parameter
@@ -163,6 +164,42 @@ private:
     friend Module;
 };
 
+class FunctionType : public Type
+{
+public:
+    static FunctionType *get(Module *m, Type *return_type, const std::vector<Type *> &param_types);
+
+    Type *return_type() const { return return_type_; }
+
+    const std::vector<Type *> &param_types() const { return param_types_; }
+
+    size_t size() const override { return 0; }
+
+    std::string name() const override
+    {
+        std::string result = return_type_->name() + " (";
+        for (size_t i = 0; i < param_types_.size(); ++i)
+        {
+            if (i != 0)
+                result += ", ";
+            result += param_types_[i]->name();
+        }
+        result += ")";
+        return result;
+    }
+
+    unsigned bits() const override { return 0; }
+
+private:
+    FunctionType(Module *m, Type *return_type, const std::vector<Type *> &param_types)
+        : Type(function_ty_id, m), return_type_(return_type), param_types_(param_types) {}
+
+    Type *return_type_;
+    std::vector<Type *> param_types_;
+
+    friend class Module;
+};
+
 class ArrayType : public Type
 {
 public:
@@ -240,6 +277,39 @@ private:
     friend Module;
 };
 
+class VectorType : public Type
+{
+public:
+    static VectorType *get(Module *m, Type *element_type, uint64_t num_elements);
+
+    Type *element_type() const { return element_type_; }
+    uint64_t num_elements() const { return num_elements_; }
+
+    size_t size() const override
+    {
+        return element_type_->size() * num_elements_;
+    }
+
+    std::string name() const override
+    {
+        return "<" + std::to_string(num_elements_) + " x " + element_type_->name() + ">";
+    }
+
+    unsigned bits() const override
+    {
+        return element_type_->bits() * num_elements_;
+    }
+
+private:
+    VectorType(Module *m, Type *element_type, uint64_t num_elements)
+        : Type(vector_ty_id, m), element_type_(element_type), num_elements_(num_elements) {}
+
+    Type *element_type_;
+    uint64_t num_elements_;
+
+    friend class Module;
+};
+
 //===----------------------------------------------------------------------===//
 //                              Value Base Class
 //===----------------------------------------------------------------------===//
@@ -289,25 +359,25 @@ protected:
 //===----------------------------------------------------------------------===//
 enum class Opcode
 {
-    add,
-    sub,
-    mul,
-    udiv,
-    sdiv,
-    alloca_,
-    load,
-    store,
-    getelementptr,
-    icmp,
-    fcmp,
-    br,
-    cond_br,
-    ret,
-    phi,
-    call,
-    zext,
-    sext,
-    trunc
+    Add,
+    Sub,
+    Mul,
+    UDiv,
+    SDiv,
+    Alloca,
+    Load,
+    Store,
+    GetElementPtr,
+    ICmp,
+    FCmp,
+    Br,
+    CondBr,
+    Ret,
+    Phi,
+    Call,
+    ZExt,
+    SExt,
+    Trunc
 };
 
 class Instruction : public User
@@ -367,24 +437,49 @@ private:
 //===----------------------------------------------------------------------===//
 //                              Function
 //===----------------------------------------------------------------------===//
+class Argument : public Value
+{
+public:
+    Argument(const std::string &name, Type *type, Function *parent)
+        : Value(type, name), parent_(parent) {}
+
+    Function *parent() const { return parent_; }
+
+private:
+    Function *parent_;
+};
+
 class Function : public Value
 {
 public:
+    using ParamList = std::vector<std::pair<std::string, Type *>>;
+
     Function(const std::string &name, Module *parent, Type *return_type,
-             const std::vector<Type *> &param_types);
+             const ParamList &params);
     ~Function() override;
 
     BasicBlock *create_basic_block(const std::string &name = "");
     Module *parent() const { return parent_; }
 
     Type *return_type() const { return return_type_; }
-    const std::vector<Type *> &param_types() const { return param_types_; }
+    const std::vector<Argument *> &args() const { return args_; }
+    Argument *arg(size_t idx) const { return args_.at(idx); }
+    size_t arg_size() const { return args_.size(); }
+    std::vector<Type *> param_types() const
+    {
+        std::vector<Type *> types;
+        for (auto arg : args_)
+            types.push_back(arg->type());
+        return types;
+    }
+
     const std::vector<BasicBlock *> &basic_blocks() const { return basic_block_ptrs_; }
 
 private:
     Module *parent_;
     Type *return_type_;
-    std::vector<Type *> param_types_;
+    std::vector<std::unique_ptr<Argument>> arguments_; // 参数所有权
+    std::vector<Argument *> args_;                     // 参数视图
     std::vector<std::unique_ptr<BasicBlock>> basic_blocks_;
     std::vector<BasicBlock *> basic_block_ptrs_;
 };
@@ -450,15 +545,25 @@ public:
     Module();
     ~Module();
 
-    Function *create_function(const std::string &name,
-                              Type *return_type,
-                              const std::vector<Type *> &param_types);
+    Function *create_function(
+        const std::string &name,
+        Type *return_type,
+        const std::vector<std::pair<std::string, Type *>> &params);
+
+    Function *create_function(
+        const std::string &name,
+        Type *return_type,
+        std::initializer_list<std::pair<std::string, Type *>> params)
+    {
+        return create_function(name, return_type, std::vector<std::pair<std::string, Type *>>(params));
+    }
 
     Type *get_void_type();
     IntegerType *get_integer_type(unsigned bits);
     FloatType *get_float_type(FloatType::Precision precision);
 
     PointerType *get_pointer_type(Type *element_type);
+    FunctionType *get_function_type(Type *return_type, const std::vector<Type *> &param_types);
 
     ConstantInt *get_constant_int(IntegerType *type, uint64_t value);
     ConstantInt *get_constant_int(unsigned bits, uint64_t value);
@@ -473,6 +578,7 @@ public:
     StructType *create_struct_type(const std::string &name);
 
     StructType *get_struct_type(const std::vector<Type *> &members);
+    VectorType *get_vector_type(Type *element_type, uint64_t num_elements);
 
 private:
     std::unique_ptr<VoidType> void_type_;
@@ -502,6 +608,23 @@ private:
                        std::unique_ptr<ArrayType>>
         array_types_;
     std::vector<std::unique_ptr<StructType>> struct_types_;
+    std::unordered_map<std::pair<Type *, uint64_t>, std::unique_ptr<VectorType>> vector_types_;
+    std::unordered_map<std::string, std::unique_ptr<StructType>> opaque_structs_;
+
+    using FunctionTypeKey = std::pair<Type *, std::vector<Type *>>;
+    struct FunctionTypeKeyHash
+    {
+        size_t operator()(const FunctionTypeKey &key) const
+        {
+            size_t hash = std::hash<Type *>{}(key.first);
+            for (auto *type : key.second)
+            {
+                hash ^= std::hash<Type *>{}(type);
+            }
+            return hash;
+        }
+    };
+    std::unordered_map<FunctionTypeKey, std::unique_ptr<FunctionType>, FunctionTypeKeyHash> function_types_;
 };
 
 //===----------------------------------------------------------------------===//
