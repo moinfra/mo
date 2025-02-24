@@ -26,3 +26,10 @@ cc_binary(
     srcs = ["ast_printer_bin.cc"],
     deps = [":ast_printer"],
 )
+
+cc_library(
+    name = "ir",
+    srcs = ["ir.cc"],
+    hdrs = ["ir.h"],
+    visibility = ["//visibility:public"],
+)

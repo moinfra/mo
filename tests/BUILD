@@ -15,5 +15,13 @@ cc_test(
         "//src:ast_printer",
         "@googletest//:gtest_main",
     ],
-    features = ["cpp_standard"],
+)
+
+cc_test(
+    name = "ir_test",
+    srcs = ["ir_test.cc"],
+    deps = [
+        "//src:ir",
+        "@googletest//:gtest_main",
+    ],
 )
