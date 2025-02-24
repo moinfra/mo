@@ -17,25 +17,26 @@ IntegerType *IntegerType::get(Module *m, unsigned bits)
 }
 
 FloatType::FloatType(Module *m, FloatType::Precision precision)
-    : Type(FpTy, m), precision_(precision) {
-        switch (precision)
-        {
-            case Half:
-                bits_ = 16;
-                break;
-            case Single:
-                bits_ = 32;
-                break;
-            case Double:
-                bits_ = 64;
-                break;
-            case Quad:
-                bits_ = 128;
-                break;
-            default:
-                assert(0 && "Invalid float precision");
-        }
+    : Type(FpTy, m), precision_(precision)
+{
+    switch (precision)
+    {
+    case Half:
+        bits_ = 16;
+        break;
+    case Single:
+        bits_ = 32;
+        break;
+    case Double:
+        bits_ = 64;
+        break;
+    case Quad:
+        bits_ = 128;
+        break;
+    default:
+        assert(0 && "Invalid float precision");
     }
+}
 
 FloatType *FloatType::get(Module *m, FloatType::Precision precision)
 {
@@ -311,6 +312,15 @@ Function *Module::create_function(
         std::make_unique<Function>(name, this, return_type, params));
     function_ptrs_.push_back(functions_.back().get());
     return function_ptrs_.back();
+}
+
+GlobalVariable *Module::create_global_variable(Type *type, bool is_constant, Constant *initializer, const std::string &name)
+{
+    auto *gv_ptr = new GlobalVariable(type, is_constant, initializer, name);
+    auto gv = std::unique_ptr<GlobalVariable>(gv_ptr);
+    global_variables_.push_back(std::move(gv));
+    global_variable_ptrs_.push_back(gv_ptr);
+    return gv_ptr;
 }
 
 IntegerType *Module::get_integer_type(unsigned bits)

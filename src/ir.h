@@ -14,6 +14,7 @@ class Type;
 class Value;
 class User;
 class Function;
+class GlobalVariable;
 class BasicBlock;
 class Instruction;
 class Constant;
@@ -66,27 +67,28 @@ public:
         StructTy,
         VecTy,
     };
-    static const char* id_to_str(TypeID id) {
+    static const char *id_to_str(TypeID id)
+    {
         switch (id)
         {
-            case VoidTy:
-                return "void";
-            case IntTy:
-                return "i";
-            case FpTy:
-                return "f";
-            case PtrTy:
-                return "ptr";
-            case FuncTy:
-                return "func";
-            case ArrayTy:
-                return "array";
-            case StructTy:
-                return "struct";
-            case VecTy:
-                return "vec";
-            default:
-                return "unknown";
+        case VoidTy:
+            return "void";
+        case IntTy:
+            return "i";
+        case FpTy:
+            return "f";
+        case PtrTy:
+            return "ptr";
+        case FuncTy:
+            return "func";
+        case ArrayTy:
+            return "array";
+        case StructTy:
+            return "struct";
+        case VecTy:
+            return "vec";
+        default:
+            return "unknown";
         }
     }
 
@@ -581,6 +583,8 @@ public:
         return create_function(name, return_type, std::vector<std::pair<std::string, Type *>>(params));
     }
 
+    GlobalVariable *create_global_variable(Type *type, bool is_constant, Constant *initializer, const std::string &name = "");
+
     Type *get_void_type();
     IntegerType *get_integer_type(unsigned bits);
     FloatType *get_float_type(FloatType::Precision precision);
@@ -595,6 +599,7 @@ public:
     ConstantFP *get_constant_fp(FloatType::Precision precision, double value);
 
     const std::vector<Function *> &functions() const { return function_ptrs_; }
+    const std::vector<GlobalVariable *> &global_variables() const { return global_variable_ptrs_; }
 
     ArrayType *get_array_type(Type *element_type, uint64_t num_elements);
 
@@ -622,6 +627,9 @@ private:
 
     std::vector<std::unique_ptr<Function>> functions_;
     std::vector<Function *> function_ptrs_;
+
+    std::vector<std::unique_ptr<GlobalVariable>> global_variables_;
+    std::vector<GlobalVariable *> global_variable_ptrs_;
 
     friend class ArrayType;
     friend class StructType;
@@ -740,7 +748,6 @@ private:
     friend class Module;
 };
 
-// Global variable/constant
 class GlobalVariable : public Constant
 {
 public:
@@ -932,7 +939,7 @@ private:
 };
 
 //===----------------------------------------------------------------------===//
-//                           Address Calculation Instruction Subclasses
+//      Address Calculation Instruction Subclasses
 //===----------------------------------------------------------------------===//
 class GetElementPtrInst : public Instruction
 {
