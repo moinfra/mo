@@ -152,8 +152,8 @@ void User::remove_use_of(Value *v)
 //                           Instruction Implementation
 //===----------------------------------------------------------------------===//
 Instruction::Instruction(Opcode opcode, Type *type, BasicBlock *parent,
-                         std::vector<Value *> operands)
-    : User(type, ""), opcode_(opcode), parent_(parent),
+                         std::vector<Value *> operands, const std::string &name = "")
+    : User(type, name), opcode_(opcode), parent_(parent),
       prev_(nullptr), next_(nullptr)
 {
     operands_ = std::move(operands);
@@ -232,6 +232,11 @@ void BasicBlock::add_successor(BasicBlock *bb)
         successors_.push_back(bb);
         bb->predecessors_.push_back(this);
     }
+}
+
+void BasicBlock::link_instruction(Instruction *inst)
+{
+    insert_before(tail_, std::unique_ptr<Instruction>(inst));
 }
 
 //===----------------------------------------------------------------------===//
@@ -357,36 +362,42 @@ ConstantInt *ConstantInt::get(Module *m, IntegerType *type, uint64_t value)
     return m->get_constant_int(type, value);
 }
 
-ConstantInt* ConstantInt::zext_value(Module *m, IntegerType *dest_type) const {
+ConstantInt *ConstantInt::zext_value(Module *m, IntegerType *dest_type) const
+{
     assert(dest_type->bits() > type()->bits());
     return ConstantInt::get(m, dest_type, value_);
 }
 
-ConstantInt* ConstantInt::sext_value(Module *m, IntegerType *dest_type) const {
+ConstantInt *ConstantInt::sext_value(Module *m, IntegerType *dest_type) const
+{
     assert(dest_type->bits() > type()->bits());
     const uint64_t sign_bit = 1ULL << (type()->bits() - 1);
-    const uint64_t sign_extended = (value_ & sign_bit) ? 
-        (value_ | ~((1ULL << type()->bits()) - 1)) : value_;
+    const uint64_t sign_extended = (value_ & sign_bit) ? (value_ | ~((1ULL << type()->bits()) - 1)) : value_;
     return ConstantInt::get(m, dest_type, sign_extended);
 }
 
-std::string ConstantInt::as_string() const {
+std::string ConstantInt::as_string() const
+{
     return type()->name() + " " + std::to_string(value_);
 }
 
 // ---------- ConstantFP ----------
-std::string ConstantFP::as_string() const {
+std::string ConstantFP::as_string() const
+{
     std::stringstream ss;
     ss << type()->name() << " " << std::fixed << value_;
     return ss.str();
 }
 
 // ---------- ConstantArray ----------
-std::string ConstantArray::as_string() const {
+std::string ConstantArray::as_string() const
+{
     std::stringstream ss;
     ss << type()->name() << " [";
-    for (size_t i = 0; i < elements_.size(); ++i) {
-        if (i > 0) ss << ", ";
+    for (size_t i = 0; i < elements_.size(); ++i)
+    {
+        if (i > 0)
+            ss << ", ";
         ss << elements_[i]->as_string();
     }
     ss << "]";
@@ -394,11 +405,14 @@ std::string ConstantArray::as_string() const {
 }
 
 // ---------- ConstantStruct ----------
-std::string ConstantStruct::as_string() const {
+std::string ConstantStruct::as_string() const
+{
     std::stringstream ss;
     ss << type()->name() << " {";
-    for (size_t i = 0; i < members_.size(); ++i) {
-        if (i > 0) ss << ", ";
+    for (size_t i = 0; i < members_.size(); ++i)
+    {
+        if (i > 0)
+            ss << ", ";
         ss << members_[i]->as_string();
     }
     ss << "}";
@@ -406,19 +420,22 @@ std::string ConstantStruct::as_string() const {
 }
 
 // ---------- GlobalVariable ----------
-std::string GlobalVariable::as_string() const {
-    return "@" + name() + " = " + 
-        (is_constant_ ? "constant " : "global ") + 
-        initializer_->as_string();
+std::string GlobalVariable::as_string() const
+{
+    return "@" + name() + " = " +
+           (is_constant_ ? "constant " : "global ") +
+           initializer_->as_string();
 }
 
 // ---------- ConstantPointerNull ----------
-std::string ConstantPointerNull::as_string() const {
+std::string ConstantPointerNull::as_string() const
+{
     return type()->name() + " null";
 }
 
 // ---------- ConstantAggregateZero ----------
-std::string ConstantAggregateZero::as_string() const {
+std::string ConstantAggregateZero::as_string() const
+{
     return type()->name() + " zeroinitializer";
 }
 
@@ -457,6 +474,15 @@ BasicBlock *BranchInst::get_true_successor() const
 
 BasicBlock *BranchInst::get_false_successor() const { return false_bb_; }
 
+ReturnInst::ReturnInst(Value *value, BasicBlock *parent)
+    : Instruction(Opcode::ret, Type::get_void_type(parent->parent()->parent()),
+                  parent, {value}) {}
+
+ReturnInst *ReturnInst::create(Value *value, BasicBlock *parent)
+{
+    return new ReturnInst(value, parent);
+}
+
 PhiInst::PhiInst(Type *type, BasicBlock *parent)
     : Instruction(Opcode::phi, type, parent, {}) {}
 
@@ -491,6 +517,14 @@ ICmpInst *ICmpInst::create(Predicate pred, Value *lhs, Value *rhs,
     return inst;
 }
 
+FCmpInst::FCmpInst(Predicate pred, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
+    : Instruction(Opcode::fcmp, type, parent, operands, name), pred_(pred) {}
+
+FCmpInst *FCmpInst::create(Predicate pred, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
+{
+    return new FCmpInst(pred, lhs->type(), parent, {lhs, rhs}, name);
+}
+
 AllocaInst::AllocaInst(Type *allocated_type, Type *ptr_type, BasicBlock *parent)
     : Instruction(Opcode::alloca_, ptr_type, parent, {}),
       allocated_type_(allocated_type) {}
@@ -500,7 +534,7 @@ AllocaInst *AllocaInst::create(Type *allocated_type, BasicBlock *parent,
 {
     Type *ptr_type = PointerType::get(parent->parent()->parent(), allocated_type);
     auto *inst = new AllocaInst(allocated_type, ptr_type, parent);
-    inst->set_name(name);
+    inst->set_name(name); // TODO: set by intializer?
     return inst;
 }
 
@@ -533,7 +567,8 @@ GetElementPtrInst::GetElementPtrInst(Type *result_type, BasicBlock *parent,
     operands_.insert(operands_.end(), indices.begin(), indices.end());
 }
 
-const std::vector<Value *> &GetElementPtrInst::indices() const {
+const std::vector<Value *> &GetElementPtrInst::indices() const
+{
     return std::vector<Value *>(operands_.begin() + 1, operands_.end());
 }
 
@@ -580,4 +615,33 @@ GetElementPtrInst *GetElementPtrInst::create(Value *ptr, std::vector<Value *> in
     auto *inst = new GetElementPtrInst(result_type, parent, ptr, indices);
     inst->set_name(name);
     return inst;
+}
+
+BinaryInst::BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
+    : Instruction(op, type, parent, operands, name) {}
+
+bool BinaryInst::isBinaryOp(Opcode op)
+{
+    return op == Opcode::add || op == Opcode::sub || op == Opcode::mul ||
+           op == Opcode::udiv || op == Opcode::sdiv;
+}
+
+BinaryInst *BinaryInst::create(Opcode op, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
+{
+    assert(isBinaryOp(op) && "Invalid binary opcode");
+    return new BinaryInst(op, lhs->type(), parent, {lhs, rhs}, name);
+}
+
+ConversionInst::ConversionInst(Opcode op, Type *dest_type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
+    : Instruction(op, dest_type, parent, operands, name) {}
+
+bool ConversionInst::isConversionOp(Opcode op)
+{
+    return op == Opcode::zext || op == Opcode::sext || op == Opcode::trunc;
+}
+
+ConversionInst *ConversionInst::create(Opcode op, Value *val, Type *dest_type, BasicBlock *parent, const std::string &name)
+{
+    assert(isConversionOp(op) && "Invalid conversion opcode");
+    return new ConversionInst(op, dest_type, parent, {val}, name);
 }

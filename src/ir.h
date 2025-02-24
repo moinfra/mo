@@ -71,7 +71,6 @@ public:
     virtual std::string name() const = 0;
     virtual unsigned bits() const = 0;
 
-
     Module *module() const { return module_; }
 
     static Type *get_void_type(Module *m);
@@ -113,7 +112,6 @@ public:
     unsigned bits() const override { return bits_; }
     size_t size() const override { return (bits_ + 7) / 8; }
     std::string name() const override { return "f" + std::to_string(bits_); }
-
 
 private:
     explicit FloatType(Module *m, Precision precision);
@@ -207,7 +205,6 @@ public:
         return result;
     }
     unsigned bits() const override { return size() * 8; }
-
 
     // Creates an opaque struct (forward declaration)
     static StructType *create(Module *m, const std::string &name);
@@ -326,7 +323,7 @@ protected:
     friend class BasicBlock;
 
     Instruction(Opcode opcode, Type *type, BasicBlock *parent,
-                std::vector<Value *> operands);
+                std::vector<Value *> operands, const std::string &name = "");
 
     Opcode opcode_;
     BasicBlock *parent_;
@@ -352,6 +349,7 @@ public:
     const std::vector<BasicBlock *> &predecessors() const { return predecessors_; }
     const std::vector<BasicBlock *> &successors() const { return successors_; }
     void add_successor(BasicBlock *bb);
+    void link_instruction(Instruction *inst);
 
 private:
     Function *parent_;
@@ -361,7 +359,6 @@ private:
     std::vector<BasicBlock *> predecessors_;
     std::vector<BasicBlock *> successors_;
 
-    void link_instruction(Instruction *inst);
 };
 
 //===----------------------------------------------------------------------===//
@@ -610,6 +607,17 @@ private:
     BasicBlock *false_bb_;
 };
 
+class ReturnInst : public Instruction
+{
+public:
+    static ReturnInst *create(Value *value, BasicBlock *parent);
+
+    Value *value() const { return operands_.size() > 0 ? operands_[0] : nullptr; }
+
+private:
+    ReturnInst(Value *value, BasicBlock *parent);
+};
+
 class PhiInst : public Instruction
 {
 public:
@@ -650,6 +658,27 @@ public:
 private:
     ICmpInst(BasicBlock *parent, std::vector<Value *> ops);
 
+    Predicate pred_;
+};
+
+class FCmpInst : public Instruction
+{
+public:
+    enum Predicate
+    {
+        EQ,
+        NE,
+        OLT,
+        OLE,
+        OGT,
+        OGE
+    };
+
+    static FCmpInst *create(Predicate pred, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name = "");
+    Predicate predicate() const { return pred_; }
+
+private:
+    FCmpInst(Predicate pred, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
     Predicate pred_;
 };
 
@@ -714,64 +743,26 @@ private:
                       Value *ptr, std::vector<Value *> indices);
 };
 
-//===----------------------------------------------------------------------===//
-//                            IRBuilder Framework
-//===----------------------------------------------------------------------===//
-class IRBuilder
+class BinaryInst : public Instruction
 {
 public:
-    IRBuilder(Module *module = nullptr);
-
-    // Basic block positioning
-    void set_insert_point(BasicBlock *bb);
-
-    void set_insert_point(Instruction *inst);
-
-    // Instruction creation methods
-    Value *create_add(Value *lhs, Value *rhs, const std::string &name = "");
-
-    Value *create_icmp(ICmpInst::Predicate pred, Value *lhs, Value *rhs,
-                       const std::string &name = "");
-
-    BranchInst *create_br(BasicBlock *target);
-
-    BranchInst *create_cond_br(Value *cond, BasicBlock *true_bb,
-                               BasicBlock *false_bb);
-
-    PhiInst *create_phi(Type *type, const std::string &name = "");
-
-    // Constant creation
-    ConstantInt *get_int32(int32_t val);
-
-    // Memory operations
-    AllocaInst *create_alloca(Type *type, const std::string &name = "");
-
-    LoadInst *create_load(Value *ptr, const std::string &name = "");
-
-    StoreInst *create_store(Value *value, Value *ptr);
-
-    GetElementPtrInst *create_gep(Value *ptr, std::vector<Value *> indices,
-                                  const std::string &name = "");
-
-    template <typename... Args>
-    GetElementPtrInst *create_gep(Value *ptr, Args... indices);
-
-    Value *create_struct_gep(Value *struct_ptr, unsigned idx,
-                             const std::string &name);
-
-    ArrayType *get_array_type(Type *elem_ty, uint64_t num);
-
-    StructType *create_struct_type(const std::string &name);
-
-    StructType *get_struct_type(const std::vector<Type *> &members);
+    static BinaryInst *create(Opcode op, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name = "");
+    Value *get_lhs() const { return operand(0); }
+    Value *get_rhs() const { return operand(1); }
 
 private:
-    void insert(Instruction *inst);
+    BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
+    static bool isBinaryOp(Opcode op);
+};
 
-    Value *create_binary(Opcode opc, Value *lhs, Value *rhs,
-                         const std::string &name);
+class ConversionInst : public Instruction
+{
+public:
+    static ConversionInst *create(Opcode op, Value *val, Type *dest_type, BasicBlock *parent, const std::string &name = "");
+    Value *get_source() const { return operand(0); }
+    Type *get_dest_type() const { return type(); }
 
-    Module *module_;
-    BasicBlock *insert_block_;
-    Instruction *insert_pos_;
+private:
+    ConversionInst(Opcode op, Type *dest_type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
+    static bool isConversionOp(Opcode op);
 };
