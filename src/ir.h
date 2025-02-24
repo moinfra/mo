@@ -1,6 +1,8 @@
 #pragma once
 #include <iostream>
 #include <vector>
+#include <cstring>
+#include <type_traits>
 #include <memory>
 #include <string>
 #include <cassert>
@@ -25,6 +27,7 @@ class StoreInst;
 class GetElementPtrInst;
 class IRBuilder;
 class ConstantInt;
+class ConstantFP;
 class IntegerType;
 class VoidType;
 class PointerType;
@@ -56,6 +59,7 @@ public:
     {
         void_ty_id,     // void type
         integer_ty_id,  // integer type
+        float_ty_id,    // floating point type
         pointer_ty_id,  // pointer type
         function_ty_id, // function type
         array_ty_id,    // array type ID
@@ -358,7 +362,6 @@ private:
 
     std::vector<BasicBlock *> predecessors_;
     std::vector<BasicBlock *> successors_;
-
 };
 
 //===----------------------------------------------------------------------===//
@@ -389,8 +392,55 @@ private:
 //===----------------------------------------------------------------------===//
 //                              Module
 //===----------------------------------------------------------------------===//
+
 class Module
 {
+    struct DoublePairHash
+    {
+        template <typename T1, typename T2>
+        size_t operator()(const std::pair<T1, T2> &p) const
+        {
+            // 确保 double 的二进制表示被完整哈希
+            static_assert(sizeof(double) == sizeof(uint64_t), "Unexpected double size");
+
+            size_t hash1 = std::hash<T1>{}(p.first);
+            uint64_t bits = 0;
+
+            if constexpr (std::is_same_v<T2, double>)
+            {
+                // 将 double 的二进制表示转为 uint64_t
+                std::memcpy(&bits, &p.second, sizeof(double));
+            }
+            else
+            {
+                bits = std::hash<T2>{}(p.second);
+            }
+
+            size_t hash2 = std::hash<uint64_t>{}(bits);
+            return hash1 ^ (hash2 << 1); // 简单组合哈希（可用更复杂的方式）
+        }
+    };
+
+    struct DoublePairEqual
+    {
+        template <typename T1, typename T2>
+        bool operator()(const std::pair<T1, T2> &lhs, const std::pair<T1, T2> &rhs) const
+        {
+            if (lhs.first != rhs.first)
+                return false;
+
+            if constexpr (std::is_same_v<T2, double>)
+            {
+                // 按二进制严格比较 double
+                return std::memcmp(&lhs.second, &rhs.second, sizeof(double)) == 0;
+            }
+            else
+            {
+                return lhs.second == rhs.second;
+            }
+        }
+    };
+
 public:
     friend class VoidType;
     friend class PointerType;
@@ -406,10 +456,15 @@ public:
 
     Type *get_void_type();
     IntegerType *get_integer_type(unsigned bits);
+    FloatType *get_float_type(FloatType::Precision precision);
+
     PointerType *get_pointer_type(Type *element_type);
 
     ConstantInt *get_constant_int(IntegerType *type, uint64_t value);
     ConstantInt *get_constant_int(unsigned bits, uint64_t value);
+
+    ConstantFP *get_constant_fp(FloatType *type, double value);
+    ConstantFP *get_constant_fp(FloatType::Precision precision, double value);
 
     const std::vector<Function *> &functions() const { return function_ptrs_; }
 
@@ -422,11 +477,19 @@ public:
 private:
     std::unique_ptr<VoidType> void_type_;
     std::unordered_map<unsigned, std::unique_ptr<IntegerType>> integer_types_;
+    std::unordered_map<FloatType::Precision, std::unique_ptr<FloatType>> float_types_;
     std::unordered_map<Type *, std::unique_ptr<PointerType>> pointer_types_;
 
     std::unordered_map<std::pair<Type *, uint64_t>,
                        std::unique_ptr<ConstantInt>>
         constant_ints_;
+
+    std::unordered_map<
+        std::pair<Type *, double>,
+        std::unique_ptr<ConstantFP>,
+        DoublePairHash,
+        DoublePairEqual>
+        constant_fps_;
 
     std::vector<std::unique_ptr<Function>> functions_;
     std::vector<Function *> function_ptrs_;
@@ -464,7 +527,6 @@ public:
     uint64_t value() const { return value_; }
 
     ConstantInt *zext_value(Module *m, IntegerType *dest_type) const;
-
     ConstantInt *sext_value(Module *m, IntegerType *dest_type) const;
 
     std::string as_string() const override;
@@ -480,15 +542,15 @@ private:
 class ConstantFP : public Constant
 {
 public:
-    static ConstantFP *get(Module *m, Type *type, double value);
+    static ConstantFP *get(Module *m, FloatType *type, double value);
+    static ConstantFP *get(Module *m, FloatType::Precision precision, double value);
 
     double value() const { return value_; }
 
     std::string as_string() const override;
 
 private:
-    ConstantFP(Type *type, double value)
-        : Constant(type), value_(value) {}
+    ConstantFP(FloatType *type, double value);
 
     double value_;
     friend class Module;
@@ -734,7 +796,7 @@ public:
                                      const std::string &name = "");
 
     Value *base_pointer() const { return operand(0); }
-    const std::vector<Value *> &indices() const;
+    const std::vector<Value *> indices() const;
 
 private:
     static Type *get_result_type(Type *base_type, const std::vector<Value *> &indices);

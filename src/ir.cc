@@ -16,6 +16,14 @@ IntegerType *IntegerType::get(Module *m, unsigned bits)
     return m->get_integer_type(bits);
 }
 
+FloatType::FloatType(Module *m, FloatType::Precision precision)
+    : Type(float_ty_id, m), precision_(precision) {}
+
+FloatType *FloatType::get(Module *m, FloatType::Precision precision)
+{
+    return m->get_float_type(precision);
+}
+
 PointerType::PointerType(Module *m, Type *element_type)
     : Type(pointer_ty_id, m), element_type_(element_type) {}
 
@@ -152,7 +160,7 @@ void User::remove_use_of(Value *v)
 //                           Instruction Implementation
 //===----------------------------------------------------------------------===//
 Instruction::Instruction(Opcode opcode, Type *type, BasicBlock *parent,
-                         std::vector<Value *> operands, const std::string &name = "")
+                         std::vector<Value *> operands, const std::string &name)
     : User(type, name), opcode_(opcode), parent_(parent),
       prev_(nullptr), next_(nullptr)
 {
@@ -287,6 +295,16 @@ IntegerType *Module::get_integer_type(unsigned bits)
     return type.get();
 }
 
+FloatType *Module::get_float_type(FloatType::Precision precision)
+{
+    auto &type = float_types_[precision];
+    if (!type)
+    {
+        type = std::unique_ptr<FloatType>(new FloatType(this, precision));
+    }
+    return type.get();
+}
+
 PointerType *Module::get_pointer_type(Type *element_type)
 {
     auto &type = pointer_types_[element_type];
@@ -351,6 +369,23 @@ ConstantInt *Module::get_constant_int(unsigned bits, uint64_t value)
     return get_constant_int(get_integer_type(bits), value);
 }
 
+ConstantFP *Module::get_constant_fp(FloatType *type, double value)
+{
+    if (auto it = constant_fps_.find({type, value}); it != constant_fps_.end())
+    {
+        return it->second.get();
+    }
+
+    auto &constant = constant_fps_[{type, value}];
+    constant = std::unique_ptr<ConstantFP>(new ConstantFP(type, value));
+    return constant.get();
+}
+
+ConstantFP *Module::get_constant_fp(FloatType::Precision precision, double value)
+{
+    return get_constant_fp(get_float_type(precision), value);
+}
+
 //===----------------------------------------------------------------------===//
 //                            ConstantInt Implementation
 //===----------------------------------------------------------------------===//
@@ -381,7 +416,9 @@ std::string ConstantInt::as_string() const
     return type()->name() + " " + std::to_string(value_);
 }
 
-// ---------- ConstantFP ----------
+//===----------------------------------------------------------------------===//
+//                            ConstantFP Implementation
+//===----------------------------------------------------------------------===//
 std::string ConstantFP::as_string() const
 {
     std::stringstream ss;
@@ -389,7 +426,19 @@ std::string ConstantFP::as_string() const
     return ss.str();
 }
 
-// ---------- ConstantArray ----------
+ConstantFP::ConstantFP(FloatType *type, double value)
+    : Constant(type, ""), value_(value) {}
+
+ConstantFP *ConstantFP::get(Module *m, FloatType *type, double value)
+{
+    return m->get_constant_fp(type, value);
+}
+
+ConstantFP *ConstantFP::get(Module *m, FloatType::Precision precision, double value)
+{
+    return m->get_constant_fp(m->get_float_type(precision), value);
+}
+
 std::string ConstantArray::as_string() const
 {
     std::stringstream ss;
@@ -567,7 +616,7 @@ GetElementPtrInst::GetElementPtrInst(Type *result_type, BasicBlock *parent,
     operands_.insert(operands_.end(), indices.begin(), indices.end());
 }
 
-const std::vector<Value *> &GetElementPtrInst::indices() const
+const std::vector<Value *> GetElementPtrInst::indices() const
 {
     return std::vector<Value *>(operands_.begin() + 1, operands_.end());
 }
