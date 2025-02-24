@@ -33,3 +33,11 @@ cc_library(
     hdrs = ["ir.h"],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "ir_builder",
+    srcs = ["ir_builder.cc"],
+    hdrs = ["ir_builder.h"],
+    deps = [":ir"],
+    visibility = ["//visibility:public"],
+)
