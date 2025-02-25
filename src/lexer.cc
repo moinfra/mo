@@ -32,7 +32,7 @@ Token Lexer::next_token()
     }
 
     char c = input[pos];
-    if (isdigit(c))
+    if (isdigit(c) || (c == '.' && isdigit(peek(1))))
     {
         return parse_number();
     }
@@ -175,25 +175,65 @@ void Lexer::skip_block_comment()
     throw LexerError("Unclosed block comment");
 }
 
-Token Lexer::parse_number()
-{
+Token Lexer::parse_number() {
     int start_line = current_line;
     int start_col = current_col;
     std::string numStr;
     bool isFloat = false;
 
-    while (pos < input.size() && (isdigit(input[pos]) || input[pos] == '.'))
-    {
-        if (input[pos] == '.')
-        {
-            if (isFloat)
-                break;
-            isFloat = true;
-        }
+    // Parse the integer part
+    while (pos < input.size() && isdigit(input[pos])) {
         numStr += input[pos];
         advance();
     }
 
+    // Parse the fractional part (if any)
+    if (pos < input.size() && input[pos] == '.') {
+        isFloat = true;
+        numStr += input[pos]; // Add the decimal point
+        advance();
+
+        // Parse the digits after the decimal point
+        while (pos < input.size() && isdigit(input[pos])) {
+            numStr += input[pos];
+            advance();
+        }
+
+        // Ensure there is at least one digit after the decimal point
+        if (numStr.back() == '.') {
+            throw std::runtime_error("Invalid float literal: " + numStr + " (missing fractional part)");
+        }
+    }
+
+    // Parse the exponent part (if any, for scientific notation)
+    if (pos < input.size() && (input[pos] == 'e' || input[pos] == 'E')) {
+        isFloat = true;
+        numStr += input[pos]; // Add 'e' or 'E'
+        advance();
+
+        // Parse the optional sign
+        if (pos < input.size() && (input[pos] == '+' || input[pos] == '-')) {
+            numStr += input[pos];
+            advance();
+        }
+
+        // Parse the exponent digits
+        if (pos < input.size() && isdigit(input[pos])) {
+            while (pos < input.size() && isdigit(input[pos])) {
+                numStr += input[pos];
+                advance();
+            }
+        } else {
+            throw std::runtime_error("Invalid exponent in float literal: " + numStr + " (missing exponent)");
+        }
+    }
+
+    // Ensure the generated numStr is not empty
+    if (numStr.empty()) {
+        throw std::runtime_error("Empty number literal");
+    }
+
+    // Determine the token type
     TokenType type = isFloat ? TokenType::FloatLiteral : TokenType::IntegerLiteral;
     return Token(type, start_line, start_col, current_line, current_col - 1, numStr);
 }
@@ -443,6 +483,9 @@ std::string token_type_to_string(TokenType type)
         break;
     case TokenType::Float:
         result = "float";
+        break;
+    case TokenType::String:
+        result = "string";
         break;
     case TokenType::Const:
         result = "const";

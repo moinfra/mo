@@ -21,9 +21,11 @@ enum class TokenType
     Impl,
     Fn,
     Return,
+    // Types
     Int,
     Float,
     String,
+
     Const,
     Sizeof,
     Cast,
