@@ -118,7 +118,7 @@ string ASTPrinter::print(const Type &type)
         result += "struct " + type.name;
         break;
     case Type::Kind::Alias:
-        result += "<type-name>";
+        result += type.name;
         break;
     case Type::Kind::Void:
         result += "void";

@@ -38,7 +38,7 @@ TEST(ParserTest, PointerVarDecl) {
     ASTPrinter printer;
     std::string ast_text = printer.print(ast);
     std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "let ptr: *<type-name> = malloc(sizeof(<type-name>));\n");
+    EXPECT_EQ(ast_text, "let ptr: *MyStruct = malloc(sizeof(MyStruct));\n");
 }
 
 
@@ -51,7 +51,7 @@ TEST(ParserTest, StaticMethodCall) {
     ASTPrinter printer;
     std::string ast_text = printer.print(ast);
     std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "let v: <type-name> = Vector2::new(1, 2);\n");
+    EXPECT_EQ(ast_text, "let v: Vector2 = Vector2::new(1, 2);\n");
 }
 
 TEST(ParserTest, StructMemberAccess) {
@@ -63,7 +63,7 @@ TEST(ParserTest, StructMemberAccess) {
     ASTPrinter printer;
     std::string ast_text = printer.print(ast);
     std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "fn f(v: <type-name>) -> void {\n  (v.x = 3);\n}\n\n");
+    EXPECT_EQ(ast_text, "fn f(v: Vector2) -> void {\n  (v.x = 3);\n}\n\n");
 }
 
 TEST(ParserTest, PointerMemberAccess) {
@@ -75,7 +75,7 @@ TEST(ParserTest, PointerMemberAccess) {
     ASTPrinter printer;
     std::string ast_text = printer.print(ast);
     std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "fn f(ptr: *<type-name>) -> void {\n  (ptr->x = 3);\n}\n\n");
+    EXPECT_EQ(ast_text, "fn f(ptr: *MyStruct) -> void {\n  (ptr->x = 3);\n}\n\n");
 }
 
 TEST(ParserTest, HelloWorld) {
