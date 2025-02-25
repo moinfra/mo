@@ -41,3 +41,11 @@ cc_library(
     deps = [":ir"],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "ir_printer",
+    # srcs = ["ir_printer.cc"],
+    hdrs = ["ir_printer.h"],
+    deps = [":ir"],
+    visibility = ["//visibility:public"],
+)

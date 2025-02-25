@@ -26,12 +26,21 @@ cc_test(
     ],
 )
 
-
 cc_test(
     name = "ir_builder_test",
     srcs = ["ir_builder_test.cc"],
     deps = [
         "//src:ir_builder",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "ir_printer_test",
+    srcs = ["ir_printer_test.cc"],
+    deps = [
+        "//src:ir_builder",
+        "//src:ir_printer",
         "@googletest//:gtest_main",
     ],
 )

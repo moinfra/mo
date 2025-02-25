@@ -226,7 +226,6 @@ void BasicBlock::insert_before(Instruction *pos, std::unique_ptr<Instruction> in
     if (!pos)
     {
         // Insert at the end
-        debug("ir: inserting at the end");
         if (!tail_)
         {
             head_ = tail_ = new_inst;
@@ -240,7 +239,6 @@ void BasicBlock::insert_before(Instruction *pos, std::unique_ptr<Instruction> in
     }
     else
     {
-        debug("ir: inserting before pos");
         new_inst->next_ = pos;
         new_inst->prev_ = pos->prev_;
         if (pos->prev_)
@@ -263,7 +261,6 @@ void BasicBlock::insert_after(Instruction *pos, std::unique_ptr<Instruction> ins
     if (!pos)
     {
         // Insert at the beginning
-        debug("ir: inserting at the beginning");
         if (!head_)
         {
             head_ = tail_ = new_inst;
@@ -277,7 +274,6 @@ void BasicBlock::insert_after(Instruction *pos, std::unique_ptr<Instruction> ins
     }
     else
     {
-        debug("ir: inserting after pos");
         new_inst->prev_ = pos;
         new_inst->next_ = pos->next_;
         if (pos->next_)
