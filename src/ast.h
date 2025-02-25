@@ -177,6 +177,12 @@ struct AddressOfExpr : Expr
     AddressOfExpr(ExprPtr operand) : operand(std::move(operand)) {}
 };
 
+struct DerefExpr : Expr
+{
+    ExprPtr operand;
+    DerefExpr(ExprPtr operand) : operand(std::move(operand)) {}
+};
+
 struct InitListExpr : Expr
 {
     std::vector<ExprPtr> members;

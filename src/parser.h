@@ -97,6 +97,7 @@ private:
     ExprPtr parse_cast();
     ExprPtr parse_sizeof();
     ExprPtr parse_address_of();
+    ExprPtr parse_deref();
     ExprPtr parse_init_list();
 
     ExprPtr parse_unary();

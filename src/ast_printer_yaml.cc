@@ -457,6 +457,20 @@ string ASTPrinter::print(const AddressOfExpr &expr)
     return oss.str();
 }
 
+string ASTPrinter::print(const DerefExpr &expr)
+{
+    ostringstream oss;
+    oss << indent() << "deref_expr:\n";
+    enter_scope();
+    oss << indent() << "operand:\n";
+    enter_scope();
+    oss << print(*expr.operand);
+    leave_scope();
+    leave_scope();
+    return oss.str();
+}
+
+
 string ASTPrinter::print(const StructLiteralExpr &expr)
 {
     ostringstream oss;

@@ -28,6 +28,7 @@ private:
     std::string print(const CastExpr &expr);
     std::string print(const SizeofExpr &expr);
     std::string print(const AddressOfExpr &expr);
+    std::string print(const DerefExpr &expr);
     std::string print(const InitListExpr &expr);
     std::string print(const FunctionPointerExpr &expr);
     std::string print(const StructLiteralExpr &expr);

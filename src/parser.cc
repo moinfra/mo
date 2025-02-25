@@ -36,6 +36,8 @@ void Parser::init_pratt_rules()
              { return parse_literal(); }, nullptr);
     add_rule(TokenType::Ampersand, 0, [&]
              { return parse_address_of(); }, nullptr);
+    add_rule(TokenType::Star, 0, [&]
+             { return parse_deref(); }, nullptr);
     // add_rule(TokenType::Minus, 0, [&]
     //          { return parse_prefix_expr(); }, nullptr);
     add_rule(TokenType::LParen, 0, [&]
@@ -71,7 +73,7 @@ std::unique_ptr<Expr> Parser::parse_assignment(std::unique_ptr<Expr> left)
     // }
 
     auto equals_token = previous_;
-    advance();                        // Skip =
+    advance(); // Skip =
     auto value = parse_expression();
 
     return std::make_unique<BinaryExpr>(
@@ -649,11 +651,18 @@ ExprPtr Parser::parse_sizeof()
 ExprPtr Parser::parse_address_of()
 {
     consume(TokenType::Ampersand, "Expected '&' in address-of expression");
-    auto expr = std::make_unique<AddressOfExpr>();
-    expr->operand = parse_expression();
+    auto operand = parse_expression();
+    auto expr = std::make_unique<AddressOfExpr>(std::move(operand));
     return expr;
 }
 
+ExprPtr Parser::parse_deref()
+{
+    consume(TokenType::Star, "Expected '*' in dereference expression");
+    auto operand = parse_expression();
+    auto expr = std::make_unique<DerefExpr>(std::move(operand));
+    return expr;
+}
 
 ExprPtr Parser::parse_init_list()
 {

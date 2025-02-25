@@ -50,6 +50,8 @@ string ASTPrinter::print(const Expr &expr)
         return visit(*p);
     if (auto p = dynamic_cast<const AddressOfExpr *>(&expr))
         return visit(*p);
+    if (auto p = dynamic_cast<const DerefExpr *>(&expr))
+        return visit(*p);
     if (auto p = dynamic_cast<const InitListExpr *>(&expr))
         return visit(*p);
     if (auto p = dynamic_cast<const FunctionPointerExpr *>(&expr))
@@ -268,6 +270,11 @@ string ASTPrinter::visit(const SizeofExpr &expr)
 string ASTPrinter::visit(const AddressOfExpr &expr)
 {
     return "&(" + print(*expr.operand) + ")";
+}
+
+string ASTPrinter::visit(const DerefExpr &expr)
+{
+    return "*(" + print(*expr.operand) + ")";
 }
 
 string ASTPrinter::visit(const InitListExpr &expr)
