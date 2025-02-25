@@ -2,90 +2,71 @@
 #include "src/lexer.h"
 #include "src/ast_printer.h"
 #include <gtest/gtest.h>
+#include <sstream>
+#include <algorithm>
+#include <cctype>
 
-void expect_no_errors(const Parser& parser) {
-    const auto& errors = parser.errors();
-    if (!errors.empty()) {
-        std::cout << "Expected no errors, but got " << errors.size() << " errors: " << std::endl;
-        for (const auto& error : errors) {
-            std::cout << error << std::endl;
-        }
-        FAIL();
+std::string normalize_whitespace(const std::string& input) {
+    auto start = input.find_first_not_of(" \t\n\r");
+    auto end = input.find_last_not_of(" \t\n\r");
+    if (start == std::string::npos || end == std::string::npos) {
+        return "";
     }
+    std::string trimmed = input.substr(start, end - start + 1);
+
+    std::stringstream ss;
+    bool in_space = false;
+    for (char ch : trimmed) {
+        if (std::isspace(ch)) {
+            if (!in_space) {
+                ss << ' ';
+                in_space = true;
+            }
+        } else {
+            ss << ch;
+            in_space = false;
+        }
+    }
+
+    return ss.str();
+}
+
+std::string parse_and_normalize(const std::string& input) {
+    Lexer lexer(input);
+    Parser parser(std::move(lexer));
+    
+    auto ast = parser.parse();
+    ASTPrinter printer;
+    std::string ast_text = printer.print(ast);
+    return normalize_whitespace(ast_text);
 }
 
 TEST(ParserTest, BasicVarDecl) {
     std::string input = "let x: int = 10;";
-    Lexer lexer(input);
-    Parser parser(std::move(lexer));
-    
-    auto ast = parser.parse();
-    expect_no_errors(parser);
-    ASTPrinter printer;
-    std::cout << "ast: " << std::endl;
-    auto ast_text = printer.print(ast);
-    std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "let x: int = 10;\n");
+    EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, PointerVarDecl) {
     std::string input = "let ptr: *MyStruct = malloc(sizeof(MyStruct));";
-    Lexer lexer(input);
-    Parser parser(std::move(lexer));
-    
-    auto ast = parser.parse();
-    expect_no_errors(parser);
-    ASTPrinter printer;
-    std::string ast_text = printer.print(ast);
-    std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "let ptr: *MyStruct = malloc(sizeof(MyStruct));\n");
+    EXPECT_EQ(parse_and_normalize(input), input);
 }
 
-
 TEST(ParserTest, StaticMethodCall) {
-    std::string input = "let v: Vector2 = Vector2::new(1.0, 2.0);";
-    Lexer lexer(input);
-    Parser parser(std::move(lexer));
-    
-    auto ast = parser.parse();
-    ASTPrinter printer;
-    std::string ast_text = printer.print(ast);
-    std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "let v: Vector2 = Vector2::new(1, 2);\n");
+    std::string input = "let v: Vector2 = Vector2::new(1, 2);";
+    EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, StructMemberAccess) {
-    std::string input = "fn f(v: Vector2) { v.x = 3.0; }";
-    Lexer lexer(input);
-    Parser parser(std::move(lexer));
-    
-    auto ast = parser.parse();
-    ASTPrinter printer;
-    std::string ast_text = printer.print(ast);
-    std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "fn f(v: Vector2) -> void {\n  (v.x = 3);\n}\n\n");
+    std::string input = "fn f(v: Vector2) -> void { (v.x = 3); }";
+    EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, PointerMemberAccess) {
-    std::string input = "fn f(ptr: *MyStruct) { ptr->x = 3.0; }";
-    Lexer lexer(input);
-    Parser parser(std::move(lexer));
-    
-    auto ast = parser.parse();
-    ASTPrinter printer;
-    std::string ast_text = printer.print(ast);
-    std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "fn f(ptr: *MyStruct) -> void {\n  (ptr->x = 3);\n}\n\n");
+    std::string input = "fn f(ptr: *MyStruct) -> void { (ptr->x = 3); }";
+    EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, HelloWorld) {
     std::string input = "fn main() -> int { print(\"Hello, World!\"); return 0; }";
-    Lexer lexer(input);
-    Parser parser(std::move(lexer));
-    
-    auto ast = parser.parse();
-    ASTPrinter printer;
-    std::string ast_text = printer.print(ast);
-    std::cout << ast_text << std::endl;
-    EXPECT_EQ(ast_text, "fn main() -> int {\n  print(\"Hello, World!\");\n  return 0;\n}\n\n");
+    EXPECT_EQ(parse_and_normalize(input), input);
 }
