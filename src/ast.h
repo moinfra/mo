@@ -22,7 +22,8 @@ using TypePtr = std::unique_ptr<Type>;
 using StmtPtr = std::unique_ptr<Statement>;
 
 // Program Structure
-struct Program {
+struct Program
+{
     std::vector<std::unique_ptr<StructDecl>> structs;
     std::vector<std::unique_ptr<ImplBlock>> impl_blocks;
     std::vector<std::unique_ptr<FunctionDecl>> functions;
@@ -30,37 +31,44 @@ struct Program {
 };
 
 // Type Definition
-struct Type {
-    enum class Kind {
+struct Type
+{
+    enum class Kind
+    {
         Unknown,
         Void,
-        Basic,      // Int/Float/String
-        Pointer,    // T*
-        Array,      // T[N]
-        Function,   // fn() -> T
-        Struct,     // struct { ... }
-        Alias       // 类型别名（如 typedef）
+        Basic,    // Int/Float/String
+        Pointer,  // T*
+        Array,    // T[N]
+        Function, // fn() -> T
+        Struct,   // struct { ... }
+        Alias     // 类型别名（如 typedef）
     };
-    enum class BasicKind { Int, Float, String };
+    enum class BasicKind
+    {
+        Int,
+        Float,
+        String
+    };
 
     Kind kind = Kind::Unknown;
     std::string name;
     bool is_const = false;
-    BasicKind basic_kind;           // 基本类型的种类
+    BasicKind basic_kind; // 基本类型的种类
 
     // for pointer type
-    std::unique_ptr<Type> pointee;
+    TypePtr pointee;
 
     // for array type
-    std::unique_ptr<Type> element_type;
+    TypePtr element_type;
     int array_size = -1;
 
     // for function type
-    std::vector<std::unique_ptr<Type>> params;
-    std::unique_ptr<Type> return_type;
+    std::vector<TypePtr> params;
+    TypePtr return_type;
 
     // for struct type
-    std::unordered_map<std::string, std::unique_ptr<Type>> members;
+    std::unordered_map<std::string, TypePtr> members;
 
     Type() : kind(Kind::Unknown) {}
 
@@ -76,7 +84,7 @@ struct Type {
 
     void swap(Type &a, Type &b) noexcept;
 
-    std::unique_ptr<Type> clone() const;
+    TypePtr clone() const;
 
     static Type get_void_type();
     static Type get_int_type();
@@ -84,8 +92,10 @@ struct Type {
 };
 
 // Expressions
-struct Expr {
-    enum class Category {
+struct Expr
+{
+    enum class Category
+    {
         LValue,
         RValue
     };
@@ -94,75 +104,94 @@ struct Expr {
     Category expr_category = Category::RValue;
 };
 
-struct VariableExpr : Expr {
+struct VariableExpr : Expr
+{
     std::string name;
     VariableExpr(std::string name) : name(std::move(name)) {}
 };
 
-struct IntegerLiteralExpr : Expr {
+struct IntegerLiteralExpr : Expr
+{
     int value;
     IntegerLiteralExpr(int value) : value(value) {}
 };
 
-struct FloatLiteralExpr : Expr {
+struct FloatLiteralExpr : Expr
+{
     float value;
     FloatLiteralExpr(float value) : value(value) {}
 };
 
-struct StringLiteralExpr : Expr {
+struct StringLiteralExpr : Expr
+{
     std::string value;
     StringLiteralExpr(std::string value) : value(std::move(value)) {}
 };
 
-struct BinaryExpr : Expr {
+struct BinaryExpr : Expr
+{
     TokenType op;
-    std::unique_ptr<Expr> left;
-    std::unique_ptr<Expr> right;
+    ExprPtr left;
+    ExprPtr right;
 
     BinaryExpr(TokenType op, ExprPtr left, ExprPtr right)
         : op(op), left(std::move(left)), right(std::move(right)) {}
 };
 
-struct UnaryExpr : Expr {
+struct UnaryExpr : Expr
+{
     TokenType op;
-    std::unique_ptr<Expr> operand;
+    ExprPtr operand;
 
     UnaryExpr(TokenType op, ExprPtr operand)
         : op(op), operand(std::move(operand)) {}
 };
 
-struct CallExpr : Expr {
+struct CallExpr : Expr
+{
     ExprPtr callee;
     std::vector<ExprPtr> args;
 };
 
-struct MemberAccessExpr : Expr {
-    std::unique_ptr<Expr> object;
+struct MemberAccessExpr : Expr
+{
+    ExprPtr object;
     std::string member;
     TokenType accessor;
 };
 
-struct CastExpr : Expr {
-    std::unique_ptr<Type> target_type;
+struct CastExpr : Expr
+{
+    TypePtr target_type;
     ExprPtr expr;
 };
 
-struct SizeofExpr : Expr {
-    std::unique_ptr<Type> target_type;
+struct SizeofExpr : Expr
+{
+    TypePtr target_type;
 };
 
-struct InitListExpr : Expr {
+struct AddressOfExpr : Expr
+{
+    ExprPtr operand;
+    AddressOfExpr(ExprPtr operand) : operand(std::move(operand)) {}
+};
+
+struct InitListExpr : Expr
+{
     std::vector<ExprPtr> members;
 };
 
-struct FunctionPointerExpr : Expr {
-    std::vector<std::unique_ptr<Type>> param_types;
-    std::unique_ptr<Type> return_type;
+struct FunctionPointerExpr : Expr
+{
+    std::vector<TypePtr> param_types;
+    TypePtr return_type;
 
     FunctionPointerExpr() = default;
 };
 
-struct StructLiteralExpr : Expr {
+struct StructLiteralExpr : Expr
+{
     std::string struct_name; // Name of the struct (nullable)
     std::vector<std::pair<std::string, ExprPtr>> members;
     std::unordered_map<std::string, size_t> member_map;
@@ -172,25 +201,29 @@ struct StructLiteralExpr : Expr {
 };
 
 // Statements
-struct Statement {
+struct Statement
+{
     virtual ~Statement() = default;
 };
 
-struct ExprStmt : Statement {
+struct ExprStmt : Statement
+{
     ExprPtr expr;
 
     ExprStmt(ExprPtr expr) : expr(std::move(expr)) {}
 };
 
-struct BlockStmt : Statement {
+struct BlockStmt : Statement
+{
     std::vector<StmtPtr> statements;
 };
 
-struct VarDeclStmt : Statement {
+struct VarDeclStmt : Statement
+{
     bool is_const;
     std::string name;
-    std::unique_ptr<Type> type;
-    std::unique_ptr<Expr> init_expr;
+    TypePtr type;
+    ExprPtr init_expr;
 
     VarDeclStmt() : is_const(false) {}
 
@@ -200,12 +233,14 @@ struct VarDeclStmt : Statement {
     VarDeclStmt(const VarDeclStmt &other);
 };
 
-struct ReturnStmt : Statement {
+struct ReturnStmt : Statement
+{
     ExprPtr value;
     ReturnStmt(ExprPtr value) : value(std::move(value)) {}
 };
 
-struct IfStmt : Statement {
+struct IfStmt : Statement
+{
     ExprPtr condition;
     StmtPtr then_branch;
     StmtPtr else_branch;
@@ -216,7 +251,8 @@ struct IfStmt : Statement {
           else_branch(std::move(else_branch)) {}
 };
 
-struct WhileStmt : Statement {
+struct WhileStmt : Statement
+{
     ExprPtr condition;
     StmtPtr body;
 
@@ -224,11 +260,16 @@ struct WhileStmt : Statement {
         : condition(std::move(condition)), body(std::move(body)) {}
 };
 
-struct BreakStmt : Statement {};
+struct BreakStmt : Statement
+{
+};
 
-struct ContinueStmt : Statement {};
+struct ContinueStmt : Statement
+{
+};
 
-struct TypedField {
+struct TypedField
+{
     TypePtr type;
     std::string name;
 
@@ -240,7 +281,8 @@ struct TypedField {
     friend void swap(TypedField &a, TypedField &b) noexcept;
 };
 
-class StructDecl : public Statement {
+class StructDecl : public Statement
+{
 public:
     std::string name;
     std::vector<TypedField> fields;
@@ -257,25 +299,29 @@ public:
     const TypedField *get_field(std::string_view name) const;
 };
 
-struct FunctionDecl {
+struct FunctionDecl
+{
     std::string name;
-    std::unique_ptr<Type> return_type = nullptr;
+    TypePtr return_type = nullptr;
     std::vector<TypedField> params;
     std::vector<StmtPtr> body;
 
     bool is_method = false;
-    std::unique_ptr<Type> receiver_type = nullptr;;
+    TypePtr receiver_type = nullptr;
+    ;
 
-    void add_param(const std::string &name, std::unique_ptr<Type> type);
+    void add_param(const std::string &name, TypePtr type);
     Type &get_param_type(const std::string &name);
 };
 
-struct ImplBlock {
-    std::unique_ptr<Type> target_type;
+struct ImplBlock
+{
+    TypePtr target_type;
     std::vector<std::unique_ptr<FunctionDecl>> methods;
 };
 
-struct GlobalDecl : VarDeclStmt {
+struct GlobalDecl : VarDeclStmt
+{
     bool is_exported = false;
 
     GlobalDecl() : VarDeclStmt() {};
