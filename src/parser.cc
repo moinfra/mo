@@ -2,6 +2,8 @@
 #include "parser.h"
 #include <cassert>
 #include <unordered_set>
+#include <algorithm>
+#include <iostream>
 
 Parser::Parser(Lexer &&lexer) : lexer_(std::move(lexer)), current_(lexer_.next_token())
 {
@@ -19,10 +21,11 @@ void Parser::init_pratt_rules()
                         std::function<ExprPtr()> prefix,
                         std::function<ExprPtr(ExprPtr)> infix)
     {
-        pratt_rules_[type] = {prec, std::move(prefix), std::move(infix)};
+        // Add the new rule (std::set will automatically avoid duplicates)
+        pratt_rules_[type].insert({prec, std::move(prefix), std::move(infix)});
     };
 
-    // 前缀表达式
+    // Prefix rules
     add_rule(TokenType::Identifier, 0, [&]
              { return parse_identifier(); }, nullptr);
     add_rule(TokenType::IntegerLiteral, 0, [&]
@@ -42,7 +45,7 @@ void Parser::init_pratt_rules()
     add_rule(TokenType::LBrace, 0, [&]
              { return parse_init_list(); }, nullptr);
 
-    // 中缀表达式
+    // Infix/postfix rules
     add_rule(TokenType::Assign, 1, nullptr, [&](ExprPtr l)
              { return parse_binary(std::move(l), 1); });
     add_rule(TokenType::Plus, 10, nullptr, [&](ExprPtr l)
@@ -59,20 +62,20 @@ void Parser::init_pratt_rules()
              { return parse_call(std::move(l)); });
 }
 
-std::unique_ptr<Expr> Parser::parse_assignment(std::unique_ptr<Expr> left) {
+std::unique_ptr<Expr> Parser::parse_assignment(std::unique_ptr<Expr> left)
+{
     // if (!is_valid_lvalue(*left)) {
     //     error("Invalid assignment target");
     // }
 
     auto equals_token = previous_;
-    advance(); // Skip =
+    advance();                        // Skip =
     auto value = parse_expression(1); // 使用低优先级解析右值
 
     return std::make_unique<BinaryExpr>(
         equals_token.type,
         std::move(left),
-        std::move(value)
-    );
+        std::move(value));
 }
 
 ExprPtr Parser::parse_expression(int precedence)
@@ -80,27 +83,43 @@ ExprPtr Parser::parse_expression(int precedence)
     debug("parser: parsing expression with precedence %d", precedence);
     auto token_type = current_.type;
 
-    // 检查前缀规则是否存在
     auto it = pratt_rules_.find(token_type);
-    if (it == pratt_rules_.end() || !it->second.prefix)
+    if (it == pratt_rules_.end())
     {
         error(vstring("Unexpected token ", token_to_string(current_), " in expression"));
         return nullptr;
     }
 
-    auto left = it->second.prefix();
+    // Find the first prefix rule
+    const auto &rules = it->second;
+    auto prefix_it = std::find_if(rules.begin(), rules.end(), [](const PrattRule &rule)
+                                  { return rule.prefix != nullptr; });
+
+    if (prefix_it == rules.end())
+    {
+        error(vstring("Unexpected prefix token ", token_to_string(current_), " in expression"));
+        return nullptr;
+    }
+
+    auto left = prefix_it->prefix();
 
     debug("parser: parsed prefix expression. new token is %s (precedence %d)",
           token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
 
     while (precedence < get_precedence(current_.type))
     {
-        // 检查中缀规则是否存在
         auto infix_it = pratt_rules_.find(current_.type);
-        if (infix_it == pratt_rules_.end() || !infix_it->second.infix)
+        if (infix_it == pratt_rules_.end())
             break;
 
-        left = infix_it->second.infix(std::move(left));
+        const auto &infix_rules = infix_it->second;
+        auto infix_rule_it = std::find_if(infix_rules.begin(), infix_rules.end(), [](const PrattRule &rule)
+                                          { return rule.infix != nullptr; });
+
+        if (infix_rule_it == infix_rules.end())
+            break;
+
+        left = infix_rule_it->infix(std::move(left));
         debug("parser: parsed infix expression. new token is %s (precedence %d)",
               token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
     }
@@ -819,7 +838,6 @@ StmtPtr Parser::parse_while()
     return std::make_unique<WhileStmt>(std::move(condition), std::move(body));
 }
 
-
 VarDeclStmt Parser::parse_var_decl()
 {
     VarDeclStmt stmt;
@@ -882,7 +900,9 @@ FunctionDecl Parser::parse_function_decl()
     {
         advance();
         func.return_type = parse_type();
-    } else {
+    }
+    else
+    {
         func.return_type = std::make_unique<Type>(Type::get_void_type());
     }
 

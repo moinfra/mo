@@ -5,6 +5,7 @@
 #include <memory>
 #include <functional>
 #include <unordered_map>
+#include <set>
 #include <sstream>
 #include <string>
 
@@ -36,9 +37,20 @@ private:
         int precedence;
         std::function<ExprPtr()> prefix;
         std::function<ExprPtr(ExprPtr)> infix;
+
+        bool operator<(const PrattRule& other) const
+        {
+            if (precedence != other.precedence)
+                return precedence < other.precedence;
+            if (prefix && other.prefix)
+                return false; // Same precedence and prefix, consider them equal
+            if (infix && other.infix)
+                return false; // Same precedence and infix, consider them equal
+            return true;
+        }
     };
 
-    std::unordered_map<TokenType, PrattRule> pratt_rules_;
+    std::unordered_map<TokenType, std::set<PrattRule>> pratt_rules_;
 
     void init_pratt_rules();
     int get_precedence(TokenType type);
