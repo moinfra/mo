@@ -58,7 +58,7 @@ private:
 
     void advance();
     bool match(TokenType type);
-    void consume(TokenType type, const std::string &message);
+    void consume(TokenType type, const std::string &message = "");
     bool try_consume(TokenType type);
     void error(const std::string &message) const;
     void synchronize();
@@ -96,6 +96,7 @@ private:
     ExprPtr parse_grouped();
     ExprPtr parse_cast();
     ExprPtr parse_sizeof();
+    ExprPtr parse_address_of();
     ExprPtr parse_init_list();
 
     ExprPtr parse_unary();

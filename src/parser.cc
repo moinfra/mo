@@ -34,6 +34,8 @@ void Parser::init_pratt_rules()
              { return parse_literal(); }, nullptr);
     add_rule(TokenType::StringLiteral, 0, [&]
              { return parse_literal(); }, nullptr);
+    add_rule(TokenType::Ampersand, 0, [&]
+             { return parse_address_of(); }, nullptr);
     // add_rule(TokenType::Minus, 0, [&]
     //          { return parse_prefix_expr(); }, nullptr);
     add_rule(TokenType::LParen, 0, [&]
@@ -70,7 +72,7 @@ std::unique_ptr<Expr> Parser::parse_assignment(std::unique_ptr<Expr> left)
 
     auto equals_token = previous_;
     advance();                        // Skip =
-    auto value = parse_expression(1); // 使用低优先级解析右值
+    auto value = parse_expression();
 
     return std::make_unique<BinaryExpr>(
         equals_token.type,
@@ -230,6 +232,7 @@ StructDecl Parser::parse_struct_decl()
     StructDecl struct_decl;
 
     consume(TokenType::Struct, "Expected 'struct' keyword");
+
     struct_decl.name = current_.lexeme;
     consume(TokenType::Identifier, "Expected struct name");
 
@@ -238,6 +241,16 @@ StructDecl Parser::parse_struct_decl()
     while (current_.type != TokenType::RBrace && current_.type != TokenType::Eof)
     {
         struct_decl.add_field(parse_struct_member());
+
+        if (current_.type == TokenType::Comma)
+        {
+            consume(TokenType::Comma, "Expected ',' between struct members");
+        }
+
+        if (current_.type == TokenType::RBrace)
+        {
+            break;
+        }
     }
 
     consume(TokenType::RBrace, "Expected '}' at the end of struct body");
@@ -245,19 +258,14 @@ StructDecl Parser::parse_struct_decl()
     return struct_decl;
 }
 
+// Parse a struct member declaration (field name and type) e.g. "x: int"
 TypedField Parser::parse_struct_member()
 {
-    // Parse the type of the struct member
-    TypePtr type = parse_type();
-
-    // Parse the name of the struct member
     std::string name = current_.lexeme;
-    consume(TokenType::Identifier, "Expected struct member name");
+    consume(TokenType::Identifier, "Expected field name");
+    consume(TokenType::Colon, "Expected ':' after field name");
+    auto type = parse_type();
 
-    // Consume the semicolon at the end of the struct member declaration
-    consume(TokenType::Semicolon, "Expected ';' after struct member declaration");
-
-    // Return the struct member
     return TypedField(std::move(type), name);
 }
 
@@ -638,6 +646,15 @@ ExprPtr Parser::parse_sizeof()
     return expr;
 }
 
+ExprPtr Parser::parse_address_of()
+{
+    consume(TokenType::Ampersand, "Expected '&' in address-of expression");
+    auto expr = std::make_unique<AddressOfExpr>();
+    expr->operand = parse_expression();
+    return expr;
+}
+
+
 ExprPtr Parser::parse_init_list()
 {
     consume(TokenType::LBrace, "Expected '{' for initializer list");
@@ -989,7 +1006,7 @@ Program Parser::parse()
             {
                 program.functions.push_back(std::make_unique<FunctionDecl>(parse_function_decl()));
             }
-            else if (match(TokenType::Let))
+            else if (match(TokenType::Let) || match(TokenType::Const))
             {
                 program.globals.push_back(std::make_unique<GlobalDecl>(parse_global_decl()));
             }
