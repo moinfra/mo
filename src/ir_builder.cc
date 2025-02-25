@@ -253,6 +253,6 @@ void IRBuilder::insert(Instruction *inst)
     }
     else
     {
-        insert_block_->link_instruction(inst);
+        insert_block_->append(inst);
     }
 }

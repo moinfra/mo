@@ -1,4 +1,5 @@
 #pragma once
+
 #include <iostream>
 #include <vector>
 #include <cstring>
@@ -444,11 +445,12 @@ public:
     Instruction *first_instruction() const { return head_; }
     Instruction *last_instruction() const { return tail_; }
     void insert_before(Instruction *pos, std::unique_ptr<Instruction> inst);
+    void insert_after(Instruction *pos, std::unique_ptr<Instruction> inst);
 
     const std::vector<BasicBlock *> &predecessors() const { return predecessors_; }
     const std::vector<BasicBlock *> &successors() const { return successors_; }
     void add_successor(BasicBlock *bb);
-    void link_instruction(Instruction *inst);
+    void append(Instruction *inst);
 
 private:
     Function *parent_;
@@ -819,6 +821,7 @@ private:
     BranchInst(BasicBlock *target, BasicBlock *parent,
                std::vector<Value *> ops);
 
+    BasicBlock *true_bb_;
     BasicBlock *false_bb_;
 };
 

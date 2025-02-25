@@ -224,7 +224,9 @@ void BasicBlock::insert_before(Instruction *pos, std::unique_ptr<Instruction> in
     new_inst->parent_ = this;
 
     if (!pos)
-    { // Insert at the end
+    {
+        // Insert at the end
+        debug("ir: inserting at the end");
         if (!tail_)
         {
             head_ = tail_ = new_inst;
@@ -238,6 +240,7 @@ void BasicBlock::insert_before(Instruction *pos, std::unique_ptr<Instruction> in
     }
     else
     {
+        debug("ir: inserting before pos");
         new_inst->next_ = pos;
         new_inst->prev_ = pos->prev_;
         if (pos->prev_)
@@ -252,6 +255,43 @@ void BasicBlock::insert_before(Instruction *pos, std::unique_ptr<Instruction> in
     }
 }
 
+void BasicBlock::insert_after(Instruction *pos, std::unique_ptr<Instruction> inst)
+{
+    auto *new_inst = inst.release();
+    new_inst->parent_ = this;
+
+    if (!pos)
+    {
+        // Insert at the beginning
+        debug("ir: inserting at the beginning");
+        if (!head_)
+        {
+            head_ = tail_ = new_inst;
+        }
+        else
+        {
+            new_inst->next_ = head_;
+            head_->prev_ = new_inst;
+            head_ = new_inst;
+        }
+    }
+    else
+    {
+        debug("ir: inserting after pos");
+        new_inst->prev_ = pos;
+        new_inst->next_ = pos->next_;
+        if (pos->next_)
+        {
+            pos->next_->prev_ = new_inst;
+        }
+        else
+        {
+            tail_ = new_inst;
+        }
+        pos->next_ = new_inst;
+    }
+}
+
 void BasicBlock::add_successor(BasicBlock *bb)
 {
     if (std::find(successors_.begin(), successors_.end(), bb) == successors_.end())
@@ -261,9 +301,20 @@ void BasicBlock::add_successor(BasicBlock *bb)
     }
 }
 
-void BasicBlock::link_instruction(Instruction *inst)
+void BasicBlock::append(Instruction *inst)
 {
-    insert_before(tail_, std::unique_ptr<Instruction>(inst));
+    inst->parent_ = this;
+
+    if (!tail_)
+    {
+        head_ = tail_ = inst;
+    }
+    else
+    {
+        tail_->next_ = inst;
+        inst->prev_ = tail_;
+        tail_ = inst;
+    }
 }
 
 //===----------------------------------------------------------------------===//
@@ -481,7 +532,11 @@ ConstantInt *ConstantInt::sext_value(Module *m, IntegerType *dest_type) const
 
 std::string ConstantInt::as_string() const
 {
-    return type()->name() + " " + std::to_string(value_);
+    if (type()->bits() == 1)
+    {
+        return value_ ? "true" : "false";
+    }
+    return std::to_string(value_);
 }
 
 //===----------------------------------------------------------------------===//
@@ -563,6 +618,7 @@ BranchInst::BranchInst(BasicBlock *target, BasicBlock *parent,
                        std::vector<Value *> ops)
     : Instruction(Opcode::Br, Type::get_void_type(parent->parent()->parent()),
                   parent, ops),
+      true_bb_(target),
       false_bb_(nullptr) {}
 
 BranchInst *BranchInst::create(BasicBlock *target, BasicBlock *parent)
@@ -586,10 +642,13 @@ BranchInst *BranchInst::create_cond(Value *cond, BasicBlock *true_bb,
 
 BasicBlock *BranchInst::get_true_successor() const
 {
-    return static_cast<BasicBlock *>(operands_[0]);
+    return true_bb_;
 }
 
-BasicBlock *BranchInst::get_false_successor() const { return false_bb_; }
+BasicBlock *BranchInst::get_false_successor() const
+{
+    return false_bb_;
+}
 
 ReturnInst::ReturnInst(Value *value, BasicBlock *parent)
     : Instruction(Opcode::Ret, Type::get_void_type(parent->parent()->parent()),
