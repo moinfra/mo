@@ -14,9 +14,9 @@ cc_library(
 )
 
 cc_library(
-    name = "ast_printer_json",
-    srcs = ["ast_printer_json.cc"],
-    hdrs = ["ast_printer_json.h", "ast_printer.h"],
+    name = "ast_printer_yaml",
+    srcs = ["ast_printer_yaml.cc"],
+    hdrs = ["ast_printer_yaml.h"],
     deps = [":parser"],
     visibility = ["//visibility:public"],
 )
@@ -32,7 +32,7 @@ cc_library(
 cc_binary(
     name = "print_ast",
     srcs = ["ast_printer_bin.cc"],
-    deps = [":ast_printer_json"],
+    deps = [":ast_printer_yaml"],
 )
 
 cc_library(

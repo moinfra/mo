@@ -27,6 +27,7 @@ private:
     std::string visit(const MemberAccessExpr &expr);
     std::string visit(const CastExpr &expr);
     std::string visit(const SizeofExpr &expr);
+    std::string visit(const AddressOfExpr &expr);
     std::string visit(const InitListExpr &expr);
     std::string visit(const FunctionPointerExpr &expr);
     std::string visit(const StructLiteralExpr &expr);

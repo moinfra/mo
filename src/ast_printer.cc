@@ -48,6 +48,8 @@ string ASTPrinter::print(const Expr &expr)
         return visit(*p);
     if (auto p = dynamic_cast<const SizeofExpr *>(&expr))
         return visit(*p);
+    if (auto p = dynamic_cast<const AddressOfExpr *>(&expr))
+        return visit(*p);
     if (auto p = dynamic_cast<const InitListExpr *>(&expr))
         return visit(*p);
     if (auto p = dynamic_cast<const FunctionPointerExpr *>(&expr))
@@ -136,7 +138,7 @@ string ASTPrinter::print(const StructDecl &struct_decl)
     enter_scope();
     for (const auto &field : struct_decl.fields)
     {
-        result += indent() + print(*field.type) + " " + field.name + ";\n";
+        result += indent() + field.name + ": " + print(*field.type) + ",\n";
     }
     leave_scope();
     result += indent() + "}";
@@ -145,7 +147,7 @@ string ASTPrinter::print(const StructDecl &struct_decl)
 
 string ASTPrinter::print(const FunctionDecl &func_decl)
 {
-    string result = (func_decl.is_method ? "method " : "fn ") + func_decl.name + "(";
+    string result = "fn " + func_decl.name + "(";
     for (size_t i = 0; i < func_decl.params.size(); ++i)
     {
         const auto &param = func_decl.params[i];
@@ -261,6 +263,11 @@ string ASTPrinter::visit(const CastExpr &expr)
 string ASTPrinter::visit(const SizeofExpr &expr)
 {
     return "sizeof(" + print(*expr.target_type) + ")";
+}
+
+string ASTPrinter::visit(const AddressOfExpr &expr)
+{
+    return "&(" + print(*expr.operand) + ")";
 }
 
 string ASTPrinter::visit(const InitListExpr &expr)
