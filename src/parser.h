@@ -23,6 +23,7 @@ public:
 
     Program parse();
     ExprPtr parse_expr(int precedence = 0);
+    TypePtr parse_type(int precedence = 0);
 
     std::vector<std::string> errors() const { return errors_; }
 
@@ -48,9 +49,26 @@ private:
         }
     };
 
+    struct TypePrattRule
+    {
+        std::function<TypePtr()> prefix;
+        std::function<TypePtr(TypePtr)> infix;
+
+        bool operator<(const TypePrattRule& other) const
+        {
+            if (prefix && other.prefix)
+                return false;
+            if (infix && other.infix)
+                return false;
+            return true;
+        }
+    };
+
     std::unordered_map<TokenType, std::set<PrattRule>> pratt_rules_;
+    std::unordered_map<TokenType, std::set<TypePrattRule>> type_pratt_rules_;
 
     void init_pratt_rules();
+    void init_type_pratt_rules();
 
     void advance();
     bool match(TokenType type);
@@ -59,7 +77,6 @@ private:
     void error(const std::string &message) const;
     void synchronize();
 
-    TypePtr parse_type();
     TypePtr parse_type_safe();
     TypePtr parse_prefix_type();
     TypePtr parse_pointer_type();
@@ -84,9 +101,9 @@ private:
     StmtPtr parse_while();
     std::unique_ptr<BlockStmt> parse_block();
     ExprPtr parse_function_pointer_expr();
-    ExprPtr parse_struct_literal();
+    ExprPtr parse_struct_literal(std::string name = "");
 
-    ExprPtr parse_identifier();
+    ExprPtr parse_identifier(int min_precedence);
     ExprPtr parse_literal();
     ExprPtr parse_grouped();
     ExprPtr parse_cast();

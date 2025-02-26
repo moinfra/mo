@@ -5,14 +5,17 @@
 #include <algorithm>
 #include <iostream>
 
-Parser::Parser(Lexer &&lexer) : lexer_(std::move(lexer)), current_(lexer_.next_token())
-{
-    init_pratt_rules();
-}
-
 #define ASSOC unsigned
 #define R_ASSOC 1
 #define L_ASSOC 2
+
+void apply_const_to_innermost(Type *type);
+
+Parser::Parser(Lexer &&lexer) : lexer_(std::move(lexer)), current_(lexer_.next_token())
+{
+    init_pratt_rules();
+    init_type_pratt_rules();
+}
 
 struct TokenTypeAssocHash
 {
@@ -60,9 +63,9 @@ const static std::unordered_map<std::pair<TokenType, ASSOC>, int, TokenTypeAssoc
 
     {{TokenType::LParen, L_ASSOC}, 90},   // Call
     {{TokenType::LBracket, L_ASSOC}, 90}, // Index
-    {{TokenType::LBrace, L_ASSOC}, 90},   // Init list
-    {{TokenType::Dot, L_ASSOC}, 90},      // Member access
-    {{TokenType::Arrow, L_ASSOC}, 90},    // Member access
+    // {{TokenType::LBracket, L_ASSOC}, 90},   // Init list
+    {{TokenType::Dot, L_ASSOC}, 90},   // Member access
+    {{TokenType::Arrow, L_ASSOC}, 90}, // Member access
 
     {{TokenType::DoubleColon, L_ASSOC}, 100},
 };
@@ -111,7 +114,7 @@ void Parser::init_pratt_rules()
 
     // Prefix rules
     add_prefix_rule(TokenType::Identifier, [&]
-                    { return parse_identifier(); });
+                    { return parse_identifier(get_precedence(TokenType::Identifier) - 1); });
     add_prefix_rule(TokenType::IntegerLiteral, [&]
                     { return parse_literal(); });
     add_prefix_rule(TokenType::FloatLiteral, [&]
@@ -134,7 +137,7 @@ void Parser::init_pratt_rules()
                     { return parse_cast(); });
     add_prefix_rule(TokenType::Sizeof, [&]
                     { return parse_sizeof(); });
-    add_prefix_rule(TokenType::LBrace, [&]
+    add_prefix_rule(TokenType::LBracket, [&]
                     { return parse_init_list(); });
 
     // Infix/postfix rules
@@ -176,6 +179,181 @@ void Parser::init_pratt_rules()
     add_infix_rule(TokenType::LParen, [&](ExprPtr l)
                    { return parse_call(std::move(l)); });
 }
+
+const static std::unordered_map<std::pair<TokenType, ASSOC>, int, TokenTypeAssocHash> type_precedence_map = {
+    {{TokenType::Const, R_ASSOC}, 90},
+
+    {{TokenType::Star, R_ASSOC}, 80},
+    // {{TokenType::Caret, R_ASSOC}, 80},
+
+    {{TokenType::LBracket, L_ASSOC}, 100},
+    {{TokenType::LParen, L_ASSOC}, 100},
+    {{TokenType::Arrow, L_ASSOC}, 50},
+};
+
+int get_type_precedence(TokenType token_type, ASSOC assoc = L_ASSOC | R_ASSOC)
+{
+    int precedence = 0;
+    bool found = false;
+    if (assoc & L_ASSOC)
+    {
+        auto it = type_precedence_map.find(std::make_pair(token_type, L_ASSOC));
+        if (it != type_precedence_map.end())
+        {
+            precedence = it->second;
+            found = true;
+        }
+    }
+    if (assoc & R_ASSOC)
+    {
+        auto it = type_precedence_map.find(std::make_pair(token_type, R_ASSOC));
+        if (it != type_precedence_map.end())
+        {
+            precedence = it->second;
+            found = true;
+        }
+    }
+    if (!found)
+    {
+        debug("parser: warning: no precedence for token '%s' with associativity %s, "
+              "falling back to 0",
+              token_type_to_string(token_type).c_str(), assoc ? "right" : "left");
+    }
+    return precedence;
+};
+
+void Parser::init_type_pratt_rules()
+{
+    auto add_prefix_rule = [&](TokenType type, std::function<TypePtr()> fn)
+    {
+        type_pratt_rules_[type].insert({std::move(fn), nullptr});
+    };
+
+    auto add_postfix_rule = [&](TokenType type, std::function<TypePtr(TypePtr)> fn)
+    {
+        type_pratt_rules_[type].insert({nullptr, std::move(fn)});
+    };
+
+    // 基础类型
+    add_prefix_rule(TokenType::Identifier, [&]
+                    {
+        auto t = std::make_unique<Type>();
+        t->kind = Type::Kind::Basic; // FIXME: may be alias
+        t->name = current_.lexeme;
+        advance();
+        return t; });
+
+    auto basic_type_handler = [&]() -> TypePtr
+    {
+        auto t = std::make_unique<Type>();
+        t->kind = Type::Kind::Basic;
+        t->name = current_.lexeme;
+        advance();
+        return t;
+    };
+
+    add_prefix_rule(TokenType::Int, basic_type_handler);
+    add_prefix_rule(TokenType::Float, basic_type_handler);
+    add_prefix_rule(TokenType::String, basic_type_handler);
+
+    // 指针类型
+    add_prefix_rule(TokenType::Star, [&]
+                    {
+        advance(); // 消耗*
+        auto ptr = std::make_unique<Type>();
+        ptr->kind = Type::Kind::Pointer;
+        ptr->pointee = parse_type(get_precedence(TokenType::Star, R_ASSOC));
+        return ptr; });
+
+    // 数组类型
+    add_postfix_rule(TokenType::LBracket, [&](std::unique_ptr<Type> left)
+                     {
+        auto arr = std::make_unique<Type>();
+        arr->kind = Type::Kind::Array;
+        arr->element_type = std::move(left);
+        
+        consume(TokenType::LBracket);
+        if (match(TokenType::IntegerLiteral)) {
+            arr->array_size = std::stoi(current_.lexeme);
+            advance();
+        }
+        consume(TokenType::RBracket);
+        return arr; });
+
+    // 函数类型
+    add_postfix_rule(TokenType::LParen, [&](std::unique_ptr<Type> left)
+                     {
+        auto fn = std::make_unique<Type>();
+        fn->kind = Type::Kind::Function;
+        fn->return_type = std::move(left);
+        
+        consume(TokenType::LParen);
+        while (!match(TokenType::RParen)) {
+            fn->params.push_back(parse_type());
+            if (!try_consume(TokenType::Comma)) break;
+        }
+        consume(TokenType::RParen);
+        
+        if (try_consume(TokenType::Arrow)) {
+            fn->return_type = parse_type();
+        }
+        return fn; });
+
+    // const修饰符
+    add_prefix_rule(TokenType::Const, [&]
+                    {
+        advance();
+        auto base = parse_type(get_precedence(TokenType::Const, R_ASSOC));
+        apply_const_to_innermost(base.get());
+        return base; });
+}
+
+std::unique_ptr<Type> Parser::parse_type(int precedence)
+{
+    auto token = current_;
+    auto it = type_pratt_rules_.find(token.type);
+
+    if (it == type_pratt_rules_.end())
+    {
+        error("Unexpected token in type: " + token_type_to_string(token.type));
+        return nullptr;
+    }
+
+    // prefix
+    auto &rules = it->second;
+    auto prefix_rule = std::find_if(rules.begin(), rules.end(),
+                                    [](auto &r)
+                                    { return r.prefix != nullptr; });
+
+    if (prefix_rule == rules.end())
+    {
+        error("Missing prefix handler for: " + token_type_to_string(token.type));
+        return nullptr;
+    }
+
+    auto left = prefix_rule->prefix();
+
+    // infix/postfix
+    while (precedence < get_type_precedence(current_.type))
+    {
+        auto next = type_pratt_rules_.find(current_.type);
+        if (next == type_pratt_rules_.end())
+            break;
+
+        auto &infix_rules = next->second;
+        auto infix_rule = std::find_if(infix_rules.begin(), infix_rules.end(),
+                                       [](auto &r)
+                                       { return r.infix != nullptr; });
+
+        if (infix_rule == infix_rules.end())
+            break;
+
+        left = infix_rule->infix(std::move(left));
+    }
+
+    return left;
+}
+
 ExprPtr Parser::parse_expr(int precedence)
 {
     debug("parser: parsing expression with precedence %d", precedence);
@@ -406,16 +584,6 @@ void apply_const_to_innermost(Type *type)
     }
 }
 
-std::unique_ptr<Type> Parser::parse_type()
-{
-    auto type = parse_prefix_type();
-    while (match(TokenType::LBracket))
-    {
-        type = parse_array_type(std::move(type));
-    }
-    return type;
-}
-
 std::unique_ptr<Type> Parser::parse_prefix_type()
 {
     if (match(TokenType::LParen))
@@ -605,12 +773,16 @@ ExprPtr Parser::parse_function_pointer_expr()
     return expr;
 }
 
-ExprPtr Parser::parse_struct_literal()
+ExprPtr Parser::parse_struct_literal(std::string struct_name)
 {
-    consume(TokenType::Struct, "Expected 'struct'");
+    // consume(TokenType::Struct, "Expected 'struct'");
     auto expr = std::make_unique<StructLiteralExpr>();
 
-    if (match(TokenType::Identifier))
+    if (!struct_name.empty())
+    {
+        expr->struct_name = struct_name;
+    }
+    else if (match(TokenType::Identifier))
     {
         expr->struct_name = current_.lexeme;
         advance();
@@ -681,12 +853,23 @@ std::unique_ptr<Type> Parser::parse_type_safe()
     }
 }
 
-ExprPtr Parser::parse_identifier()
+ExprPtr Parser::parse_identifier(int min_precedence)
 {
-    debug("parser: parsing identifier");
-    auto expr = std::make_unique<VariableExpr>(current_.lexeme);
+
+    auto ident = current_.lexeme;
     advance();
-    return expr;
+
+    // handle MyStruct { ... } expr
+    if (match(TokenType::LBrace))
+    {
+        debug("parser: parsing struct value");
+        return parse_struct_literal(ident);
+    }
+    else
+    {
+        debug("parser: parsing identifier");
+        return std::make_unique<VariableExpr>(ident);
+    }
 }
 ExprPtr Parser::parse_literal()
 {
@@ -757,11 +940,11 @@ ExprPtr Parser::parse_deref(int min_precedence)
 
 ExprPtr Parser::parse_init_list()
 {
-    consume(TokenType::LBrace, "Expected '{' for initializer list");
+    consume(TokenType::LBracket, "Expected '[' for initializer list");
 
     auto init_list = std::make_unique<InitListExpr>();
 
-    while (current_.type != TokenType::RBrace && current_.type != TokenType::Eof)
+    while (current_.type != TokenType::RBracket && current_.type != TokenType::Eof)
     {
         init_list->members.push_back(parse_expr());
 
@@ -769,13 +952,13 @@ ExprPtr Parser::parse_init_list()
         {
             advance(); // Consume the comma
         }
-        else if (current_.type != TokenType::RBrace)
+        else if (current_.type != TokenType::RBracket)
         {
-            error("Expected ',' or '}' in initializer list");
+            error("Expected ',' or ']' in initializer list");
         }
     }
 
-    consume(TokenType::RBrace, "Expected '}' at the end of initializer list");
+    consume(TokenType::RBracket, "Expected ']' at the end of initializer list");
 
     return init_list;
 }
