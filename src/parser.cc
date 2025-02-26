@@ -178,6 +178,8 @@ void Parser::init_pratt_rules()
                    { return parse_member_access(std::move(l)); });
     add_infix_rule(TokenType::DoubleColon, [&](ExprPtr l)
                    { return parse_member_access(std::move(l)); });
+    add_infix_rule(TokenType::LBracket, [&](ExprPtr l)
+                   { return parse_array_access(std::move(l)); });
     add_infix_rule(TokenType::LParen, [&](ExprPtr l)
                    { return parse_call(std::move(l)); });
 }
@@ -428,6 +430,18 @@ ExprPtr Parser::parse_member_access(ExprPtr left)
     {
         return parse_expr(get_precedence(expr->accessor));
     }
+
+    return expr;
+}
+
+ExprPtr Parser::parse_array_access(ExprPtr left)
+{
+    auto expr = std::make_unique<ArrayAccessExpr>();
+    expr->array = std::move(left);
+
+    consume(TokenType::LBracket, "Expected '[' after array name");
+    expr->index = parse_expr();
+    consume(TokenType::RBracket, "Expected ']' after array index");
 
     return expr;
 }

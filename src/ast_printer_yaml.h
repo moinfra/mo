@@ -25,6 +25,7 @@ private:
     std::string print(const ast::UnaryExpr &expr);
     std::string print(const ast::CallExpr &expr);
     std::string print(const ast::MemberAccessExpr &expr);
+    std::string print(const ast::ArrayAccessExpr &expr);
     std::string print(const ast::CastExpr &expr);
     std::string print(const ast::SizeofExpr &expr);
     std::string print(const ast::AddressOfExpr &expr);

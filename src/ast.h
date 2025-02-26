@@ -161,6 +161,12 @@ namespace ast
         TokenType accessor;
     };
 
+    struct ArrayAccessExpr : Expr
+    {
+        ExprPtr array;
+        ExprPtr index;
+    };
+
     struct CastExpr : Expr
     {
         TypePtr target_type;
