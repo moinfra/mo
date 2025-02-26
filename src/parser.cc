@@ -5,6 +5,8 @@
 #include <algorithm>
 #include <iostream>
 
+using namespace ast;
+
 #define ASSOC unsigned
 #define R_ASSOC 1
 #define L_ASSOC 2

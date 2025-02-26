@@ -21,9 +21,9 @@ class Parser
 public:
     explicit Parser(Lexer &&lexer);
 
-    Program parse();
-    ExprPtr parse_expr(int precedence = 0);
-    TypePtr parse_type(int precedence = 0);
+    ast::Program parse();
+    ast::ExprPtr parse_expr(int precedence = 0);
+    ast::TypePtr parse_type(int precedence = 0);
 
     std::vector<std::string> errors() const { return errors_; }
 
@@ -32,12 +32,12 @@ private:
     Token current_;
     Token previous_;
     std::vector<std::string> errors_;
-    std::unordered_map<std::string, std::unique_ptr<Type>> type_aliases_;
+    std::unordered_map<std::string, std::unique_ptr<ast::Type>> type_aliases_;
 
     struct PrattRule
     {
-        std::function<ExprPtr()> prefix;
-        std::function<ExprPtr(ExprPtr)> infix;
+        std::function<ast::ExprPtr()> prefix;
+        std::function<ast::ExprPtr(ast::ExprPtr)> infix;
 
         bool operator<(const PrattRule& other) const
         {
@@ -51,8 +51,8 @@ private:
 
     struct TypePrattRule
     {
-        std::function<TypePtr()> prefix;
-        std::function<TypePtr(TypePtr)> infix;
+        std::function<ast::TypePtr()> prefix;
+        std::function<ast::TypePtr(ast::TypePtr)> infix;
 
         bool operator<(const TypePrattRule& other) const
         {
@@ -77,46 +77,46 @@ private:
     void error(const std::string &message) const;
     void synchronize();
 
-    TypePtr parse_type_safe();
-    TypePtr parse_prefix_type();
-    TypePtr parse_pointer_type();
-    TypePtr parse_array_type(std::unique_ptr<Type> base_type);
-    TypePtr parse_non_pointer_type();
-    void parse_basic_type(std::unique_ptr<Type> &type);
-    void parse_function_type(std::unique_ptr<Type> &type);
-    void parse_struct_type(std::unique_ptr<Type> &type);
-    void parse_type_alias(std::unique_ptr<Type> &type);
+    ast::TypePtr parse_type_safe();
+    ast::TypePtr parse_prefix_type();
+    ast::TypePtr parse_pointer_type();
+    ast::TypePtr parse_array_type(std::unique_ptr<ast::Type> base_type);
+    ast::TypePtr parse_non_pointer_type();
+    void parse_basic_type(std::unique_ptr<ast::Type> &type);
+    void parse_function_type(std::unique_ptr<ast::Type> &type);
+    void parse_struct_type(std::unique_ptr<ast::Type> &type);
+    void parse_type_alias(std::unique_ptr<ast::Type> &type);
     void synchronize_type();
 
-    StructDecl parse_struct_decl();
-    TypedField parse_struct_member();
-    FunctionDecl parse_function_decl();
-    FunctionDecl parse_method();
-    GlobalDecl parse_global_decl();
-    ImplBlock parse_impl_block();
-    StmtPtr parse_statement();
-    VarDeclStmt parse_var_decl();
-    StmtPtr parse_return();
-    StmtPtr parse_if();
-    StmtPtr parse_while();
-    std::unique_ptr<BlockStmt> parse_block();
-    ExprPtr parse_function_pointer_expr();
-    ExprPtr parse_struct_literal(std::string name = "");
+    ast::StructDecl parse_struct_decl();
+    ast::TypedField parse_struct_member();
+    ast::FunctionDecl parse_function_decl();
+    ast::FunctionDecl parse_method();
+    ast::GlobalDecl parse_global_decl();
+    ast::ImplBlock parse_impl_block();
+    ast::StmtPtr parse_statement();
+    ast::VarDeclStmt parse_var_decl();
+    ast::StmtPtr parse_return();
+    ast::StmtPtr parse_if();
+    ast::StmtPtr parse_while();
+    std::unique_ptr<ast::BlockStmt> parse_block();
+    ast::ExprPtr parse_function_pointer_expr();
+    ast::ExprPtr parse_struct_literal(std::string name = "");
 
-    ExprPtr parse_identifier(int min_precedence);
-    ExprPtr parse_literal();
-    ExprPtr parse_grouped();
-    ExprPtr parse_cast();
-    ExprPtr parse_sizeof();
-    ExprPtr parse_address_of();
-    ExprPtr parse_deref(int min_precedence);
-    ExprPtr parse_init_list();
+    ast::ExprPtr parse_identifier(int min_precedence);
+    ast::ExprPtr parse_literal();
+    ast::ExprPtr parse_grouped();
+    ast::ExprPtr parse_cast();
+    ast::ExprPtr parse_sizeof();
+    ast::ExprPtr parse_address_of();
+    ast::ExprPtr parse_deref(int min_precedence);
+    ast::ExprPtr parse_init_list();
 
-    ExprPtr parse_unary(int min_precedence);
-    ExprPtr parse_binary(ExprPtr left, int min_precedence);
-    ExprPtr parse_primary();
-    ExprPtr parse_call(ExprPtr left);
-    ExprPtr parse_member_access(ExprPtr left);
+    ast::ExprPtr parse_unary(int min_precedence);
+    ast::ExprPtr parse_binary(ast::ExprPtr left, int min_precedence);
+    ast::ExprPtr parse_primary();
+    ast::ExprPtr parse_call(ast::ExprPtr left);
+    ast::ExprPtr parse_member_access(ast::ExprPtr left);
 
 };
 

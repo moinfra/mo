@@ -4,6 +4,7 @@
 #include <cassert>
 
 using namespace std;
+using namespace ast;
 
 string ASTPrinter::escape_string(const string &str) const
 {

@@ -5,51 +5,51 @@
 
 class ASTPrinter {
 public:
-    std::string print(const Program &program);
-    std::string print(const Expr &expr);
-    std::string print(const Statement &stmt);
-    std::string print(const Type &type);
-    std::string print(const StructDecl &struct_decl);
-    std::string print(const FunctionDecl &func_decl);
-    std::string print(const ImplBlock &impl_block);
-    std::string print(const VarDeclStmt &var_decl);
-    std::string print(const GlobalDecl &global_decl);
+    std::string print(const ast::Program &program);
+    std::string print(const ast::Expr &expr);
+    std::string print(const ast::Statement &stmt);
+    std::string print(const ast::Type &type);
+    std::string print(const ast::StructDecl &struct_decl);
+    std::string print(const ast::FunctionDecl &func_decl);
+    std::string print(const ast::ImplBlock &impl_block);
+    std::string print(const ast::VarDeclStmt &var_decl);
+    std::string print(const ast::GlobalDecl &global_decl);
 
 private:
     // Expression visitors
-    std::string print(const VariableExpr &expr);
-    std::string print(const IntegerLiteralExpr &expr);
-    std::string print(const FloatLiteralExpr &expr);
-    std::string print(const StringLiteralExpr &expr);
-    std::string print(const BinaryExpr &expr);
-    std::string print(const UnaryExpr &expr);
-    std::string print(const CallExpr &expr);
-    std::string print(const MemberAccessExpr &expr);
-    std::string print(const CastExpr &expr);
-    std::string print(const SizeofExpr &expr);
-    std::string print(const AddressOfExpr &expr);
-    std::string print(const DerefExpr &expr);
-    std::string print(const InitListExpr &expr);
-    std::string print(const FunctionPointerExpr &expr);
-    std::string print(const StructLiteralExpr &expr);
+    std::string print(const ast::VariableExpr &expr);
+    std::string print(const ast::IntegerLiteralExpr &expr);
+    std::string print(const ast::FloatLiteralExpr &expr);
+    std::string print(const ast::StringLiteralExpr &expr);
+    std::string print(const ast::BinaryExpr &expr);
+    std::string print(const ast::UnaryExpr &expr);
+    std::string print(const ast::CallExpr &expr);
+    std::string print(const ast::MemberAccessExpr &expr);
+    std::string print(const ast::CastExpr &expr);
+    std::string print(const ast::SizeofExpr &expr);
+    std::string print(const ast::AddressOfExpr &expr);
+    std::string print(const ast::DerefExpr &expr);
+    std::string print(const ast::InitListExpr &expr);
+    std::string print(const ast::FunctionPointerExpr &expr);
+    std::string print(const ast::StructLiteralExpr &expr);
 
     // Statement visitors
-    std::string print(const BlockStmt &stmt);
-    std::string print(const ReturnStmt &stmt);
-    std::string print(const IfStmt &stmt);
-    std::string print(const WhileStmt &stmt);
-    std::string print(const BreakStmt &stmt);
-    std::string print(const ContinueStmt &stmt);
-    std::string print(const ExprStmt &stmt);
+    std::string print(const ast::BlockStmt &stmt);
+    std::string print(const ast::ReturnStmt &stmt);
+    std::string print(const ast::IfStmt &stmt);
+    std::string print(const ast::WhileStmt &stmt);
+    std::string print(const ast::BreakStmt &stmt);
+    std::string print(const ast::ContinueStmt &stmt);
+    std::string print(const ast::ExprStmt &stmt);
 
     // Helpers
     std::string indent() const;
     void enter_scope();
     void leave_scope();
     std::string escape_string(const std::string &str) const;
-    std::string print_type(const Type &type);
-    std::string print_expr(const Expr &expr);
-    std::string print_stmt(const Statement &stmt);
+    std::string print_type(const ast::Type &type);
+    std::string print_expr(const ast::Expr &expr);
+    std::string print_stmt(const ast::Statement &stmt);
     int current_level = 0;
     int indent_size = 2;
 };

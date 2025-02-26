@@ -7,6 +7,8 @@
 #include "ast_printer_yaml.h"
 #include "parser.h"
 
+using namespace ast;
+
 int main(int argc, char *argv[])
 {
     if (argc < 3)

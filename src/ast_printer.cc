@@ -3,6 +3,7 @@
 #include <algorithm>
 
 using namespace std;
+using namespace ast;
 
 string ASTPrinter::print(const Program &program)
 {

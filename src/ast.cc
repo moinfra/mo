@@ -1,6 +1,8 @@
 #include "ast.h"
 #include <algorithm>
 
+using namespace ast;
+
 // Type methods
 
 bool Type::operator!=(const Type &other) const
@@ -168,7 +170,7 @@ void swap(VarDeclStmt &a, VarDeclStmt &b) noexcept
 
 VarDeclStmt &VarDeclStmt::operator=(VarDeclStmt other) noexcept
 {
-    swap(*this, other);
+    std::swap(*this, other);
     return *this;
 }
 
@@ -187,7 +189,7 @@ TypedField::TypedField(const TypedField &other)
 
 TypedField &TypedField::operator=(TypedField other) noexcept
 {
-    swap(*this, other);
+    std::swap(*this, other);
     return *this;
 }
 
