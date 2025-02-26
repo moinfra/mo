@@ -10,7 +10,7 @@
 #define DEBUG
 #include <cstdarg>
 
-void debug(const char* fmt, ...);
+void debug(const char *fmt, ...);
 
 enum class TokenType
 {
@@ -39,7 +39,7 @@ enum class TokenType
     IntegerLiteral,
     FloatLiteral,
     StringLiteral,
-    // s
+    // Operators
     Dot,         // .
     Arrow,       // ->
     DoubleColon, // ::
@@ -67,6 +67,7 @@ enum class TokenType
     Ge,          // >=
     And,         // &&
     Or,          // ||
+    Not,         //!
     // End of File
     Eof,
 };

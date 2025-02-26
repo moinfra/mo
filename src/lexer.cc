@@ -175,61 +175,73 @@ void Lexer::skip_block_comment()
     throw LexerError("Unclosed block comment");
 }
 
-Token Lexer::parse_number() {
+Token Lexer::parse_number()
+{
     int start_line = current_line;
     int start_col = current_col;
     std::string numStr;
     bool isFloat = false;
 
     // Parse the integer part
-    while (pos < input.size() && isdigit(input[pos])) {
+    while (pos < input.size() && isdigit(input[pos]))
+    {
         numStr += input[pos];
         advance();
     }
 
     // Parse the fractional part (if any)
-    if (pos < input.size() && input[pos] == '.') {
+    if (pos < input.size() && input[pos] == '.')
+    {
         isFloat = true;
         numStr += input[pos]; // Add the decimal point
         advance();
 
         // Parse the digits after the decimal point
-        while (pos < input.size() && isdigit(input[pos])) {
+        while (pos < input.size() && isdigit(input[pos]))
+        {
             numStr += input[pos];
             advance();
         }
 
         // Ensure there is at least one digit after the decimal point
-        if (numStr.back() == '.') {
+        if (numStr.back() == '.')
+        {
             throw std::runtime_error("Invalid float literal: " + numStr + " (missing fractional part)");
         }
     }
 
     // Parse the exponent part (if any, for scientific notation)
-    if (pos < input.size() && (input[pos] == 'e' || input[pos] == 'E')) {
+    if (pos < input.size() && (input[pos] == 'e' || input[pos] == 'E'))
+    {
         isFloat = true;
         numStr += input[pos]; // Add 'e' or 'E'
         advance();
 
         // Parse the optional sign
-        if (pos < input.size() && (input[pos] == '+' || input[pos] == '-')) {
+        if (pos < input.size() && (input[pos] == '+' || input[pos] == '-'))
+        {
             numStr += input[pos];
             advance();
         }
 
         // Parse the exponent digits
-        if (pos < input.size() && isdigit(input[pos])) {
-            while (pos < input.size() && isdigit(input[pos])) {
+        if (pos < input.size() && isdigit(input[pos]))
+        {
+            while (pos < input.size() && isdigit(input[pos]))
+            {
                 numStr += input[pos];
                 advance();
             }
-        } else {
+        }
+        else
+        {
             throw std::runtime_error("Invalid exponent in float literal: " + numStr + " (missing exponent)");
         }
     }
 
     // Ensure the generated numStr is not empty
-    if (numStr.empty()) {
+    if (numStr.empty())
+    {
         throw std::runtime_error("Empty number literal");
     }
 
@@ -382,7 +394,10 @@ Token Lexer::parse_ne()
         advance(); // Skip '='
         return Token(TokenType::Ne, start_line, start_col, current_line, current_col - 1, "!=");
     }
-    throw LexerError("Unexpected '!'");
+    else
+    {
+        return Token(TokenType::Not, start_line, start_col, current_line, current_col - 1, "!");
+    }
 }
 
 Token Lexer::parse_le_or_lt()
@@ -455,156 +470,111 @@ std::string token_to_string(const Token &token)
     return result;
 }
 
+#include <string>
+
 std::string token_type_to_string(TokenType type)
 {
-    std::string result;
     switch (type)
     {
     case TokenType::Invalid:
-        result = "<invalid>";
-        break;
+        return "<invalid>";
     case TokenType::Let:
-        result = "let";
-        break;
+        return "let";
     case TokenType::Struct:
-        result = "struct";
-        break;
+        return "struct";
     case TokenType::Impl:
-        result = "impl";
-        break;
+        return "impl";
     case TokenType::Fn:
-        result = "fn";
-        break;
+        return "fn";
     case TokenType::Return:
-        result = "return";
-        break;
+        return "return";
     case TokenType::Int:
-        result = "int";
-        break;
+        return "int";
     case TokenType::Float:
-        result = "float";
-        break;
+        return "float";
     case TokenType::String:
-        result = "string";
-        break;
+        return "string";
     case TokenType::Const:
-        result = "const";
-        break;
+        return "const";
     case TokenType::Sizeof:
-        result = "sizeof";
-        break;
+        return "sizeof";
     case TokenType::Cast:
-        result = "cast";
-        break;
+        return "cast";
     case TokenType::If:
-        result = "if";
-        break;
+        return "if";
     case TokenType::Else:
-        result = "else";
-        break;
+        return "else";
     case TokenType::While:
-        result = "while";
-        break;
+        return "while";
     case TokenType::For:
-        result = "for";
-        break;
+        return "for";
     case TokenType::Identifier:
-        result = "<id>";
-        break;
+        return "<id>";
     case TokenType::IntegerLiteral:
-        result = "<integer>";
-        break;
+        return "<integer>";
     case TokenType::FloatLiteral:
-        result = "<float>";
-        break;
+        return "<float>";
     case TokenType::StringLiteral:
-        result = "<string>";
-        break;
+        return "<string>";
     case TokenType::Dot:
-        result = ".";
-        break;
+        return ".";
     case TokenType::Arrow:
-        result = "->";
-        break;
+        return "->";
     case TokenType::DoubleColon:
-        result = "::";
-        break;
+        return "::";
     case TokenType::Assign:
-        result = "=";
-        break;
+        return "=";
     case TokenType::Colon:
-        result = ":";
-        break;
+        return ":";
     case TokenType::Semicolon:
-        result = ";";
-        break;
+        return ";";
     case TokenType::Comma:
-        result = ",";
-        break;
+        return ",";
     case TokenType::Star:
-        result = "*";
-        break;
+        return "*";
     case TokenType::Ampersand:
-        result = "&";
-        break;
+        return "&";
     case TokenType::LParen:
-        result = "(";
-        break;
+        return "(";
     case TokenType::RParen:
-        result = ")";
-        break;
+        return ")";
     case TokenType::LBrace:
-        result = "{";
-        break;
+        return "{";
     case TokenType::RBrace:
-        result = "}";
-        break;
+        return "}";
     case TokenType::LBracket:
-        result = "[";
-        break;
+        return "[";
     case TokenType::RBracket:
-        result = "]";
-        break;
+        return "]";
     case TokenType::Plus:
-        result = "+";
-        break;
+        return "+";
     case TokenType::Minus:
-        result = "-";
-        break;
+        return "-";
     case TokenType::Divide:
-        result = "/";
-        break;
+        return "/";
     case TokenType::Modulo:
-        result = "%";
-        break;
+        return "%";
     case TokenType::Eq:
-        result = "==";
-        break;
+        return "==";
     case TokenType::Ne:
-        result = "!=";
-        break;
+        return "!=";
     case TokenType::Lt:
-        result = "<";
-        break;
+        return "<";
     case TokenType::Le:
-        result = "<=";
-        break;
+        return "<=";
     case TokenType::Gt:
-        result = ">";
-        break;
+        return ">";
     case TokenType::Ge:
-        result = ">=";
-        break;
+        return ">=";
     case TokenType::And:
-        result = "&&";
-        break;
+        return "&&";
     case TokenType::Or:
-        result = "||";
-        break;
+        return "||";
+    case TokenType::Not:
+        return "!";
     case TokenType::Eof:
-        result = "<eof>";
-        break;
+        return "<eof>";
+    default:
+        return "<unknown>"; // 添加 default 情况
     }
-
-    return result;
 }
