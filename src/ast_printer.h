@@ -25,6 +25,7 @@ private:
     std::string visit(const ast::UnaryExpr &expr);
     std::string visit(const ast::CallExpr &expr);
     std::string visit(const ast::MemberAccessExpr &expr);
+    std::string visit(const ast::ArrayAccessExpr &expr);
     std::string visit(const ast::CastExpr &expr);
     std::string visit(const ast::SizeofExpr &expr);
     std::string visit(const ast::AddressOfExpr &expr);

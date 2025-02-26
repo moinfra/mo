@@ -434,6 +434,7 @@ StructType *Module::create_struct_type(const std::string &name)
     return ty;
 }
 
+// FIXME: should not get by members
 StructType *Module::get_struct_type(const std::vector<Type *> &members)
 {
     // Find existing struct

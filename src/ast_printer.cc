@@ -45,6 +45,8 @@ string ASTPrinter::print(const Expr &expr)
         return visit(*p);
     if (auto p = dynamic_cast<const MemberAccessExpr *>(&expr))
         return visit(*p);
+    if (auto p = dynamic_cast<const ArrayAccessExpr *>(&expr))
+        return visit(*p);
     if (auto p = dynamic_cast<const CastExpr *>(&expr))
         return visit(*p);
     if (auto p = dynamic_cast<const SizeofExpr *>(&expr))
@@ -256,6 +258,11 @@ string ASTPrinter::visit(const CallExpr &expr)
 string ASTPrinter::visit(const MemberAccessExpr &expr)
 {
     return print(*expr.object) + token_type_to_string(expr.accessor) + expr.member;
+}
+
+string ASTPrinter::visit(const ArrayAccessExpr &expr)
+{
+    return print(*expr.array) + "[" + print(*expr.index) + "]";
 }
 
 string ASTPrinter::visit(const CastExpr &expr)

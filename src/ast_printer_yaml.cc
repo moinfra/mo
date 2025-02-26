@@ -218,6 +218,8 @@ string ASTPrinter::print(const Expr &expr)
         return print(*e);
     if (auto e = dynamic_cast<const MemberAccessExpr *>(&expr))
         return print(*e);
+    if (auto e = dynamic_cast<const ArrayAccessExpr *>(&expr))
+        return print(*e);
     if (auto e = dynamic_cast<const CastExpr *>(&expr))
         return print(*e);
     if (auto e = dynamic_cast<const SizeofExpr *>(&expr))
@@ -293,6 +295,24 @@ string ASTPrinter::print(const MemberAccessExpr &expr)
     leave_scope();
     return oss.str();
 }
+
+string ASTPrinter::print(const ArrayAccessExpr &expr)
+{
+    ostringstream oss;
+    oss << indent() << "array_access_expr:\n";
+    enter_scope();
+    oss << indent() << "array:\n";
+    enter_scope();
+    oss << print(*expr.array);
+    leave_scope();
+    oss << indent() << "index:\n";
+    enter_scope();
+    oss << print(*expr.index);
+    leave_scope();
+    leave_scope();
+    return oss.str();
+}
+
 
 string ASTPrinter::print(const StructDecl &struct_decl)
 {
