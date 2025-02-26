@@ -22,7 +22,8 @@ public:
     explicit Parser(Lexer &&lexer);
 
     Program parse();
-    ExprPtr parse_expr();
+    ExprPtr parse_expr(int precedence = 0);
+
     std::vector<std::string> errors() const { return errors_; }
 
 private:
@@ -34,18 +35,15 @@ private:
 
     struct PrattRule
     {
-        int precedence;
         std::function<ExprPtr()> prefix;
         std::function<ExprPtr(ExprPtr)> infix;
 
         bool operator<(const PrattRule& other) const
         {
-            if (precedence != other.precedence)
-                return precedence < other.precedence;
             if (prefix && other.prefix)
-                return false; // Same precedence and prefix, consider them equal
+                return false;
             if (infix && other.infix)
-                return false; // Same precedence and infix, consider them equal
+                return false;
             return true;
         }
     };
@@ -53,8 +51,6 @@ private:
     std::unordered_map<TokenType, std::set<PrattRule>> pratt_rules_;
 
     void init_pratt_rules();
-    int get_precedence(TokenType type);
-    ExprPtr parse_expression(int precedence = 0);
 
     void advance();
     bool match(TokenType type);
@@ -62,7 +58,6 @@ private:
     bool try_consume(TokenType type);
     void error(const std::string &message) const;
     void synchronize();
-
 
     TypePtr parse_type();
     TypePtr parse_type_safe();
@@ -97,14 +92,13 @@ private:
     ExprPtr parse_cast();
     ExprPtr parse_sizeof();
     ExprPtr parse_address_of();
-    ExprPtr parse_deref();
+    ExprPtr parse_deref(int min_precedence);
     ExprPtr parse_init_list();
 
-    ExprPtr parse_unary();
+    ExprPtr parse_unary(int min_precedence);
     ExprPtr parse_binary(ExprPtr left, int min_precedence);
     ExprPtr parse_primary();
     ExprPtr parse_call(ExprPtr left);
-    ExprPtr parse_assignment(ExprPtr left);
     ExprPtr parse_member_access(ExprPtr left);
 
 };

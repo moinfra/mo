@@ -239,7 +239,7 @@ string ASTPrinter::visit(const UnaryExpr &expr)
 
 string ASTPrinter::visit(const CallExpr &expr)
 {
-    string result = print(*expr.callee) + "(";
+    string result = "(" + print(*expr.callee) + "(";
     for (size_t i = 0; i < expr.args.size(); ++i)
     {
         result += print(*expr.args[i]);
@@ -248,7 +248,7 @@ string ASTPrinter::visit(const CallExpr &expr)
             result += ", ";
         }
     }
-    result += ")";
+    result += "))";
     return result;
 }
 

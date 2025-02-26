@@ -38,15 +38,170 @@ std::string normalize_whitespace(const std::string &input)
     return ss.str();
 }
 
-std::string parse_and_normalize(const std::string &input)
+std::string parse_and_normalize(const std::string &input, bool expr_mode = false)
 {
     Lexer lexer(input);
     Parser parser(std::move(lexer));
 
-    auto ast = parser.parse();
     ASTPrinter printer;
-    std::string ast_text = printer.print(ast);
+    std::string ast_text;
+    if (expr_mode)
+    {
+        auto ast = parser.parse_expr();
+        ast_text = printer.print(*ast);
+    }
+    else
+    {
+        auto ast = parser.parse();
+        ast_text = printer.print(ast);
+    }
     return normalize_whitespace(ast_text);
+}
+
+TEST(ParserTest, ArithmeticExpression)
+{
+    std::string input = "1 + 2 * 3";
+    std::string expected = "(1 + (2 * 3))";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, ParenthesizedExpression)
+{
+    std::string input = "(1 + 2) * 3";
+    std::string expected = "((1 + 2) * 3)";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, LogicalExpression)
+{
+    std::string input = "true && false || true";
+    std::string expected = "((true && false) || true)";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, RelationalExpression)
+{
+    std::string input = "x > y && y < z";
+    std::string expected = "((x > y) && (y < z))";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, FunctionCallExpression)
+{
+    std::string input = "foo(1, 2, 3)";
+    std::string expected = "(foo(1, 2, 3))";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, UnaryExpression)
+{
+    std::string input = "-a";
+    std::string expected = "(-a)";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, NestedArithmeticExpression)
+{
+    std::string input = "1 + (2 * (3 + 4))";
+    std::string expected = "(1 + (2 * (3 + 4)))";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, ComplexLogicalExpression)
+{
+    std::string input = "(true || false) && !(false && true)";
+    std::string expected = "((true || false) && (!(false && true)))";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, MixedExpression)
+{
+    std::string input = "x + y > z && foo(a, b) < bar(c)";
+    std::string expected = "(((x + y) > z) && ((foo(a, b)) < (bar(c))))";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, FunctionCallWithNestedExpressions)
+{
+    std::string input = "foo(1 + 2, bar(3 * 4), baz())";
+    std::string expected = "(foo((1 + 2), (bar((3 * 4))), (baz())))";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, SingleVariable)
+{
+    std::string input = "x";
+    std::string expected = "x";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, SingleNumber)
+{
+    std::string input = "42";
+    std::string expected = "42";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, ChainedRelationalExpression)
+{
+    std::string input = "a < b < c";
+    std::string expected = "((a < b) < c)";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, LogicalExpressionWithParentheses)
+{
+    std::string input = "((true && false) || true)";
+    std::string expected = "((true && false) || true)";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+TEST(ParserTest, ArithmeticExpressionWithDivision)
+{
+    std::string input = "10 / 2 + 3";
+    std::string expected = "((10 / 2) + 3)";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+TEST(ParserTest, LongExpression)
+{
+    std::string input = "a + b * c - d / e && f || g > h";
+    std::string expected = "((((a + (b * c)) - (d / e)) && f) || (g > h))";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+// TEST(ParserTest, TernaryExpression)
+// {
+//     std::string input = "a ? b : c";
+//     std::string expected = "(a ? b : c)";
+//     EXPECT_EQ(parse_and_normalize(input, true), expected);
+// }
+
+// TEST(ParserTest, NestedTernaryExpression)
+// {
+//     std::string input = "a ? b : c ? d : e";
+//     std::string expected = "(a ? b : (c ? d : e))";
+//     EXPECT_EQ(parse_and_normalize(input, true), expected);
+// }
+
+TEST(ParserTest, ArithmeticAndLogicalPrecedence)
+{
+    std::string input = "1 + 2 * 3 > 4 && 5 < 6";
+    std::string expected = "(((1 + (2 * 3)) > 4) && (5 < 6))";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
+}
+
+// TEST(ParserTest, ConditionalExpression)
+// {
+//     std::string input = "x > 0 ? x : -x";
+//     std::string expected = "((x > 0) ? x : (-x))";
+//     EXPECT_EQ(parse_and_normalize(input, true), expected);
+// }
+
+TEST(ParserTest, NestedExpression)
+{
+    std::string input = "(a + b) * (c - d) / e";
+    std::string expected = "(((a + b) * (c - d)) / e)";
+    EXPECT_EQ(parse_and_normalize(input, true), expected);
 }
 
 TEST(ParserTest, BasicVarDecl)
@@ -57,13 +212,13 @@ TEST(ParserTest, BasicVarDecl)
 
 TEST(ParserTest, PointerVarDecl)
 {
-    std::string input = "let ptr: *MyStruct = malloc(sizeof(MyStruct));";
+    std::string input = "let ptr: *MyStruct = (malloc(sizeof(MyStruct)));";
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, StaticMethodCall)
 {
-    std::string input = "let v: Vector2 = Vector2::new(1, 2);";
+    std::string input = "let v: Vector2 = (Vector2::new(1, 2));";
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
@@ -81,13 +236,13 @@ TEST(ParserTest, PointerMemberAccess)
 
 TEST(ParserTest, HelloWorld)
 {
-    std::string input = "fn main() -> int { print(\"Hello, World!\"); return 0; }";
+    std::string input = "fn main() -> int { (print(\"Hello, World!\")); return 0; }";
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, PointerChainDecl)
 {
-    std::string input = "let p: **int = malloc(8);";
+    std::string input = "let p: **int = (malloc(8));";
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
@@ -115,126 +270,23 @@ TEST(ParserTest, MethodImpl)
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
-// TEST(ParserTest, NestedStruct)
-// {
-//     std::string input =
-//         "struct Outer {"
-//         "   inner: struct { a: int },\n"
-//         "}";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
 TEST(ParserTest, AddressOfExpr)
 {
-    std::string input = "let p = &x;";
+    std::string input = "let p = &(x);";
 
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
-// TEST(ParserTest, DereferenceExpr)
-// {
-//     std::string input = "let val = *p;";
+TEST(ParserTest, DereferenceExpr)
+{
+    std::string input = "let val = *(p);";
 
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
+    EXPECT_EQ(parse_and_normalize(input), input);
+}
 
-// TEST(ParserTest, PointerArithmetic)
-// {
-//     std::string input = "let p2 = p + 1;";
+TEST(ParserTest, PointerArithmetic)
+{
+    std::string input = "let p2 = (p + 1);";
 
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ParserTest, IfElseStmt)
-// {
-//     std::string input =
-//         "if x > 0 {"
-//         "   print('pos');"
-//         "} else {"
-//         "   print('non-pos');"
-//         "}";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ParserTest, WhileLoop)
-// {
-//     std::string input = "while x < 10 { x += 1; }";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ParserTest, ReturnWithExpr)
-// {
-//     std::string input = "fn add() -> int { return a + b; }";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ErrorTest, MissingSemicolon)
-// {
-//     std::string input = "let x = 10";
-//     EXPECT_EQ(parse_and_normalize(input), input);
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ErrorTest, TypeMismatchDecl)
-// {
-//     std::string input = "let x: int = 3.14;";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ErrorTest, DuplicateStructDef)
-// {
-//     std::string input =
-//         "struct A {}"
-//         "struct A {}";
-//     EXPECT_EQ(parse_and_normalize(input), input);
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ParserTest, AutoTypeInference)
-// {
-//     std::string input = "let v = Vector2 { x: 1.0, y: 2.0 };";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ParserTest, ExplicitCast)
-// {
-//     std::string input = "let p = cast(ptr, *mut int);";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ParserTest, SizeofExpr)
-// {
-//     std::string input = "let s = sizeof(Point);";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ParserTest, VariadicFunction)
-// {
-//     std::string input = "printf('Result: %d', 42);";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ParserTest, MethodChaining)
-// {
-//     std::string input = "obj.get_pos()->x = 5;";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
-
-// TEST(ParserTest, StaticCall)
-// {
-//     std::string input = "File::open('test.txt');";
-
-//     EXPECT_EQ(parse_and_normalize(input), input);
-// }
+    EXPECT_EQ(parse_and_normalize(input), input);
+}

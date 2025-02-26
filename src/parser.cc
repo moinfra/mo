@@ -10,79 +10,173 @@ Parser::Parser(Lexer &&lexer) : lexer_(std::move(lexer)), current_(lexer_.next_t
     init_pratt_rules();
 }
 
-ExprPtr Parser::parse_expr()
+#define ASSOC unsigned
+#define R_ASSOC 1
+#define L_ASSOC 2
+
+struct TokenTypeAssocHash
 {
-    return parse_expression();
-}
+    std::size_t operator()(const std::pair<TokenType, ASSOC> &p) const
+    {
+        return std::hash<TokenType>()(p.first) ^ std::hash<ASSOC>()(p.second);
+    }
+};
+
+const static std::unordered_map<std::pair<TokenType, ASSOC>, int, TokenTypeAssocHash> precedence_map = {
+    {{TokenType::Assign, R_ASSOC}, 1}, // right assoc
+
+    {{TokenType::Or, L_ASSOC}, 10},
+    {{TokenType::And, L_ASSOC}, 11},
+    // {{TokenType::BitOr, L_ASSOC}, 12},
+    // {{TokenType::BitXor, L_ASSOC}, 12},
+    // {{TokenType::BitAnd, L_ASSOC}, 13},
+
+    {{TokenType::Eq, L_ASSOC}, 20},
+    {{TokenType::Ne, L_ASSOC}, 20},
+
+    {{TokenType::Lt, L_ASSOC}, 30},
+    {{TokenType::Le, L_ASSOC}, 30},
+    {{TokenType::Gt, L_ASSOC}, 30},
+    {{TokenType::Ge, L_ASSOC}, 30},
+
+    // {{TokenType::LShift, L_ASSOC}, 40},
+    // {{TokenType::Rshift, L_ASSOC}, 40},
+
+    {{TokenType::Plus, L_ASSOC}, 50},
+    {{TokenType::Minus, L_ASSOC}, 50},
+
+    {{TokenType::Star, L_ASSOC}, 60},
+    {{TokenType::Divide, L_ASSOC}, 60},
+    {{TokenType::Modulo, L_ASSOC}, 60},
+
+    // {{TokenType::DotStar, L_ASSOC}, 70},
+    // {{TokenType::ArrowStar, L_ASSOC}, 70},
+
+    {{TokenType::Cast, R_ASSOC}, 80},
+    {{TokenType::Star, R_ASSOC}, 80}, // Deref
+    {{TokenType::Not, R_ASSOC}, 80},  // !
+    // {{TokenType::Complement, R_ASSOC}, 80}, // ~
+    {{TokenType::Sizeof, R_ASSOC}, 80},
+
+    {{TokenType::LParen, L_ASSOC}, 90},   // Call
+    {{TokenType::LBracket, L_ASSOC}, 90}, // Index
+    {{TokenType::LBrace, L_ASSOC}, 90},   // Init list
+    {{TokenType::Dot, L_ASSOC}, 90},      // Member access
+    {{TokenType::Arrow, L_ASSOC}, 90},    // Member access
+
+    {{TokenType::DoubleColon, L_ASSOC}, 100},
+};
+
+int get_precedence(TokenType type, ASSOC assoc = L_ASSOC | R_ASSOC)
+{
+    int precedence = 0;
+    bool found = false;
+    if (assoc & L_ASSOC)
+    {
+        auto it = precedence_map.find(std::make_pair(type, L_ASSOC));
+        if (it != precedence_map.end())
+        {
+            precedence = it->second;
+            found = true;
+        }
+    }
+    if (assoc & R_ASSOC)
+    {
+        auto it = precedence_map.find(std::make_pair(type, R_ASSOC));
+        if (it != precedence_map.end())
+        {
+            precedence = it->second;
+            found = true;
+        }
+    }
+    if (!found)
+    {
+        debug("parser: warning: no precedence for token '%s' with associativity %s, "
+              "falling back to 0",
+              token_type_to_string(type).c_str(), assoc ? "right" : "left");
+    }
+    return precedence;
+};
 
 void Parser::init_pratt_rules()
 {
-    auto add_rule = [&](TokenType type, int prec,
-                        std::function<ExprPtr()> prefix,
-                        std::function<ExprPtr(ExprPtr)> infix)
+    auto add_prefix_rule = [&](TokenType type, std::function<ExprPtr()> prefix)
     {
-        // Add the new rule (std::set will automatically avoid duplicates)
-        pratt_rules_[type].insert({prec, std::move(prefix), std::move(infix)});
+        pratt_rules_[type].insert({std::move(prefix), nullptr});
+    };
+    auto add_infix_rule = [&](TokenType type, std::function<ExprPtr(ExprPtr)> infix)
+    {
+        pratt_rules_[type].insert({nullptr, std::move(infix)});
     };
 
     // Prefix rules
-    add_rule(TokenType::Identifier, 0, [&]
-             { return parse_identifier(); }, nullptr);
-    add_rule(TokenType::IntegerLiteral, 0, [&]
-             { return parse_literal(); }, nullptr);
-    add_rule(TokenType::FloatLiteral, 0, [&]
-             { return parse_literal(); }, nullptr);
-    add_rule(TokenType::StringLiteral, 0, [&]
-             { return parse_literal(); }, nullptr);
-    add_rule(TokenType::Ampersand, 0, [&]
-             { return parse_address_of(); }, nullptr);
-    add_rule(TokenType::Star, 0, [&]
-             { return parse_deref(); }, nullptr);
-    // add_rule(TokenType::Minus, 0, [&]
-    //          { return parse_prefix_expr(); }, nullptr);
-    add_rule(TokenType::LParen, 0, [&]
-             { return parse_grouped(); }, nullptr);
-    add_rule(TokenType::Cast, 0, [&]
-             { return parse_cast(); }, nullptr);
-    add_rule(TokenType::Sizeof, 0, [&]
-             { return parse_sizeof(); }, nullptr);
-    add_rule(TokenType::LBrace, 0, [&]
-             { return parse_init_list(); }, nullptr);
+    add_prefix_rule(TokenType::Identifier, [&]
+                    { return parse_identifier(); });
+    add_prefix_rule(TokenType::IntegerLiteral, [&]
+                    { return parse_literal(); });
+    add_prefix_rule(TokenType::FloatLiteral, [&]
+                    { return parse_literal(); });
+    add_prefix_rule(TokenType::StringLiteral, [&]
+                    { return parse_literal(); });
+    add_prefix_rule(TokenType::Ampersand, [&]
+                    { return parse_address_of(); });
+    add_prefix_rule(TokenType::Star, [&]
+                    { return parse_deref(get_precedence(TokenType::Star, R_ASSOC) - 1); });
+    add_prefix_rule(TokenType::Plus, [&]
+                    { return parse_unary(get_precedence(TokenType::Plus, R_ASSOC) - 1); });
+    add_prefix_rule(TokenType::Minus, [&]
+                    { return parse_unary(get_precedence(TokenType::Minus, R_ASSOC) - 1); });
+    add_prefix_rule(TokenType::Not, [&]
+                    { return parse_unary(get_precedence(TokenType::Not, R_ASSOC) - 1); });
+    add_prefix_rule(TokenType::LParen, [&]
+                    { return parse_grouped(); });
+    add_prefix_rule(TokenType::Cast, [&]
+                    { return parse_cast(); });
+    add_prefix_rule(TokenType::Sizeof, [&]
+                    { return parse_sizeof(); });
+    add_prefix_rule(TokenType::LBrace, [&]
+                    { return parse_init_list(); });
 
     // Infix/postfix rules
-    add_rule(TokenType::Assign, 1, nullptr, [&](ExprPtr l)
-             { return parse_binary(std::move(l), 1); });
-    add_rule(TokenType::Plus, 10, nullptr, [&](ExprPtr l)
-             { return parse_binary(std::move(l), 10); });
-    add_rule(TokenType::Star, 20, nullptr, [&](ExprPtr l)
-             { return parse_binary(std::move(l), 20); });
-    add_rule(TokenType::Dot, 30, nullptr, [&](ExprPtr l)
-             { return parse_member_access(std::move(l)); });
-    add_rule(TokenType::Arrow, 30, nullptr, [&](ExprPtr l)
-             { return parse_member_access(std::move(l)); });
-    add_rule(TokenType::DoubleColon, 30, nullptr, [&](ExprPtr l)
-             { return parse_member_access(std::move(l)); });
-    add_rule(TokenType::LParen, 40, nullptr, [&](ExprPtr l)
-             { return parse_call(std::move(l)); });
+    add_infix_rule(TokenType::Assign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Assign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::Plus, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Plus)); });
+
+    add_infix_rule(TokenType::Minus, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Minus)); });
+    add_infix_rule(TokenType::Star, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Star)); });
+    add_infix_rule(TokenType::Divide, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Divide)); });
+
+    add_infix_rule(TokenType::And, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::And)); });
+    add_infix_rule(TokenType::Or, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Or)); });
+    add_infix_rule(TokenType::Eq, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Eq)); });
+    add_infix_rule(TokenType::Ne, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Ne)); });
+    add_infix_rule(TokenType::Lt, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Lt)); });
+    add_infix_rule(TokenType::Le, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Le)); });
+    add_infix_rule(TokenType::Gt, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Gt)); });
+    add_infix_rule(TokenType::Lt, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Lt)); });
+
+    add_infix_rule(TokenType::Dot, [&](ExprPtr l)
+                   { return parse_member_access(std::move(l)); });
+    add_infix_rule(TokenType::Arrow, [&](ExprPtr l)
+                   { return parse_member_access(std::move(l)); });
+    add_infix_rule(TokenType::DoubleColon, [&](ExprPtr l)
+                   { return parse_member_access(std::move(l)); });
+    add_infix_rule(TokenType::LParen, [&](ExprPtr l)
+                   { return parse_call(std::move(l)); });
 }
-
-std::unique_ptr<Expr> Parser::parse_assignment(std::unique_ptr<Expr> left)
-{
-    // if (!is_valid_lvalue(*left)) {
-    //     error("Invalid assignment target");
-    // }
-
-    auto equals_token = previous_;
-    advance(); // Skip =
-    auto value = parse_expression();
-
-    return std::make_unique<BinaryExpr>(
-        equals_token.type,
-        std::move(left),
-        std::move(value));
-}
-
-ExprPtr Parser::parse_expression(int precedence)
+ExprPtr Parser::parse_expr(int precedence)
 {
     debug("parser: parsing expression with precedence %d", precedence);
     auto token_type = current_.type;
@@ -107,21 +201,27 @@ ExprPtr Parser::parse_expression(int precedence)
 
     auto left = prefix_it->prefix();
 
-    debug("parser: parsed prefix expression. new token is %s (precedence %d)",
-          token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
+    debug("parser: parsed %s prefix expression. new token is %s (precedence %d)",
+          token_type_to_string(token_type).c_str(), token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
 
     while (precedence < get_precedence(current_.type))
     {
         auto infix_it = pratt_rules_.find(current_.type);
         if (infix_it == pratt_rules_.end())
+        {
+            debug("parser: no infix rule for token %s", token_type_to_string(current_.type).c_str());
             break;
+        }
 
         const auto &infix_rules = infix_it->second;
         auto infix_rule_it = std::find_if(infix_rules.begin(), infix_rules.end(), [](const PrattRule &rule)
                                           { return rule.infix != nullptr; });
 
         if (infix_rule_it == infix_rules.end())
+        {
+            debug("parser: no infix rule for token %s", token_type_to_string(current_.type).c_str());
             break;
+        }
 
         left = infix_rule_it->infix(std::move(left));
         debug("parser: parsed infix expression. new token is %s (precedence %d)",
@@ -146,7 +246,7 @@ ExprPtr Parser::parse_member_access(ExprPtr left)
         current_.type == TokenType::Arrow ||
         current_.type == TokenType::DoubleColon)
     {
-        return parse_expression(get_precedence(expr->accessor));
+        return parse_expr(get_precedence(expr->accessor));
     }
 
     return expr;
@@ -165,7 +265,7 @@ ExprPtr Parser::parse_call(ExprPtr left)
     {
         do
         {
-            call_expr->args.push_back(parse_expression());
+            call_expr->args.push_back(parse_expr());
         } while (try_consume(TokenType::Comma));
     }
 
@@ -306,7 +406,6 @@ void apply_const_to_innermost(Type *type)
     }
 }
 
-// 主入口：解析完整类型（可能含后缀修饰）
 std::unique_ptr<Type> Parser::parse_type()
 {
     auto type = parse_prefix_type();
@@ -317,7 +416,6 @@ std::unique_ptr<Type> Parser::parse_type()
     return type;
 }
 
-// 解析可能含前缀修饰的类型（const/指针）
 std::unique_ptr<Type> Parser::parse_prefix_type()
 {
     if (match(TokenType::LParen))
@@ -326,7 +424,6 @@ std::unique_ptr<Type> Parser::parse_prefix_type()
         auto type = parse_type();
         consume(TokenType::RParen, "Expected ')' after grouped type");
 
-        // 处理括号后的指针修饰
         while (match(TokenType::Star))
         {
             auto ptr_type = parse_pointer_type();
@@ -352,26 +449,22 @@ std::unique_ptr<Type> Parser::parse_prefix_type()
     return parse_non_pointer_type();
 }
 
-// 解析指针类型（包含指针后的const）
 std::unique_ptr<Type> Parser::parse_pointer_type()
 {
     consume(TokenType::Star, "Expected '*' in pointer type");
     auto ptr_type = std::make_unique<Type>();
     ptr_type->kind = Type::Kind::Pointer;
 
-    // 解析指针自身的const
     if (match(TokenType::Const))
     {
         advance();
         ptr_type->is_const = true;
     }
 
-    // 递归解析底层类型（可能包含新的前缀）
     ptr_type->pointee = parse_prefix_type();
     return ptr_type;
 }
 
-// 解析非指针的基础类型（基本类型/结构体/函数/别名）
 std::unique_ptr<Type> Parser::parse_non_pointer_type()
 {
     auto type = std::make_unique<Type>();
@@ -399,7 +492,6 @@ std::unique_ptr<Type> Parser::parse_non_pointer_type()
     return type;
 }
 
-// 解析数组类型（后缀处理）
 std::unique_ptr<Type> Parser::parse_array_type(std::unique_ptr<Type> base_type)
 {
     consume(TokenType::LBracket, "Expected '[' in array type");
@@ -426,7 +518,6 @@ std::unique_ptr<Type> Parser::parse_array_type(std::unique_ptr<Type> base_type)
     return array_type;
 }
 
-//--- 具体类型解析实现 ---
 void Parser::parse_basic_type(std::unique_ptr<Type> &type)
 {
     type->kind = Type::Kind::Basic;
@@ -540,7 +631,7 @@ ExprPtr Parser::parse_struct_literal()
         seen_fields.insert(name);
 
         consume(TokenType::Colon, "Expected ':'");
-        ExprPtr value = parse_expression();
+        ExprPtr value = parse_expr();
 
         expr->add_member(name, std::move(value));
 
@@ -622,7 +713,7 @@ ExprPtr Parser::parse_literal()
 ExprPtr Parser::parse_grouped()
 {
     advance();
-    auto expr = parse_expression();
+    auto expr = parse_expr();
     consume(TokenType::RParen, "Expected ')' after expression");
     return expr;
 }
@@ -634,7 +725,7 @@ ExprPtr Parser::parse_cast()
     auto expr = std::make_unique<CastExpr>();
     expr->target_type = parse_type();
     consume(TokenType::RParen, "Expected ')' after cast type");
-    expr->expr = parse_expression();
+    expr->expr = parse_expr();
     return expr;
 }
 
@@ -651,15 +742,15 @@ ExprPtr Parser::parse_sizeof()
 ExprPtr Parser::parse_address_of()
 {
     consume(TokenType::Ampersand, "Expected '&' in address-of expression");
-    auto operand = parse_expression();
+    auto operand = parse_expr();
     auto expr = std::make_unique<AddressOfExpr>(std::move(operand));
     return expr;
 }
 
-ExprPtr Parser::parse_deref()
+ExprPtr Parser::parse_deref(int min_precedence)
 {
     consume(TokenType::Star, "Expected '*' in dereference expression");
-    auto operand = parse_expression();
+    auto operand = parse_expr(min_precedence);
     auto expr = std::make_unique<DerefExpr>(std::move(operand));
     return expr;
 }
@@ -672,7 +763,7 @@ ExprPtr Parser::parse_init_list()
 
     while (current_.type != TokenType::RBrace && current_.type != TokenType::Eof)
     {
-        init_list->members.push_back(parse_expression());
+        init_list->members.push_back(parse_expr());
 
         if (current_.type == TokenType::Comma)
         {
@@ -691,72 +782,18 @@ ExprPtr Parser::parse_init_list()
 
 ExprPtr Parser::parse_binary(ExprPtr left, int min_precedence)
 {
-    while (true)
-    {
-        int precedence = get_precedence(current_.type);
-
-        if (precedence < min_precedence)
-        {
-            return left;
-        }
-
-        Token op = current_;
-        advance();
-
-        ExprPtr right = parse_unary();
-
-        int next_precedence = get_precedence(current_.type);
-
-        if (precedence < next_precedence)
-        {
-            right = parse_binary(std::move(right), precedence + 1);
-        }
-
-        left = std::make_unique<BinaryExpr>(op.type, std::move(left), std::move(right));
-    }
+    debug("parser: parsing binary expression");
+    auto op = current_.type;
+    advance();
+    return std::make_unique<BinaryExpr>(op, std::move(left), std::move(parse_expr(min_precedence)));
 }
 
-int Parser::get_precedence(TokenType type)
+ExprPtr Parser::parse_unary(int min_precedence)
 {
-    switch (type)
-    {
-    case TokenType::Assign:
-        return 1;
-    case TokenType::Plus:
-    case TokenType::Minus:
-        return 2;
-    case TokenType::Star:
-    case TokenType::Divide:
-        return 3;
-    // case TokenType::Caret: // Exponentiation
-    //     return 4;
-    case TokenType::LParen:
-    case TokenType::LBracket:
-    case TokenType::Dot:
-    case TokenType::Arrow:
-    case TokenType::DoubleColon:
-        return 9;
-    default:
-        return 0; // Default precedence for non-operators
-    }
-}
-ExprPtr Parser::parse_unary()
-{
-    // Check if the current token is a unary operator
-    if (current_.type == TokenType::Minus || current_.type == TokenType::Plus)
-    {
-        Token op = current_;
-        advance(); // Consume the unary operator
-
-        // Parse the operand (which could be another unary expression or a primary expression)
-        ExprPtr operand = parse_unary();
-
-        // Return a unary expression node
-        return std::make_unique<UnaryExpr>(op.type, std::move(operand));
-    }
-
-    // If it's not a unary operator, parse a primary expression
-    return parse_primary();
+    debug("parser: parsing unary expression");
+    auto op = current_.type;
+    advance();
+    return std::make_unique<UnaryExpr>(op, std::move(parse_expr(min_precedence)));
 }
 
 ExprPtr Parser::parse_primary()
@@ -789,7 +826,7 @@ ExprPtr Parser::parse_primary()
     else if (current_.type == TokenType::LParen)
     {
         advance();
-        ExprPtr expr = parse_expression();
+        ExprPtr expr = parse_expr();
         consume(TokenType::RParen, "Expect ')' after expression.");
         return expr;
     }
@@ -821,7 +858,7 @@ StmtPtr Parser::parse_statement()
     }
     else
     {
-        auto expr = parse_expression();
+        auto expr = parse_expr();
         consume(TokenType::Semicolon, "Expect ';' after expression");
         return std::make_unique<ExprStmt>(std::move(expr));
     }
@@ -833,7 +870,7 @@ StmtPtr Parser::parse_return()
     ExprPtr expr = nullptr;
     if (current_.type != TokenType::Semicolon)
     {
-        expr = parse_expression();
+        expr = parse_expr();
     }
     consume(TokenType::Semicolon, "Expect ';' after return value.");
     return std::make_unique<ReturnStmt>(std::move(expr));
@@ -843,7 +880,7 @@ StmtPtr Parser::parse_if()
 {
     advance(); // Move past the 'if' keyword
     consume(TokenType::LParen, "Expect '(' after 'if'.");
-    ExprPtr condition = parse_expression();
+    ExprPtr condition = parse_expr();
     consume(TokenType::RParen, "Expect ')' after condition.");
     StmtPtr then_branch = parse_statement();
     StmtPtr else_branch = nullptr;
@@ -858,7 +895,7 @@ StmtPtr Parser::parse_while()
 {
     advance(); // Move past the 'while' keyword
     consume(TokenType::LParen, "Expect '(' after 'while'.");
-    ExprPtr condition = parse_expression();
+    ExprPtr condition = parse_expr();
     consume(TokenType::RParen, "Expect ')' after condition.");
     StmtPtr body = parse_statement();
     return std::make_unique<WhileStmt>(std::move(condition), std::move(body));
@@ -890,7 +927,7 @@ VarDeclStmt Parser::parse_var_decl()
     if (match(TokenType::Assign))
     {
         advance();
-        stmt.init_expr = parse_expression();
+        stmt.init_expr = parse_expr();
     }
 
     consume(TokenType::Semicolon, vstring("Expected ';' after variable declaration for ", stmt.name, ", but got ", current_.lexeme));
