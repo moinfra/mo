@@ -290,3 +290,27 @@ TEST(ParserTest, PointerArithmetic)
 
     EXPECT_EQ(parse_and_normalize(input), input);
 }
+
+TEST(ParserTest, InitializerList)
+{
+    std::string input = "let arr: int[3] = [1, 2, 3];";
+    EXPECT_EQ(parse_and_normalize(input), input);
+}
+
+TEST(ParserTest, NestedInitializerList)
+{
+    std::string input = "let matrix: int[2][2] = [[1, 2], [3, 4]];";
+    EXPECT_EQ(parse_and_normalize(input), input);
+}
+
+TEST(ParserTest, StructInitializerList)
+{
+    std::string input = "let p: Point = Point { x: 1.1, y: 2.2 };";
+    EXPECT_EQ(parse_and_normalize(input), input);
+}
+
+TEST(ParserTest, MixedInitializerList)
+{
+    std::string input = "let data: Point[2] = [Point { x: 1.1, y: 2.2 }, Point { x: 3.3, y: 4.4 }];";
+    EXPECT_EQ(parse_and_normalize(input), input);
+}

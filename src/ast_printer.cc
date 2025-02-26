@@ -102,7 +102,7 @@ string ASTPrinter::print(const Type &type)
         result += "*" + print(*type.pointee);
         break;
     case Type::Kind::Array:
-        result += "array<" + print(*type.element_type) + ", " + to_string(type.array_size) + ">";
+        result += print(*type.element_type) + "[" + to_string(type.array_size) + "]";
         break;
     case Type::Kind::Function:
     {
@@ -279,7 +279,7 @@ string ASTPrinter::visit(const DerefExpr &expr)
 
 string ASTPrinter::visit(const InitListExpr &expr)
 {
-    string result = "{";
+    string result = "[";
     for (size_t i = 0; i < expr.members.size(); ++i)
     {
         result += print(*expr.members[i]);
@@ -288,7 +288,7 @@ string ASTPrinter::visit(const InitListExpr &expr)
             result += ", ";
         }
     }
-    result += "}";
+    result += "]";
     return result;
 }
 
@@ -314,13 +314,13 @@ string ASTPrinter::visit(const StructLiteralExpr &expr)
     for (size_t i = 0; i < expr.members.size(); ++i)
     {
         const auto &member = expr.members[i];
-        result += "." + member.first + " = " + print(*member.second);
+        result += " " + member.first + ": " + print(*member.second);
         if (i != expr.members.size() - 1)
         {
             result += ", ";
         }
     }
-    result += "}";
+    result += " }";
     return result;
 }
 
