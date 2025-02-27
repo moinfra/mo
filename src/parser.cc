@@ -934,6 +934,12 @@ ExprPtr Parser::parse_sizeof()
     consume(TokenType::LParen, "Expected '(' after'sizeof'");
     auto expr = std::make_unique<SizeofExpr>();
     expr->target_type = parse_type_safe();
+    expr->kind = SizeofExpr::Kind::Type;
+    if(!expr->target_type) {
+        // try parse expr
+        expr->target_expr = parse_expr();
+        expr->kind = SizeofExpr::Kind::Expr;
+    }
     consume(TokenType::RParen, "Expected ')' after sizeof type");
     return expr;
 }
