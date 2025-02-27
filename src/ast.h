@@ -173,6 +173,7 @@ namespace ast
         FunctionDecl *resolved_func = nullptr;
         bool is_indirect_call = false;
 
+        MemberAccessExpr() = default;
         MemberAccessExpr(ExprPtr object, std::string member, TokenType accessor)
             : object(std::move(object)), member(std::move(member)), accessor(accessor) {}
     };
