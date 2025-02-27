@@ -21,6 +21,7 @@ enum class TokenType
     Impl,
     Fn,
     Return,
+    Type,
     // Types
     Int,
     Float,

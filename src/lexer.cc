@@ -1,4 +1,14 @@
+//===----------------------------------------------------------------------===//
+//                             Headers
+//===----------------------------------------------------------------------===//
+
 #include "lexer.h"
+#include <string>
+#include <unordered_map>
+
+//===----------------------------------------------------------------------===//
+//                             Utility Functions
+//===----------------------------------------------------------------------===//
 
 void debug(const char *fmt, ...)
 {
@@ -10,10 +20,137 @@ void debug(const char *fmt, ...)
     std::printf("\n");
 }
 
+std::string token_type_to_string(TokenType type)
+{
+    switch (type)
+    {
+    case TokenType::Invalid:
+        return "<invalid>";
+    case TokenType::Let:
+        return "let";
+    case TokenType::Struct:
+        return "struct";
+    case TokenType::Impl:
+        return "impl";
+    case TokenType::Fn:
+        return "fn";
+    case TokenType::Type:
+        return "type";
+    case TokenType::Return:
+        return "return";
+    case TokenType::Int:
+        return "int";
+    case TokenType::Float:
+        return "float";
+    case TokenType::String:
+        return "string";
+    case TokenType::Const:
+        return "const";
+    case TokenType::Sizeof:
+        return "sizeof";
+    case TokenType::Cast:
+        return "cast";
+    case TokenType::If:
+        return "if";
+    case TokenType::Else:
+        return "else";
+    case TokenType::While:
+        return "while";
+    case TokenType::For:
+        return "for";
+    case TokenType::Identifier:
+        return "<id>";
+    case TokenType::IntegerLiteral:
+        return "<integer>";
+    case TokenType::FloatLiteral:
+        return "<float>";
+    case TokenType::StringLiteral:
+        return "<string>";
+    case TokenType::Dot:
+        return ".";
+    case TokenType::Arrow:
+        return "->";
+    case TokenType::DoubleColon:
+        return "::";
+    case TokenType::Assign:
+        return "=";
+    case TokenType::Colon:
+        return ":";
+    case TokenType::Semicolon:
+        return ";";
+    case TokenType::Comma:
+        return ",";
+    case TokenType::Star:
+        return "*";
+    case TokenType::Ampersand:
+        return "&";
+    case TokenType::LParen:
+        return "(";
+    case TokenType::RParen:
+        return ")";
+    case TokenType::LBrace:
+        return "{";
+    case TokenType::RBrace:
+        return "}";
+    case TokenType::LBracket:
+        return "[";
+    case TokenType::RBracket:
+        return "]";
+    case TokenType::Plus:
+        return "+";
+    case TokenType::Minus:
+        return "-";
+    case TokenType::Divide:
+        return "/";
+    case TokenType::Modulo:
+        return "%";
+    case TokenType::Eq:
+        return "==";
+    case TokenType::Ne:
+        return "!=";
+    case TokenType::Lt:
+        return "<";
+    case TokenType::Le:
+        return "<=";
+    case TokenType::Gt:
+        return ">";
+    case TokenType::Ge:
+        return ">=";
+    case TokenType::And:
+        return "&&";
+    case TokenType::Or:
+        return "||";
+    case TokenType::Not:
+        return "!";
+    case TokenType::Eof:
+        return "<eof>";
+    default:
+        return "<unknown>"; // 添加 default 情况
+    }
+}
+
+std::string token_to_string(const Token &token)
+{
+    std::string result = token.lexeme;
+    if (result.empty())
+    {
+        return token_type_to_string(token.type);
+    }
+    return result;
+}
+
+//===----------------------------------------------------------------------===//
+//                             Token Class Implementation
+//===----------------------------------------------------------------------===//
+
 Token::Token() : type(TokenType::Invalid), start_line(0), start_col(0), end_line(0), end_col(0), lexeme("") {}
 
 Token::Token(TokenType type, int start_line, int start_col, int end_line, int end_col, const std::string &lexeme)
     : type(type), start_line(start_line), start_col(start_col), end_line(end_line), end_col(end_col), lexeme(lexeme) {}
+
+//===----------------------------------------------------------------------===//
+//                             Lexer Class Implementation
+//===----------------------------------------------------------------------===//
 
 Lexer::Lexer(const std::string &input) : input(input), pos(0), current_line(1), current_col(1) {}
 
@@ -323,6 +460,7 @@ Token Lexer::parse_identifier_or_keyword()
         {"struct", TokenType::Struct},
         {"impl", TokenType::Impl},
         {"fn", TokenType::Fn},
+        {"type", TokenType::Type},
         {"return", TokenType::Return},
         {"int", TokenType::Int},
         {"float", TokenType::Float},
@@ -458,123 +596,4 @@ Token Lexer::parse_single_char(TokenType type, const std::string &lexeme)
     int start_col = current_col;
     advance();
     return Token(type, start_line, start_col, current_line, current_col - 1, lexeme);
-}
-
-std::string token_to_string(const Token &token)
-{
-    std::string result = token.lexeme;
-    if (result.empty())
-    {
-        return token_type_to_string(token.type);
-    }
-    return result;
-}
-
-#include <string>
-
-std::string token_type_to_string(TokenType type)
-{
-    switch (type)
-    {
-    case TokenType::Invalid:
-        return "<invalid>";
-    case TokenType::Let:
-        return "let";
-    case TokenType::Struct:
-        return "struct";
-    case TokenType::Impl:
-        return "impl";
-    case TokenType::Fn:
-        return "fn";
-    case TokenType::Return:
-        return "return";
-    case TokenType::Int:
-        return "int";
-    case TokenType::Float:
-        return "float";
-    case TokenType::String:
-        return "string";
-    case TokenType::Const:
-        return "const";
-    case TokenType::Sizeof:
-        return "sizeof";
-    case TokenType::Cast:
-        return "cast";
-    case TokenType::If:
-        return "if";
-    case TokenType::Else:
-        return "else";
-    case TokenType::While:
-        return "while";
-    case TokenType::For:
-        return "for";
-    case TokenType::Identifier:
-        return "<id>";
-    case TokenType::IntegerLiteral:
-        return "<integer>";
-    case TokenType::FloatLiteral:
-        return "<float>";
-    case TokenType::StringLiteral:
-        return "<string>";
-    case TokenType::Dot:
-        return ".";
-    case TokenType::Arrow:
-        return "->";
-    case TokenType::DoubleColon:
-        return "::";
-    case TokenType::Assign:
-        return "=";
-    case TokenType::Colon:
-        return ":";
-    case TokenType::Semicolon:
-        return ";";
-    case TokenType::Comma:
-        return ",";
-    case TokenType::Star:
-        return "*";
-    case TokenType::Ampersand:
-        return "&";
-    case TokenType::LParen:
-        return "(";
-    case TokenType::RParen:
-        return ")";
-    case TokenType::LBrace:
-        return "{";
-    case TokenType::RBrace:
-        return "}";
-    case TokenType::LBracket:
-        return "[";
-    case TokenType::RBracket:
-        return "]";
-    case TokenType::Plus:
-        return "+";
-    case TokenType::Minus:
-        return "-";
-    case TokenType::Divide:
-        return "/";
-    case TokenType::Modulo:
-        return "%";
-    case TokenType::Eq:
-        return "==";
-    case TokenType::Ne:
-        return "!=";
-    case TokenType::Lt:
-        return "<";
-    case TokenType::Le:
-        return "<=";
-    case TokenType::Gt:
-        return ">";
-    case TokenType::Ge:
-        return ">=";
-    case TokenType::And:
-        return "&&";
-    case TokenType::Or:
-        return "||";
-    case TokenType::Not:
-        return "!";
-    case TokenType::Eof:
-        return "<eof>";
-    default:
-        return "<unknown>"; // 添加 default 情况
-    }
 }
