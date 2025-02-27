@@ -256,3 +256,100 @@ void IRBuilder::insert(Instruction *inst)
         insert_block_->append(inst);
     }
 }
+
+// BitCast Instruction
+BitCastInst* IRBuilder::create_bitcast(Value *val, Type *target_type, const std::string &name) {
+    assert(val->type()->size() == target_type->size() && "Bitcast types must have same size");
+    auto *inst = BitCastInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+// Call Instruction
+CallInst* IRBuilder::create_call(Function *callee, const std::vector<Value*> &args, const std::string &name) {
+    assert(callee->num_args() == args.size() && "Argument count mismatch");
+    for (size_t i = 0; i < args.size(); ++i) {
+        assert(args[i]->type() == callee->arg_type(i) && "Argument type mismatch");
+    }
+    auto *inst = CallInst::create(callee, args, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+// Sign Extension Instruction
+SExtInst* IRBuilder::create_sext(Value *val, Type *target_type, const std::string &name) {
+    assert(val->type()->type_id() == Type::IntTy && "SExt source must be integer");
+    assert(target_type->type_id() == Type::IntTy && "SExt target must be integer");
+    assert(target_type->size() > val->type()->size() && "SExt must expand to larger type");
+    auto *inst = SExtInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+// Truncate Instruction
+TruncInst* IRBuilder::create_trunc(Value *val, Type *target_type, const std::string &name) {
+    assert(val->type()->type_id() == Type::IntTy && "Trunc source must be integer");
+    assert(target_type->type_id() == Type::IntTy && "Trunc target must be integer");
+    assert(target_type->size() < val->type()->size() && "Trunc must reduce to smaller type");
+    auto *inst = TruncInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+// General Cast Instruction (Example: FP<->Int conversions)
+Value* IRBuilder::create_cast(Value* src_val, Type* target_type, const std::string& name) {
+    Type* src_type = src_val->type();
+    if (src_type == target_type) return src_val;
+
+    Instruction* inst = nullptr;
+    
+    // 整数类型之间的转换
+    if (src_type->is_integer() && target_type->is_integer()) {
+        auto src_bits = static_cast<IntegerType*>(src_type)->bits();
+        auto tgt_bits = static_cast<IntegerType*>(target_type)->bits();
+        
+        if (src_bits < tgt_bits) {
+            inst = SExtInst::create(src_val, target_type, insert_block_, name);
+        } else {
+            inst = TruncInst::create(src_val, target_type, insert_block_, name);
+        }
+    }
+    // 整数转浮点
+    else if (src_type->is_integer() && target_type->is_float()) {
+        inst = SIToFPInst::create(src_val, target_type, insert_block_, name);
+    }
+    // 浮点转整数
+    else if (src_type->is_float() && target_type->is_integer()) {
+        inst = FPToSIInst::create(src_val, target_type, insert_block_, name);
+    }
+    // 浮点类型之间的转换
+    else if (src_type->is_float() && target_type->is_float()) {
+        auto src_bits = static_cast<FloatType*>(src_type)->bits();
+        auto tgt_bits = static_cast<FloatType*>(target_type)->bits();
+        
+        if (src_bits < tgt_bits) {
+            inst = FPExtInst::create(src_val, target_type, insert_block_, name);
+        } else {
+            inst = FPTruncInst::create(src_val, target_type, insert_block_, name);
+        }
+    }
+    // 指针类型转换
+    else if (src_type->is_pointer() && target_type->is_pointer()) {
+        inst = BitCastInst::create(src_val, target_type, insert_block_, name);
+    }
+    // 指针与整数互转
+    else if ((src_type->is_pointer() && target_type->is_integer()) ||
+             (src_type->is_integer() && target_type->is_pointer())) {
+        assert(src_type->size() == target_type->size() && "Pointer-int cast requires same size");
+        inst = BitCastInst::create(src_val, target_type, insert_block_, name);
+    }
+
+    assert(inst && "Unsupported cast operation");
+    insert(inst);
+    return inst;
+}
+
+// Subtraction Helper (Wrapper for binary SUB)
+BinaryInst* IRBuilder::create_sub(Value *lhs, Value *rhs, const std::string &name) {
+    return create_binary(Opcode::Sub, lhs, rhs, name);
+}
