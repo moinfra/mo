@@ -120,27 +120,31 @@ std::unique_ptr<Type> Type::clone() const
     return result;
 }
 
-Type Type::get_void_type() {
+Type Type::get_void_type()
+{
     Type result;
     result.kind = Kind::Void;
     return result;
 }
 
-Type Type::get_int_type() {
+Type Type::get_int_type()
+{
     Type result;
     result.kind = Kind::Basic;
     result.basic_kind = BasicKind::Int;
     return result;
 }
 
-Type Type::get_float_type() {
+Type Type::get_float_type()
+{
     Type result;
     result.kind = Kind::Basic;
     result.basic_kind = BasicKind::Float;
     return result;
 }
 
-Type Type::get_string_type() {
+Type Type::get_string_type()
+{
     Type result;
     result.kind = Kind::Basic;
     result.basic_kind = BasicKind::String;
@@ -271,3 +275,25 @@ GlobalDecl::GlobalDecl(const VarDeclStmt &varDeclStmt)
 
 GlobalDecl::GlobalDecl(VarDeclStmt &&varDeclStmt, bool exported)
     : VarDeclStmt(std::move(varDeclStmt)), is_exported(exported) {}
+
+// TypeAlias methods
+TypeAlias::TypeAlias(const TypeAlias &other)
+    : name(other.name), type(other.type ? other.type->clone() : nullptr) {}
+
+TypeAlias::TypeAlias(TypeAlias &&other) noexcept
+{
+    std::swap(*this, other);
+}
+
+TypeAlias &TypeAlias::operator=(TypeAlias other) noexcept
+{
+    std::swap(*this, other);
+    return *this;
+}
+
+void swap(TypeAlias &a, TypeAlias &b) noexcept
+{
+    using std::swap;
+    swap(a.name, b.name);
+    swap(a.type, b.type);
+}

@@ -353,4 +353,17 @@ namespace ast
         GlobalDecl(const VarDeclStmt &varDeclStmt);
         GlobalDecl(VarDeclStmt &&varDeclStmt, bool exported = false);
     };
+
+    struct TypeAlias
+    {
+        std::string name;
+        TypePtr type;
+
+        TypeAlias(std::string name, TypePtr type) : name(std::move(name)), type(std::move(type)) {}
+        TypeAlias(const TypeAlias &other);
+        TypeAlias(TypeAlias &&other) noexcept;
+        TypeAlias &operator=(TypeAlias other) noexcept;
+
+        friend void swap(TypeAlias &a, TypeAlias &b) noexcept;
+    };
 };
