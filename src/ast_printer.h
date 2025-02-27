@@ -10,6 +10,7 @@ public:
     std::string print(const ast::Expr &expr);
     std::string print(const ast::Statement &stmt);
     std::string print(const ast::Type &type);
+    std::string print(const ast::TypeAliasDecl &type_alias_decl);
     std::string print(const ast::StructDecl &struct_decl);
     std::string print(const ast::FunctionDecl &func_decl);
     std::string print(const ast::ImplBlock &impl_block);
