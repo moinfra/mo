@@ -313,6 +313,16 @@ string ASTPrinter::print(const ArrayAccessExpr &expr)
     return oss.str();
 }
 
+string ASTPrinter::print(const TypeAliasDecl &type_alias_decl)
+{
+    ostringstream oss;
+    oss << indent() << "type_alias_decl:\n";
+    enter_scope();
+    oss << indent() << "name: \"" << escape_string(type_alias_decl.name) << "\"\n";
+    oss << indent() << "type: " << print_type(*type_alias_decl.type) << "\n";
+    leave_scope();
+    return oss.str();
+}
 
 string ASTPrinter::print(const StructDecl &struct_decl)
 {

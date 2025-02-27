@@ -88,6 +88,7 @@ private:
     void parse_type_alias(std::unique_ptr<ast::Type> &type);
     void synchronize_type();
 
+    ast::TypeAliasDecl parse_type_alias_decl();
     ast::StructDecl parse_struct_decl();
     ast::TypedField parse_struct_member();
     ast::FunctionDecl parse_function_decl();

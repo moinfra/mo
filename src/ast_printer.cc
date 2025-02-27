@@ -84,6 +84,8 @@ string ASTPrinter::print(const Statement &stmt)
         return visit(*p);
     if (auto p = dynamic_cast<const StructDecl *>(&stmt))
         return print(*p);
+    if (auto p = dynamic_cast<const TypeAliasDecl *>(&stmt))
+        return print(*p);
     if (auto p = dynamic_cast<const ExprStmt *>(&stmt))
         return visit(*p);
     return "unknown_statement";
@@ -136,6 +138,13 @@ string ASTPrinter::print(const Type &type)
     }
     return result;
 }
+
+string ASTPrinter::print(const TypeAliasDecl &type_alias_decl)
+{
+    string result = "type " + type_alias_decl.name + " = " + print(*type_alias_decl.type) + ";";
+    return result;
+}
+
 
 string ASTPrinter::print(const StructDecl &struct_decl)
 {
@@ -275,13 +284,15 @@ string ASTPrinter::visit(const SizeofExpr &expr)
     if (expr.kind == SizeofExpr::Kind::Type)
     {
         return "sizeof(" + print(*expr.target_type) + ")";
-    } else if (expr.kind == SizeofExpr::Kind::Expr)
+    }
+    else if (expr.kind == SizeofExpr::Kind::Expr)
     {
         return "sizeof(" + print(*expr.target_expr) + ")";
-    } else {
-        unreachable();
     }
-
+    else
+    {
+        abort();
+    }
 }
 
 string ASTPrinter::visit(const AddressOfExpr &expr)
