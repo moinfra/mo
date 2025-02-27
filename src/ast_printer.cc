@@ -291,7 +291,7 @@ string ASTPrinter::visit(const SizeofExpr &expr)
     }
     else
     {
-        unreachable();
+        abort();
     }
 }
 
