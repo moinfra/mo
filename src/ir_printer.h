@@ -44,7 +44,7 @@ public:
     static void print_function(const Function &function, std::ostream &os)
     {
         os << "define " << function.return_type()->name() << " @" << function.name() << "(";
-        for (size_t i = 0; i < function.arg_size(); ++i)
+        for (size_t i = 0; i < function.num_args(); ++i)
         {
             if (i != 0)
             {
