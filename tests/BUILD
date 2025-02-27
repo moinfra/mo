@@ -16,6 +16,14 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+cc_test(
+    name = "type_checker_test",
+    srcs = ["type_checker_test.cc"],
+    deps = [
+        "//src:type_checker",
+        "@googletest//:gtest_main",
+    ],
+)
 
 cc_test(
     name = "ir_test",

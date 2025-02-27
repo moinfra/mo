@@ -14,6 +14,14 @@ cc_library(
 )
 
 cc_library(
+    name = "type_checker",
+    srcs = ["type_checker.cc", "ast.cc"],
+    hdrs = ["type_checker.h", "ast.h"],
+    deps = [":lexer"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "ast_printer_yaml",
     srcs = ["ast_printer_yaml.cc"],
     hdrs = ["ast_printer_yaml.h"],
