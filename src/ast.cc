@@ -1,9 +1,15 @@
+//===----------------------------------------------------------------------===//
+//                             Headers and Namespaces
+//===----------------------------------------------------------------------===//
+
 #include "ast.h"
 #include <algorithm>
 
 using namespace ast;
 
-// Type methods
+//===----------------------------------------------------------------------===//
+//                             Type Class Implementation
+//===----------------------------------------------------------------------===//
 
 bool Type::operator!=(const Type &other) const
 {
@@ -151,7 +157,24 @@ Type Type::get_string_type()
     return result;
 }
 
-// StructLiteralExpr methods
+Type Type::get_struct_type(
+    const std::string &name,
+    std::vector<ast::TypedField> fields)
+{
+    Type result;
+    result.kind = Kind::Struct;
+    result.name = name;
+    for (const auto &field : fields)
+    {
+        result.members[field.name] = field.type->clone();
+    }
+    return result;
+}
+
+//===----------------------------------------------------------------------===//
+//                         StructLiteralExpr Implementation
+//===----------------------------------------------------------------------===//
+
 void StructLiteralExpr::add_member(std::string name, ExprPtr expr)
 {
     size_t index = members.size();
@@ -169,8 +192,11 @@ Expr *StructLiteralExpr::get_member(const std::string &name) const
     return nullptr;
 }
 
-// VarDeclStmt methods
-void swap(VarDeclStmt &a, VarDeclStmt &b) noexcept
+//===----------------------------------------------------------------------===//
+//                          VarDeclStmt Implementation
+//===----------------------------------------------------------------------===//
+
+void VarDeclStmt::swap(VarDeclStmt &a, VarDeclStmt &b) noexcept
 {
     using std::swap;
     swap(a.is_const, b.is_const);
@@ -181,17 +207,20 @@ void swap(VarDeclStmt &a, VarDeclStmt &b) noexcept
 
 VarDeclStmt &VarDeclStmt::operator=(VarDeclStmt other) noexcept
 {
-    std::swap(*this, other);
+    VarDeclStmt::swap(*this, other);
     return *this;
 }
 
-VarDeclStmt::VarDeclStmt(const VarDeclStmt &other)
-    : is_const(other.is_const),
-      name(other.name),
-      type(other.type ? std::make_unique<Type>(*other.type) : nullptr),
-      init_expr(other.init_expr ? std::make_unique<Expr>(*other.init_expr) : nullptr) {}
+VarDeclStmt::VarDeclStmt(VarDeclStmt &&other) noexcept
+    : is_const(std::move(other.is_const)),
+      name(std::move(other.name)),
+      type(std::move(other.type)),
+      init_expr(std::move(other.init_expr)) {}
 
-// TypedField methods
+//===----------------------------------------------------------------------===//
+//                          TypedField Implementation
+//===----------------------------------------------------------------------===//
+
 TypedField::TypedField(TypePtr type, std::string name)
     : type(std::move(type)), name(std::move(name)) {}
 
@@ -200,18 +229,21 @@ TypedField::TypedField(const TypedField &other)
 
 TypedField &TypedField::operator=(TypedField other) noexcept
 {
-    std::swap(*this, other);
+    TypedField::swap(*this, other);
     return *this;
 }
 
-void swap(TypedField &a, TypedField &b) noexcept
+void TypedField::swap(TypedField &a, TypedField &b) noexcept
 {
     using std::swap;
     swap(a.name, b.name);
     swap(a.type, b.type);
 }
 
-// StructDecl methods
+//===----------------------------------------------------------------------===//
+//                          StructDecl Implementation
+//===----------------------------------------------------------------------===//
+
 StructDecl::StructDecl(std::string name, std::vector<TypedField> fields)
     : name(std::move(name)), fields(std::move(fields))
 {
@@ -247,7 +279,10 @@ const TypedField *StructDecl::get_field(std::string_view name) const
     return nullptr;
 }
 
-// FunctionDecl methods
+//===----------------------------------------------------------------------===//
+//                          FunctionDecl Implementation
+//===----------------------------------------------------------------------===//
+
 void FunctionDecl::add_param(const std::string &name, std::unique_ptr<Type> type)
 {
     params.emplace_back(std::move(type), name);
@@ -269,29 +304,33 @@ Type &FunctionDecl::get_param_type(const std::string &name)
     throw std::runtime_error("parameter not found: " + name);
 }
 
-// GlobalDecl methods
-GlobalDecl::GlobalDecl(const VarDeclStmt &varDeclStmt)
-    : VarDeclStmt(varDeclStmt), is_exported(false) {}
+//===----------------------------------------------------------------------===//
+//                          GlobalDecl Implementation
+//===----------------------------------------------------------------------===//
 
 GlobalDecl::GlobalDecl(VarDeclStmt &&varDeclStmt, bool exported)
     : VarDeclStmt(std::move(varDeclStmt)), is_exported(exported) {}
 
-// TypeAlias methods
-TypeAlias::TypeAlias(const TypeAlias &other)
+//===----------------------------------------------------------------------===//
+//                          TypeAliasDecl Implementation
+//===----------------------------------------------------------------------===//
+
+TypeAliasDecl::TypeAliasDecl(const TypeAliasDecl &other)
     : name(other.name), type(other.type ? other.type->clone() : nullptr) {}
 
-TypeAlias::TypeAlias(TypeAlias &&other) noexcept
+TypeAliasDecl::TypeAliasDecl(TypeAliasDecl &&other) noexcept
+    : name(), type(nullptr)
 {
-    std::swap(*this, other);
+    TypeAliasDecl::swap(*this, other);
 }
 
-TypeAlias &TypeAlias::operator=(TypeAlias other) noexcept
+TypeAliasDecl &TypeAliasDecl::operator=(TypeAliasDecl other) noexcept
 {
-    std::swap(*this, other);
+    TypeAliasDecl::swap(*this, other);
     return *this;
 }
 
-void swap(TypeAlias &a, TypeAlias &b) noexcept
+void TypeAliasDecl::swap(TypeAliasDecl &a, TypeAliasDecl &b) noexcept
 {
     using std::swap;
     swap(a.name, b.name);

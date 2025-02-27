@@ -12,11 +12,14 @@ namespace ast
     // Forwards declarations
     struct Expr;
     struct Statement;
+    struct TypeAliasDecl;
+    struct GlobalDecl;
     struct StructDecl;
     struct ImplBlock;
     struct FunctionDecl;
     struct VarDeclStmt;
     struct Type;
+    struct TypedField;
 
     using ExprPtr = std::unique_ptr<Expr>;
     using TypePtr = std::unique_ptr<Type>;
@@ -25,10 +28,11 @@ namespace ast
     // Program Structure
     struct Program
     {
+        std::vector<std::unique_ptr<TypeAliasDecl>> aliases;
         std::vector<std::unique_ptr<StructDecl>> structs;
         std::vector<std::unique_ptr<ImplBlock>> impl_blocks;
         std::vector<std::unique_ptr<FunctionDecl>> functions;
-        std::vector<std::unique_ptr<VarDeclStmt>> globals;
+        std::vector<std::unique_ptr<GlobalDecl>> globals;
     };
 
     // Type Definition
@@ -83,7 +87,7 @@ namespace ast
         // for copy constructor
         Type(const Type &other);
 
-        void swap(Type &a, Type &b) noexcept;
+        static void swap(Type &a, Type &b) noexcept;
 
         TypePtr clone() const;
 
@@ -91,6 +95,7 @@ namespace ast
         static Type get_int_type();
         static Type get_float_type();
         static Type get_string_type();
+        static Type get_struct_type(const std::string &name, std::vector<ast::TypedField> fields);
     };
 
     // Expressions
@@ -161,6 +166,15 @@ namespace ast
         ExprPtr object;
         std::string member;
         TokenType accessor;
+
+        bool is_method_call = false;
+        std::vector<ExprPtr> args;
+
+        FunctionDecl *resolved_func = nullptr;
+        bool is_indirect_call = false;
+
+        MemberAccessExpr(ExprPtr object, std::string member, TokenType accessor)
+            : object(std::move(object)), member(std::move(member)), accessor(accessor) {}
     };
 
     struct ArrayAccessExpr : Expr
@@ -174,12 +188,11 @@ namespace ast
         TypePtr target_type;
         ExprPtr expr;
     };
-
     struct SizeofExpr : Expr
     {
         enum class Kind
         {
-            Type, // sizeof(type), we prefer to parse as Type instead of Expr
+            Type, // sizeof(type)
             Expr  // sizeof(expr)
         } kind;
 
@@ -188,6 +201,65 @@ namespace ast
             TypePtr target_type;
             ExprPtr target_expr;
         };
+
+        SizeofExpr(Kind k) : kind(k)
+        {
+            if (kind == Kind::Type)
+            {
+                new (&target_type) TypePtr();
+            }
+            else if (kind == Kind::Expr)
+            {
+                new (&target_expr) ExprPtr();
+            }
+        }
+
+        ~SizeofExpr()
+        {
+            if (kind == Kind::Type)
+            {
+                target_type.~TypePtr();
+            }
+            else if (kind == Kind::Expr)
+            {
+                target_expr.~ExprPtr();
+            }
+        }
+
+        SizeofExpr(const SizeofExpr &) = delete;
+        SizeofExpr &operator=(const SizeofExpr &) = delete;
+
+        SizeofExpr(SizeofExpr &&other) noexcept
+            : kind(other.kind)
+        {
+            if (kind == Kind::Type)
+            {
+                new (&target_type) TypePtr(std::move(other.target_type));
+            }
+            else if (kind == Kind::Expr)
+            {
+                new (&target_expr) ExprPtr(std::move(other.target_expr));
+            }
+        }
+
+        SizeofExpr &operator=(SizeofExpr &&other) noexcept
+        {
+            if (this != &other)
+            {
+                this->~SizeofExpr();
+
+                kind = other.kind;
+                if (kind == Kind::Type)
+                {
+                    new (&target_type) TypePtr(std::move(other.target_type));
+                }
+                else if (kind == Kind::Expr)
+                {
+                    new (&target_expr) ExprPtr(std::move(other.target_expr));
+                }
+            }
+            return *this;
+        }
     };
 
     struct AddressOfExpr : Expr
@@ -252,10 +324,10 @@ namespace ast
 
         VarDeclStmt() : is_const(false) {}
 
-        friend void swap(VarDeclStmt &a, VarDeclStmt &b) noexcept;
+        static void swap(VarDeclStmt &a, VarDeclStmt &b) noexcept;
         VarDeclStmt &operator=(VarDeclStmt other) noexcept;
-        VarDeclStmt(VarDeclStmt &&other) noexcept = default;
-        VarDeclStmt(const VarDeclStmt &other);
+        VarDeclStmt(VarDeclStmt &&other) noexcept;
+        VarDeclStmt(const VarDeclStmt &other) = delete;
     };
 
     struct ReturnStmt : Statement
@@ -303,7 +375,7 @@ namespace ast
         TypedField(TypedField &&other) noexcept = default;
         TypedField &operator=(TypedField other) noexcept;
 
-        friend void swap(TypedField &a, TypedField &b) noexcept;
+        static void swap(TypedField &a, TypedField &b) noexcept;
     };
 
     class StructDecl : public Statement
@@ -322,6 +394,10 @@ namespace ast
 
         // Get a field by name
         const TypedField *get_field(std::string_view name) const;
+        TypePtr type() const
+        {
+            return std::make_unique<Type>(Type::get_struct_type(name, fields));
+        }
     };
 
     struct FunctionDecl
@@ -333,7 +409,6 @@ namespace ast
 
         bool is_method = false;
         TypePtr receiver_type = nullptr;
-        ;
 
         void add_param(const std::string &name, TypePtr type);
         Type &get_param_type(const std::string &name);
@@ -350,20 +425,20 @@ namespace ast
         bool is_exported = false;
 
         GlobalDecl() : VarDeclStmt() {};
-        GlobalDecl(const VarDeclStmt &varDeclStmt);
         GlobalDecl(VarDeclStmt &&varDeclStmt, bool exported = false);
     };
 
-    struct TypeAlias
+    struct TypeAliasDecl
     {
         std::string name;
         TypePtr type;
 
-        TypeAlias(std::string name, TypePtr type) : name(std::move(name)), type(std::move(type)) {}
-        TypeAlias(const TypeAlias &other);
-        TypeAlias(TypeAlias &&other) noexcept;
-        TypeAlias &operator=(TypeAlias other) noexcept;
+        TypeAliasDecl() = default;
+        TypeAliasDecl(std::string name, TypePtr type) : name(std::move(name)), type(std::move(type)) {}
+        TypeAliasDecl(const TypeAliasDecl &other);
+        TypeAliasDecl(TypeAliasDecl &&other) noexcept;
+        TypeAliasDecl &operator=(TypeAliasDecl other) noexcept;
 
-        friend void swap(TypeAlias &a, TypeAlias &b) noexcept;
+        static void swap(TypeAliasDecl &a, TypeAliasDecl &b) noexcept;
     };
 };
