@@ -106,6 +106,14 @@ public:
 
     static Type *get_void_type(Module *m);
 
+    bool is_float() const { return tid_ == FpTy; }
+    bool is_integer() const { return tid_ == IntTy; }
+    bool is_pointer() const { return tid_ == PtrTy; }
+    bool is_function() const { return tid_ == FuncTy; }
+    bool is_array() const { return tid_ == ArrayTy; }
+    bool is_struct() const { return tid_ == StructTy; }
+    bool is_vector() const { return tid_ == VecTy; }
+
 protected:
     TypeID tid_;
     Module *module_;
@@ -285,6 +293,8 @@ public:
     // Gets the member offset
     size_t get_member_offset(unsigned index) const;
 
+    size_t get_member_index(const std::string &name) const;
+
     size_t size() const override;
 
     bool is_opaque() const { return is_opaque_; }
@@ -403,7 +413,12 @@ enum class Opcode
     Call,
     ZExt,
     SExt,
-    Trunc
+    Trunc,
+    SIToFP,
+    FPToSI,
+    FPExt,
+    FPTrunc,
+    BitCast,
 };
 
 class Instruction : public User
@@ -444,6 +459,7 @@ public:
 
     Instruction *first_instruction() const { return head_; }
     Instruction *last_instruction() const { return tail_; }
+    Instruction *get_terminator() const;
     void insert_before(Instruction *pos, std::unique_ptr<Instruction> inst);
     void insert_after(Instruction *pos, std::unique_ptr<Instruction> inst);
 
@@ -489,9 +505,11 @@ public:
     Module *parent() const { return parent_; }
 
     Type *return_type() const { return return_type_; }
+    Type *arg_type(size_t idx) const { return args_.at(idx)->type(); }
     const std::vector<Argument *> &args() const { return args_; }
     Argument *arg(size_t idx) const { return args_.at(idx); }
-    size_t arg_size() const { return args_.size(); }
+    size_t num_args() const { return args_.size(); }
+    void set_instance_method(bool is_instance_method) { is_instance_method_ = is_instance_method; }
     std::vector<Type *> param_types() const
     {
         std::vector<Type *> types;
@@ -509,6 +527,7 @@ private:
     std::vector<Argument *> args_;                     // 参数视图
     std::vector<std::unique_ptr<BasicBlock>> basic_blocks_;
     std::vector<BasicBlock *> basic_block_ptrs_;
+    bool is_instance_method_ = false;
 };
 
 //===----------------------------------------------------------------------===//
@@ -585,6 +604,10 @@ public:
         return create_function(name, return_type, std::vector<std::pair<std::string, Type *>>(params));
     }
 
+    Function *create_function(
+        const std::string &name,
+        FunctionType* type);
+
     GlobalVariable *create_global_variable(Type *type, bool is_constant, Constant *initializer, const std::string &name = "");
 
     Type *get_void_type();
@@ -608,6 +631,7 @@ public:
     StructType *create_struct_type(const std::string &name);
 
     StructType *get_struct_type(const std::vector<Type *> &members);
+    StructType *get_struct_type(const std::string &name);
     VectorType *get_vector_type(Type *element_type, uint64_t num_elements);
 
 private:
@@ -730,6 +754,22 @@ private:
     std::vector<Constant *> elements_;
     friend class Module;
 };
+
+// String constant
+class ConstantString : public Constant {
+    public:
+      static ConstantString *get(Module *m, const std::string &value);
+      const std::string &value() const;
+      std::string as_string() const override;
+    
+    private:
+      ConstantString(ArrayType *type, const std::string &value);
+      static std::string escape_string(const std::string &input);
+    
+      std::string value_;
+      friend class Module;
+    };
+    
 
 // Structure constant
 class ConstantStruct : public Constant
@@ -973,6 +1013,7 @@ private:
     static bool isBinaryOp(Opcode op);
 };
 
+// FIXME: Deprecated use CastInst instead
 class ConversionInst : public Instruction
 {
 public:
@@ -983,4 +1024,113 @@ public:
 private:
     ConversionInst(Opcode op, Type *dest_type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
     static bool isConversionOp(Opcode op);
+};
+
+class CastInst : public Instruction
+{
+protected:
+    CastInst(Opcode op, Type *target_type, BasicBlock *parent,
+             std::initializer_list<Value *> operands,
+             const std::string &name);
+
+public:
+    Value *source() const { return operand(0); }
+    Type *target_type() const { return type(); }
+};
+
+class BitCastInst : public CastInst
+{
+public:
+    static BitCastInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    BitCastInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
+class CallInst : public Instruction
+{
+public:
+    static CallInst *create(Function *func, const std::vector<Value *> &args, BasicBlock *parent, const std::string &name);
+
+    Function *called_function() const { return static_cast<Function *>(operand(0)); }
+    std::vector<Value *> create_operand_list(Function *func, const std::vector<Value *> &args);
+    std::vector<Value *> arguments() const;
+
+private:
+    CallInst(BasicBlock *parent, Function *func, const std::vector<Value *> &args, const std::string &name);
+};
+
+class SExtInst : public CastInst
+{
+public:
+    static SExtInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    SExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
+class TruncInst : public CastInst
+{
+public:
+    static TruncInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    TruncInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
+class SIToFPInst : public CastInst
+{
+public:
+    static SIToFPInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    SIToFPInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
+class FPToSIInst : public CastInst
+{
+public:
+    static FPToSIInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    FPToSIInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
+class FPExtInst : public CastInst
+{
+public:
+    static FPExtInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    FPExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
+class FPTruncInst : public CastInst
+{
+public:
+    static FPTruncInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    FPTruncInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
 };

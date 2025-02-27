@@ -1,5 +1,8 @@
 #include "ir.h"
+
 #include <sstream>
+#include <iomanip>
+
 //===----------------------------------------------------------------------===//
 //                              Type Implementation
 //===----------------------------------------------------------------------===//
@@ -110,6 +113,21 @@ size_t StructType::get_member_offset(unsigned index) const
 {
     assert(index < members_.size() && "Invalid member index");
     return offsets_[index];
+}
+
+size_t StructType::get_member_index(const std::string &name) const
+{
+    for (size_t i = 0, e = members_.size(); i != e; ++i)
+    {
+        if (members_[i]->name() == name)
+        {
+            return i;
+        }
+    }
+
+    // TODO: better error handling
+    // assert(0 && "Invalid member name");
+    return std::numeric_limits<size_t>::max();
 }
 
 size_t StructType::size() const
@@ -313,6 +331,25 @@ void BasicBlock::append(Instruction *inst)
     }
 }
 
+Instruction* BasicBlock::get_terminator() const
+{
+    if (!tail_)
+        return nullptr;
+
+    auto *inst = tail_;
+    while (inst->opcode() == Opcode::Br || inst->opcode() == Opcode::CondBr)
+    {
+        inst = inst->prev();
+    }
+
+    if (inst->opcode() == Opcode::Ret)
+    {
+        return inst;
+    }
+
+    return nullptr;
+}
+
 //===----------------------------------------------------------------------===//
 //                             Function Implementation
 //===----------------------------------------------------------------------===//
@@ -359,6 +396,14 @@ Function *Module::create_function(
         std::make_unique<Function>(name, this, return_type, params));
     function_ptrs_.push_back(functions_.back().get());
     return function_ptrs_.back();
+}
+
+Function *Module::create_function(
+    const std::string &name,
+    FunctionType *type)
+{
+    functions_.push_back(
+        std::make_unique<Function>(name, this, type->return_type(), type->param_types()));
 }
 
 GlobalVariable *Module::create_global_variable(Type *type, bool is_constant, Constant *initializer, const std::string &name)
@@ -453,6 +498,20 @@ StructType *Module::get_struct_type(const std::vector<Type *> &members)
     return st;
 }
 
+StructType *Module::get_struct_type(const std::string &name) {
+    // Check existing struct types
+    for (auto &st : struct_types_) {
+        if (st->name() == name) {
+            return st.get();
+        }
+    }
+    // Check opaque types
+    if (auto it = opaque_structs_.find(name); it != opaque_structs_.end()) {
+        return it->second.get();
+    }
+    return nullptr;
+}
+
 VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements)
 {
     auto key = std::make_pair(element_type, num_elements);
@@ -536,9 +595,7 @@ std::string ConstantInt::as_string() const
     return std::to_string(value_);
 }
 
-//===----------------------------------------------------------------------===//
-//                            ConstantFP Implementation
-//===----------------------------------------------------------------------===//
+// ---------- ConstantFP ----------
 std::string ConstantFP::as_string() const
 {
     std::stringstream ss;
@@ -559,6 +616,8 @@ ConstantFP *ConstantFP::get(Module *m, FloatType::Precision precision, double va
     return m->get_constant_fp(m->get_float_type(precision), value);
 }
 
+// ---------- ConstantArray ----------
+
 std::string ConstantArray::as_string() const
 {
     std::stringstream ss;
@@ -570,6 +629,38 @@ std::string ConstantArray::as_string() const
         ss << elements_[i]->as_string();
     }
     ss << "]";
+    return ss.str();
+}
+
+// ---------- ConstantString ----------
+ConstantString::ConstantString(ArrayType *type, const std::string &value)
+    : Constant(type), value_(value) {}
+
+std::string ConstantString::escape_string(const std::string &input)
+{
+    std::stringstream ss;
+    for (char c : input)
+    {
+        if (c == '\\')
+        {
+            ss << "\\5C";
+        }
+        else if (c == '"')
+        {
+            ss << "\\22";
+        }
+        else if (c >= 0x20 && c <= 0x7E)
+        {
+            // Most printable characters are not escaped
+            ss << c;
+        }
+        else
+        {
+            // Escape non-printable characters as \HH
+            ss << "\\" << std::hex << std::setw(2) << std::setfill('0')
+               << static_cast<unsigned int>(static_cast<unsigned char>(c));
+        }
+    }
     return ss.str();
 }
 
@@ -835,4 +926,101 @@ ConversionInst *ConversionInst::create(Opcode op, Value *val, Type *dest_type, B
 {
     assert(isConversionOp(op) && "Invalid conversion opcode");
     return new ConversionInst(op, dest_type, parent, {val}, name);
+}
+
+CastInst::CastInst(Opcode op, Type *target_type, BasicBlock *parent,
+                   std::initializer_list<Value *> operands,
+                   const std::string &name)
+    : Instruction(op, target_type, parent, operands, name) {}
+
+BitCastInst::BitCastInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    // : Instruction(Opcode::BitCast, target_type, parent, {val}, name) {}
+    : CastInst(Opcode::BitCast, target_type, parent, {val}, name)
+{
+}
+
+BitCastInst *BitCastInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new BitCastInst(parent, val, target_type, name);
+}
+
+CallInst::CallInst(BasicBlock *parent, Function *func, const std::vector<Value *> &args, const std::string &name)
+    : Instruction(Opcode::Call, func->return_type(), parent, create_operand_list(func, args), name) {}
+
+std::vector<Value *> CallInst::create_operand_list(Function *func, const std::vector<Value *> &args)
+{
+    std::vector<Value *> operands;
+    operands.reserve(args.size() + 1);
+    operands.push_back(func);
+    operands.insert(operands.end(), args.begin(), args.end());
+    return operands;
+}
+
+CallInst *CallInst::create(Function *func, const std::vector<Value *> &args, BasicBlock *parent, const std::string &name)
+{
+    return new CallInst(parent, func, args, name);
+}
+
+std::vector<Value *> CallInst::arguments() const
+{
+    std::vector<Value *> args;
+    for (size_t i = 1; i < this->operands().size(); ++i)
+    {
+        args.push_back(this->operand(i));
+    }
+    return args;
+}
+
+SExtInst::SExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    // : Instruction(Opcode::SExt, target_type, parent, {val}, name) {}
+    : CastInst(Opcode::SExt, target_type, parent, {val}, name)
+{
+}
+
+SExtInst *SExtInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new SExtInst(parent, val, target_type, name);
+}
+
+TruncInst::TruncInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    // : Instruction(Opcode::Trunc, target_type, parent, {val}, name) {}
+    : CastInst(Opcode::Trunc, target_type, parent, {val}, name)
+{
+}
+
+TruncInst *TruncInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new TruncInst(parent, val, target_type, name);
+}
+
+SIToFPInst::SIToFPInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    : CastInst(Opcode::SIToFP, target_type, parent, {val}, name) {}
+
+SIToFPInst *SIToFPInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new SIToFPInst(parent, val, target_type, name);
+}
+
+FPToSIInst::FPToSIInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    : CastInst(Opcode::FPToSI, target_type, parent, {val}, name) {}
+
+FPToSIInst *FPToSIInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new FPToSIInst(parent, val, target_type, name);
+}
+
+FPExtInst::FPExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    : CastInst(Opcode::FPExt, target_type, parent, {val}, name) {}
+
+FPExtInst *FPExtInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new FPExtInst(parent, val, target_type, name);
+}
+
+FPTruncInst::FPTruncInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    : CastInst(Opcode::FPTrunc, target_type, parent, {val}, name) {}
+
+FPTruncInst *FPTruncInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new FPTruncInst(parent, val, target_type, name);
 }
