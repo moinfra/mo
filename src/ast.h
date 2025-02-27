@@ -43,7 +43,7 @@ namespace ast
             Array,    // T[N]
             Function, // fn() -> T
             Struct,   // struct { ... }
-            Alias     // 类型别名（如 typedef）
+            Alias
         };
         enum class BasicKind
         {
@@ -55,7 +55,7 @@ namespace ast
         Kind kind = Kind::Unknown;
         std::string name;
         bool is_const = false;
-        BasicKind basic_kind; // 基本类型的种类
+        BasicKind basic_kind;
 
         // for pointer type
         TypePtr pointee;
@@ -90,6 +90,7 @@ namespace ast
         static Type get_void_type();
         static Type get_int_type();
         static Type get_float_type();
+        static Type get_string_type();
     };
 
     // Expressions
@@ -103,6 +104,7 @@ namespace ast
 
         virtual ~Expr() = default;
         Category expr_category = Category::RValue;
+        TypePtr type = nullptr; // inferred type of the expression
     };
 
     struct VariableExpr : Expr
@@ -175,7 +177,17 @@ namespace ast
 
     struct SizeofExpr : Expr
     {
-        TypePtr target_type;
+        enum class Kind
+        {
+            Type, // sizeof(type), we prefer to parse as Type instead of Expr
+            Expr  // sizeof(expr)
+        } kind;
+
+        union
+        {
+            TypePtr target_type;
+            ExprPtr target_expr;
+        };
     };
 
     struct AddressOfExpr : Expr

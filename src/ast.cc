@@ -140,6 +140,13 @@ Type Type::get_float_type() {
     return result;
 }
 
+Type Type::get_string_type() {
+    Type result;
+    result.kind = Kind::Basic;
+    result.basic_kind = BasicKind::String;
+    return result;
+}
+
 // StructLiteralExpr methods
 void StructLiteralExpr::add_member(std::string name, ExprPtr expr)
 {
