@@ -272,7 +272,16 @@ string ASTPrinter::visit(const CastExpr &expr)
 
 string ASTPrinter::visit(const SizeofExpr &expr)
 {
-    return "sizeof(" + print(*expr.target_type) + ")";
+    if (expr.kind == SizeofExpr::Kind::Type)
+    {
+        return "sizeof(" + print(*expr.target_type) + ")";
+    } else if (expr.kind == SizeofExpr::Kind::Expr)
+    {
+        return "sizeof(" + print(*expr.target_expr) + ")";
+    } else {
+        unreachable();
+    }
+
 }
 
 string ASTPrinter::visit(const AddressOfExpr &expr)

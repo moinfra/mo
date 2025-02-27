@@ -460,7 +460,18 @@ string ASTPrinter::print(const SizeofExpr &expr)
     ostringstream oss;
     oss << indent() << "sizeof_expr:\n";
     enter_scope();
+    if (expr.kind == SizeofExpr::Kind::Type)
+    {
     oss << indent() << "target_type: " << print_type(*expr.target_type) << "\n";
+    } else if (expr.kind == SizeofExpr::Kind::Expr)
+    {
+        oss << indent() << "target_expr:\n";
+        enter_scope();
+        oss << print(*expr.target_expr);
+        leave_scope();
+    } else {
+        unreachable();
+    }
     leave_scope();
     return oss.str();
 }
