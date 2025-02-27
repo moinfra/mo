@@ -523,6 +523,28 @@ std::unique_ptr<BlockStmt> Parser::parse_block()
     return block;
 }
 
+TypeAliasDecl Parser::parse_type_alias_decl()
+{
+    TypeAliasDecl decl;
+    
+    consume(TokenType::Type, "Expected 'type' keyword");
+    
+    decl.name = current_.lexeme;
+    consume(TokenType::Identifier, "Expected alias name");
+
+    consume(TokenType::Assign, "Expected '=' after alias name");
+
+    decl.type = parse_type();
+
+    consume(TokenType::Semicolon, "Expected ';' after type alias declaration");
+
+    // Register the type alias in your type_aliases_ map
+    type_aliases_.emplace(decl.name, std::move(decl.type));
+
+    return decl;
+}
+
+
 StructDecl Parser::parse_struct_decl()
 {
     StructDecl struct_decl;
@@ -715,11 +737,11 @@ void Parser::parse_type_alias(std::unique_ptr<Type> &type)
     std::string name = current_.lexeme;
     type->kind = Type::Kind::Alias;
     type->name = name;
-    // if (auto it = type_aliases_.find(name); it != type_aliases_.end()) {
-    //     type = it->second->clone();
-    // } else {
-    //     error("Undefined type alias: " + name);
-    // }
+    if (auto it = type_aliases_.find(name); it != type_aliases_.end()) {
+        type = it->second->clone();
+    } else {
+        error("Undefined type alias: " + name);
+    }
     advance();
 }
 
@@ -845,6 +867,7 @@ void Parser::synchronize_type()
             return;
         case TokenType::Let:
         case TokenType::Fn:
+        case TokenType::Type:
         case TokenType::Struct:
             return;
         default:
@@ -932,13 +955,17 @@ ExprPtr Parser::parse_sizeof()
 {
     consume(TokenType::Sizeof, "Expected'sizeof'");
     consume(TokenType::LParen, "Expected '(' after'sizeof'");
-    auto expr = std::make_unique<SizeofExpr>();
-    expr->target_type = parse_type_safe();
-    expr->kind = SizeofExpr::Kind::Type;
-    if(!expr->target_type) {
-        // try parse expr
-        expr->target_expr = parse_expr();
-        expr->kind = SizeofExpr::Kind::Expr;
+    TypePtr target_type = parse_type_safe();
+    ExprPtr target_expr = nullptr;
+    std::unique_ptr<SizeofExpr> expr = nullptr;
+    if (!target_type) {
+        debug("parser: sizeof target is not a type, try parse expr");
+        target_expr = parse_expr();
+        expr = std::make_unique<SizeofExpr>(SizeofExpr::Kind::Expr);
+        expr->target_expr = std::move(target_expr);
+    } else {
+        expr = std::make_unique<SizeofExpr>(SizeofExpr::Kind::Type);
+        expr->target_type = std::move(target_type);
     }
     consume(TokenType::RParen, "Expected ')' after sizeof type");
     return expr;
