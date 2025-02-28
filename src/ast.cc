@@ -171,6 +171,23 @@ Type Type::get_struct_type(
     return result;
 }
 
+Type Type::get_pointer_type(std::unique_ptr<ast::Type> pointee)
+{
+    Type type;
+    type.kind = Type::Kind::Pointer;
+    type.pointee = std::move(pointee);
+    return type;
+}
+
+Type Type::get_array_type(std::unique_ptr<Type> element_type, int size)
+{
+    Type type;
+    type.kind = Type::Kind::Array;
+    type.element_type = std::move(element_type);
+    type.array_size = size;
+    return type;
+}
+
 //===----------------------------------------------------------------------===//
 //                         StructLiteralExpr Implementation
 //===----------------------------------------------------------------------===//
@@ -302,6 +319,47 @@ Type &FunctionDecl::get_param_type(const std::string &name)
         }
     }
     throw std::runtime_error("parameter not found: " + name);
+}
+
+TypePtr FunctionDecl::type() const
+{
+    auto func_type = std::make_unique<Type>();
+    func_type->kind = Type::Kind::Function;
+
+    // Clone return type (assumes return_type is a member of FunctionDecl)
+    if (return_type)
+    {
+        func_type->return_type = return_type->clone();
+    }
+    else
+    {
+        func_type->return_type = Type::get_void_type().clone();
+    }
+
+    // Clone parameter types
+    func_type->params.reserve(params.size());
+    for (const auto &param : params)
+    {
+        func_type->params.push_back(param.type->clone());
+    }
+
+    return func_type;
+}
+
+FunctionDecl FunctionDecl::create_main_function()
+{
+    FunctionDecl main_function;
+    main_function.name = "main";
+    main_function.add_param("argc", Type::get_int_type().clone());
+
+    // auto char_type = Type::get_char_type();
+    auto char_type = std::make_unique<Type>(Type::get_int_type());
+    auto argv_type = Type::get_pointer_type(std::make_unique<Type>(Type::get_pointer_type(std::move(char_type))));
+    main_function.add_param("argv", std::make_unique<Type>(argv_type));
+
+    main_function.return_type = Type::get_int_type().clone();
+
+    return main_function;
 }
 
 //===----------------------------------------------------------------------===//

@@ -96,7 +96,11 @@ namespace ast
         static Type get_float_type();
         static Type get_string_type();
         static Type get_struct_type(const std::string &name, std::vector<ast::TypedField> fields);
+        static Type get_pointer_type(std::unique_ptr<ast::Type> pointee);
+        static Type get_array_type(std::unique_ptr<Type> element_type, int size);
+
     };
+
 
     // Expressions
     struct Expr
@@ -159,6 +163,12 @@ namespace ast
     {
         ExprPtr callee;
         std::vector<ExprPtr> args;
+
+        CallExpr() = default;
+        CallExpr(ExprPtr callee, std::vector<ExprPtr> args)
+            : callee(std::move(callee)), args(std::move(args)) {}
+        CallExpr(std::string callee_name, std::vector<ExprPtr> args)
+            : callee(std::make_unique<VariableExpr>(callee_name)), args(std::move(args)) {}
     };
 
     struct MemberAccessExpr : Expr
@@ -182,6 +192,10 @@ namespace ast
     {
         ExprPtr array;
         ExprPtr index;
+
+        ArrayAccessExpr() = default;
+        ArrayAccessExpr(ExprPtr array, ExprPtr index)
+            : array(std::move(array)), index(std::move(index)) {}
     };
 
     struct CastExpr : Expr
@@ -213,6 +227,16 @@ namespace ast
             {
                 new (&target_expr) ExprPtr();
             }
+        }
+
+        SizeofExpr(TypePtr type) : kind(Kind::Type)
+        {
+            new (&target_type) TypePtr(std::move(type));
+        }
+
+        SizeofExpr(ExprPtr expr) : kind(Kind::Expr)
+        {
+            new (&target_expr) ExprPtr(std::move(expr));
         }
 
         ~SizeofExpr()
@@ -413,6 +437,9 @@ namespace ast
 
         void add_param(const std::string &name, TypePtr type);
         Type &get_param_type(const std::string &name);
+        TypePtr type() const;
+
+        static FunctionDecl create_main_function();
     };
 
     struct ImplBlock
