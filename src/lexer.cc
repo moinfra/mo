@@ -124,6 +124,12 @@ std::string token_type_to_string(TokenType type)
         return "||";
     case TokenType::Not:
         return "!";
+    case TokenType::Pipe:
+        return "|";
+    case TokenType::Caret:
+        return "^";
+    case TokenType::Tilde:
+        return "~";
     case TokenType::Eof:
         return "<eof>";
     default:

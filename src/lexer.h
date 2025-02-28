@@ -1,3 +1,5 @@
+// lexer.h
+
 #pragma once
 
 #include <string>
@@ -50,7 +52,7 @@ enum class TokenType
     Semicolon,   // ;
     Comma,       // ,
     Star,        // *
-    Ampersand,   // &
+    Ampersand,   // & also used for bitwise and
     LParen,      // (
     RParen,      // )
     LBrace,      // {
@@ -70,6 +72,11 @@ enum class TokenType
     And,         // &&
     Or,          // ||
     Not,         //!
+    // Bitwise operators
+    // Ampersand
+    Pipe,  // |
+    Caret, // ^
+    Tilde, // ~
     // End of File
     Eof,
 };
