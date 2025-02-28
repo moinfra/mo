@@ -98,21 +98,25 @@ namespace ast
         static Type get_struct_type(const std::string &name, std::vector<ast::TypedField> fields);
         static Type get_pointer_type(std::unique_ptr<ast::Type> pointee);
         static Type get_array_type(std::unique_ptr<Type> element_type, int size);
-
     };
-
 
     // Expressions
     struct Expr
     {
         enum class Category
         {
+            Unknown,
             LValue,
             RValue
         };
 
         virtual ~Expr() = default;
-        Category expr_category = Category::RValue;
+
+        bool is_lvalue() const { return expr_category == Category::LValue; }
+        bool is_rvalue() const { return expr_category == Category::RValue; }
+
+        // -- Filled by the type checker --
+        Category expr_category = Category::Unknown;
         TypePtr type = nullptr; // inferred type of the expression
     };
 
@@ -122,22 +126,37 @@ namespace ast
         VariableExpr(std::string name) : name(std::move(name)) {}
     };
 
-    struct IntegerLiteralExpr : Expr
+    struct LiteralExpr : Expr
+    {
+        virtual ~LiteralExpr() = default;
+    };
+
+    struct IntegerLiteralExpr : LiteralExpr
     {
         int value;
         IntegerLiteralExpr(int value) : value(value) {}
     };
 
-    struct FloatLiteralExpr : Expr
+    struct FloatLiteralExpr : LiteralExpr
     {
         float value;
         FloatLiteralExpr(float value) : value(value) {}
     };
 
-    struct StringLiteralExpr : Expr
+    struct StringLiteralExpr : LiteralExpr
     {
         std::string value;
         StringLiteralExpr(std::string value) : value(std::move(value)) {}
+    };
+
+    struct StructLiteralExpr : LiteralExpr
+    {
+        std::string struct_name; // Name of the struct (nullable)
+        std::vector<std::pair<std::string, ExprPtr>> members;
+        std::unordered_map<std::string, size_t> member_map;
+
+        void add_member(std::string name, ExprPtr expr);
+        Expr *get_member(const std::string &name) const;
     };
 
     struct BinaryExpr : Expr
@@ -311,17 +330,6 @@ namespace ast
 
         FunctionPointerExpr() = default;
     };
-
-    struct StructLiteralExpr : Expr
-    {
-        std::string struct_name; // Name of the struct (nullable)
-        std::vector<std::pair<std::string, ExprPtr>> members;
-        std::unordered_map<std::string, size_t> member_map;
-
-        void add_member(std::string name, ExprPtr expr);
-        Expr *get_member(const std::string &name) const;
-    };
-
     // Statements
     struct Statement
     {
