@@ -1,3 +1,5 @@
+// ir_builder.h - Defines the IRBuilder framework for constructing IR.
+
 #pragma once
 #include "ir.h"
 
@@ -35,6 +37,9 @@ public:
     BinaryInst *create_mul(Value *lhs, Value *rhs, const std::string &name = "");
     BinaryInst *create_udiv(Value *lhs, Value *rhs, const std::string &name = "");
     BinaryInst *create_sdiv(Value *lhs, Value *rhs, const std::string &name = "");
+    BinaryInst *create_bitand(Value *lhs, Value *rhs, const std::string &name = "");
+    BinaryInst *create_bitor(Value *lhs, Value *rhs, const std::string &name = "");
+    BinaryInst *create_bitxor(Value *lhs, Value *rhs, const std::string &name = "");
 
     //--- Comparison Instructions ---//
     ICmpInst *create_icmp(ICmpInst::Predicate pred, Value *lhs, Value *rhs,
@@ -66,6 +71,8 @@ public:
                                 const std::string &name);
     CallInst *create_call(Function *callee, const std::vector<Value *> &args,
                           const std::string &name);
+    CallInst *create_indirect_call(Value *callee, const std::vector<Value *> &args,
+                                   const std::string &name);
     SExtInst *create_sext(Value *val, Type *target_type, const std::string &name);
     TruncInst *create_trunc(Value *val, Type *target_type,
                             const std::string &name);
@@ -75,7 +82,6 @@ public:
     //                               Types
     //===--------------------------------------------------------------------===//
     ArrayType *get_array_type(Type *elem_ty, uint64_t num);
-    StructType *create_struct_type(const std::string &name = "");
     StructType *get_struct_type(const std::vector<Type *> &members);
 
 private:
