@@ -2,23 +2,25 @@
 #include "src/ir_builder.h"
 #define NOP(x) ((void)(x))
 
-TEST(IRBuilder, InsertPoint) {
+TEST(IRBuilder, InsertPoint)
+{
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb = f->create_basic_block("bb");
 
     IRBuilder builder(&m);
     builder.set_insert_point(bb);
 
-    Value *v1 = builder.create_binary(Opcode::Add, ConstantInt::get(&m, i32, 1), ConstantInt::get(&m, i32, 2));
+    Value *v1 = builder.create_binary(Opcode::Add, m.get_constant_int(i32, 1), m.get_constant_int(i32, 2));
     EXPECT_EQ(bb->last_instruction()->opcode(), Opcode::Add);
     NOP(v1);
 }
 
-TEST(IRBuilder, InstructionGeneration) {
+TEST(IRBuilder, InstructionGeneration)
+{
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb1 = f->create_basic_block("bb1");
     BasicBlock *bb2 = f->create_basic_block("bb2");
@@ -26,7 +28,7 @@ TEST(IRBuilder, InstructionGeneration) {
     IRBuilder builder(&m);
     builder.set_insert_point(bb1);
 
-    Value *cond = builder.create_icmp(ICmpInst::Predicate::SLT, ConstantInt::get(&m, i32, 1), ConstantInt::get(&m, i32, 2));
+    Value *cond = builder.create_icmp(ICmpInst::Predicate::SLT, m.get_constant_int(i32, 1), m.get_constant_int(i32, 2));
     builder.create_cond_br(cond, bb1, bb2);
 
     EXPECT_EQ(bb1->successors().size(), 2);
@@ -34,11 +36,12 @@ TEST(IRBuilder, InstructionGeneration) {
     EXPECT_EQ(bb1->successors()[1], bb2);
 }
 
-TEST(IRBuilder, ComplexTypeSupport) {
+TEST(IRBuilder, ComplexTypeSupport)
+{
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
-    StructType *structType = StructType::create(&m, "MyStruct");
-    structType->set_body({i32, i32});
+    IntegerType *i32 = m.get_integer_type(32);
+    std::vector<Type *> members = {i32, i32};
+    StructType *structType = m.get_struct_type("MyStruct", members);
 
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb = f->create_basic_block("bb");
@@ -49,12 +52,12 @@ TEST(IRBuilder, ComplexTypeSupport) {
     AllocaInst *alloca = builder.create_alloca(structType);
     Value *gep = builder.create_struct_gep(alloca, 1);
 
-    EXPECT_EQ(gep->type(), PointerType::get(&m, i32));
+    EXPECT_EQ(gep->type(), m.get_pointer_type(i32));
 }
 
 // TEST(BoundaryConditions, NullOperand) {
 //     Module m;
-//     IntegerType *i32 = IntegerType::get(&m, 32);
+//     IntegerType *i32 = m.get_integer_type( 32);
 //     User *u = new User(i32, "u");
 
 //     EXPECT_DEATH(u->set_operand(0, nullptr), ".*"); // 断言失败
@@ -62,14 +65,15 @@ TEST(IRBuilder, ComplexTypeSupport) {
 
 // TEST(BoundaryConditions, IllegalTypeCombination) {
 //     Module m;
-//     VoidType *voidType = VoidType::get(&m);
+//     VoidType *voidType = m.get_void_type(;
 
-//     EXPECT_DEATH(ArrayType::get(&m, voidType, 10), ".*"); // 断言失败
+//     EXPECT_DEATH(m.get_array_type( voidType, 10), ".*"); // 断言失败
 // }
 
-TEST(Integration, FibonacciFunction) {
+TEST(Integration, FibonacciFunction)
+{
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     Function *fib = m.create_function("fib", i32, {{"n", i32}});
 
     // 创建基本块
@@ -86,11 +90,11 @@ TEST(Integration, FibonacciFunction) {
     BasicBlock *return_zero = fib->create_basic_block("return_zero");
     BasicBlock *continue_block = fib->create_basic_block("continue");
 
-    Value *cond_zero = builder.create_icmp(ICmpInst::Predicate::EQ, n, ConstantInt::get(&m, i32, 0));
+    Value *cond_zero = builder.create_icmp(ICmpInst::Predicate::EQ, n, m.get_constant_int(i32, 0));
     builder.create_cond_br(cond_zero, return_zero, continue_block);
 
     builder.set_insert_point(return_zero);
-    builder.create_ret(ConstantInt::get(&m, i32, 0));
+    builder.create_ret(m.get_constant_int(i32, 0));
 
     builder.set_insert_point(continue_block);
 
@@ -100,8 +104,8 @@ TEST(Integration, FibonacciFunction) {
     Value *counter = builder.create_alloca(i32); // 新增本地计数器
 
     // 初始化 a = 0, b = 1, counter = n
-    builder.create_store(ConstantInt::get(&m, i32, 0), a);
-    builder.create_store(ConstantInt::get(&m, i32, 1), b);
+    builder.create_store(m.get_constant_int(i32, 0), a);
+    builder.create_store(m.get_constant_int(i32, 1), b);
     builder.create_store(n, counter); // 将 n 的值存储到 counter
 
     builder.create_br(loop);
@@ -116,10 +120,10 @@ TEST(Integration, FibonacciFunction) {
 
     // 使用 counter 而不是 n
     Value *counter_val = builder.create_load(counter);
-    Value *counter_minus_1 = builder.create_sub(counter_val, ConstantInt::get(&m, i32, 1));
+    Value *counter_minus_1 = builder.create_sub(counter_val, m.get_constant_int(i32, 1));
     builder.create_store(counter_minus_1, counter); // 更新 counter
 
-    Value *cond = builder.create_icmp(ICmpInst::Predicate::SGT, counter_minus_1, ConstantInt::get(&m, i32, 0));
+    Value *cond = builder.create_icmp(ICmpInst::Predicate::SGT, counter_minus_1, m.get_constant_int(i32, 0));
     builder.create_cond_br(cond, loop, exit);
 
     // 退出块
