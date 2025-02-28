@@ -50,7 +50,7 @@ protected:
     bool verify_assignable(const ast::Expr &target, const ast::Expr &value);
     ast::TypePtr resolve_alias(const std::string &name) const;
     ast::StructDecl *find_struct(const std::string &name) const;
-    bool is_valid_lvalue(Expr &expr);
+    bool is_valid_lvalue(ast::Expr &expr);
 
     // AST visitors
     void check_expr(ast::Expr &expr);

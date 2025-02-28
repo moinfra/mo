@@ -190,22 +190,6 @@ bool TypeChecker::is_valid_lvalue(Expr &expr)
 // Expression checking entry point
 void TypeChecker::check_expr(Expr &expr)
 {
-    switch (expr.expr_category)
-    {
-    case Expr::Category::Unknown:
-        add_error("Expression has unknown category");
-        break;
-    case Expr::Category::LValue:
-        if (!is_valid_lvalue(expr))
-        {
-            add_error("Expression marked as LValue is not a valid left value");
-            expr.expr_category = Expr::Category::Unknown; // 标记为错误状态
-        }
-        break;
-    case Expr::Category::RValue:
-        break;
-    }
-
     // Dispatch to specific visitor
     if (auto v = dynamic_cast<VariableExpr *>(&expr))
         visit(*v);
@@ -214,6 +198,8 @@ void TypeChecker::check_expr(Expr &expr)
     else if (auto f = dynamic_cast<FloatLiteralExpr *>(&expr))
         visit(*f);
     else if (auto s = dynamic_cast<StringLiteralExpr *>(&expr))
+        visit(*s);
+    else if (auto s = dynamic_cast<StructLiteralExpr *>(&expr))
         visit(*s);
     else if (auto b = dynamic_cast<BinaryExpr *>(&expr))
         visit(*b);
@@ -237,8 +223,28 @@ void TypeChecker::check_expr(Expr &expr)
         visit(*i);
     else if (auto f = dynamic_cast<FunctionPointerExpr *>(&expr))
         visit(*f);
-    else if (auto s = dynamic_cast<StructLiteralExpr *>(&expr))
-        visit(*s);
+    else
+    {
+        assert(false && "Unknown expression type");
+    }
+
+    switch (expr.expr_category)
+    {
+    case Expr::Category::Unknown:
+        // assert(false && "Unknown expression category");
+        break;
+    case Expr::Category::LValue:
+        if (!is_valid_lvalue(expr))
+        {
+            add_error("Expression marked as LValue is not a valid left value");
+            expr.expr_category = Expr::Category::Unknown; // 标记为错误状态
+        }
+        break;
+    case Expr::Category::RValue:
+        break;
+    }
+
+    // assert(expr.type && "Expression has no type");
 }
 
 // Cast expression
@@ -327,10 +333,11 @@ void TypeChecker::visit(DerefExpr &expr)
 // Basic expression visitors
 void TypeChecker::visit(VariableExpr &expr)
 {
+    expr.expr_category = Expr::Category::LValue;
+
     if (auto type = current_scope_->find(expr.name))
     {
         expr.type = type->clone();
-        expr.expr_category = Expr::Category::LValue;
     }
     else
     {
