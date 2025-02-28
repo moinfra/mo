@@ -1,3 +1,5 @@
+// ast.h - Abstract Syntax Tree of Mo language
+
 #pragma once
 
 #include <memory>
@@ -103,6 +105,9 @@ namespace ast
         static Type get_struct_type(const std::string &name, std::vector<ast::TypedField> fields);
         static Type get_pointer_type(std::unique_ptr<ast::Type> pointee);
         static Type get_array_type(std::unique_ptr<Type> element_type, int size);
+
+        // after type checking
+        TypePtr resolved_alias_target; // for kind == Kind::Alias
     };
 
     // Expressions
