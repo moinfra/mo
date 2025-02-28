@@ -2,6 +2,7 @@
 
 #include <sstream>
 #include <iomanip>
+#include <limits>
 
 //===----------------------------------------------------------------------===//
 //                              Type Implementation
@@ -115,7 +116,7 @@ StructType::StructType(Module *m, const std::string &name, std::vector<Type *> m
     }
 }
 
-StructType::StructType(Module *m, std::vector<Type *> members, bool is_const) : Type(StructTy, m, is_const), name_(""), is_opaque_(true), size_(0)
+StructType::StructType(Module *m, std::vector<Type *> members, bool is_const) : Type(StructTy, m, is_const), name_(""), is_opaque_(members.empty()), size_(0)
 {
     if (!members.empty())
     {
@@ -125,7 +126,7 @@ StructType::StructType(Module *m, std::vector<Type *> members, bool is_const) : 
 
 void StructType::set_body(std::vector<Type *> members)
 {
-    assert(is_opaque_ && "Struct already has body");
+    assert(members_.empty() && "Struct already has body");
     members_ = std::move(members);
     is_opaque_ = false;
 
@@ -406,6 +407,8 @@ Function::Function(const std::string &name, Module *parent, Type *return_type,
       parent_(parent),
       return_type_(return_type)
 {
+    assert(return_type && "Invalid return type");
+
     // Create arguments
     for (const auto &[param_name, param_type] : params)
     {
@@ -429,6 +432,7 @@ BasicBlock *Function::create_basic_block(const std::string &name)
 //===----------------------------------------------------------------------===//
 Module::Module()
 {
+    void_type_ = std::unique_ptr<VoidType>(new VoidType(this));
 }
 
 Module::~Module() = default;
@@ -447,8 +451,10 @@ Function *Module::create_function(
     const std::string &name,
     FunctionType *type)
 {
+    auto params = type->params();
     functions_.push_back(
-        std::make_unique<Function>(name, this, type->return_type(), type->param_types()));
+        std::make_unique<Function>(name, this, type->return_type(), params));
+    return functions_.back().get();
 }
 
 GlobalVariable *Module::create_global_variable(Type *type, bool is_constant, Constant *initializer, const std::string &name)
@@ -499,7 +505,13 @@ FunctionType *Module::get_function_type(Type *return_type, const std::vector<Typ
         return it->second.get();
     }
 
-    auto function_type = std::unique_ptr<FunctionType>(new FunctionType(this, return_type, param_types));
+    ParamList params;
+    params.reserve(param_types.size());
+    for (auto *param_type : param_types)
+    {
+        params.push_back({"", param_type});
+    }
+    auto function_type = std::unique_ptr<FunctionType>(new FunctionType(this, return_type, params));
     auto *result = function_type.get();
     function_types_[key] = std::move(function_type);
     return result;
@@ -553,6 +565,25 @@ StructType *Module::try_get_struct_type(const std::string &name, bool is_const)
         return it->second.get();
     }
     return nullptr;
+}
+
+StructType *Module::get_struct_type(const std::string &name, const std::vector<Type *> &members, bool is_const)
+{
+    // Check existing struct types
+    if (auto st = try_get_struct_type(name, is_const); st)
+    {
+        // Check if the struct has the same members
+        if (st->members() != members)
+        {
+            assert(false && "Struct with the same name already exists");
+        }
+        return st;
+    }
+
+    // Create new struct
+    auto *st = new StructType(this, name, members, is_const);
+    struct_types_.push_back(std::unique_ptr<StructType>(st));
+    return st;
 }
 
 VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements, bool is_const)
@@ -643,6 +674,10 @@ ConstantPointerNull *Module::get_constant_pointer_null(PointerType *type)
             return constant.get();
         }
     }
+
+    auto &constant = constant_pointer_nulls_.emplace_back(
+        std::unique_ptr<ConstantPointerNull>(new ConstantPointerNull(type)));
+    return constant.get();
 }
 
 ConstantStruct *Module::get_constant_struct(StructType *type, const std::vector<Constant *> &members)
@@ -778,6 +813,16 @@ std::string ConstantArray::as_string() const
 // ---------- ConstantString ----------
 ConstantString::ConstantString(ArrayType *type, const std::string &value)
     : Constant(type), value_(value) {}
+
+const std::string &ConstantString::value() const
+{
+    return value_;
+}
+
+std::string ConstantString::as_string() const
+{
+    return "c\"" + escape_string(value_) + "\"";
+}
 
 std::string ConstantString::escape_string(const std::string &input)
 {

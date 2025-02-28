@@ -5,19 +5,19 @@
 TEST(TypeSystem, VoidType)
 {
     Module m;
-    VoidType *voidType = VoidType::get(&m);
+    auto *voidType = m.get_void_type();
     EXPECT_EQ(voidType->size(), 0);
-    EXPECT_EQ(voidType, VoidType::get(&m));
+    EXPECT_EQ(voidType, m.get_void_type());
 }
 
 TEST(TypeSystem, IntegerType)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     EXPECT_EQ(i32->bits(), 32);
     EXPECT_EQ(i32->size(), 4); // 32 bits = 4 bytes
 
-    IntegerType *i8 = IntegerType::get(&m, 8);
+    IntegerType *i8 = m.get_integer_type(8);
     EXPECT_EQ(i8->bits(), 8);
     EXPECT_EQ(i8->size(), 1); // 8 bits = 1 byte
 }
@@ -25,16 +25,16 @@ TEST(TypeSystem, IntegerType)
 TEST(TypeSystem, PointerType)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
-    PointerType *ptrType = PointerType::get(&m, i32);
+    IntegerType *i32 = m.get_integer_type(32);
+    PointerType *ptrType = m.get_pointer_type(i32);
     EXPECT_EQ(ptrType->element_type(), i32);
 }
 
 TEST(TypeSystem, ArrayType)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
-    ArrayType *arrayType = ArrayType::get(&m, i32, 10);
+    IntegerType *i32 = m.get_integer_type(32);
+    ArrayType *arrayType = m.get_array_type(i32, 10);
     EXPECT_EQ(arrayType->num_elements(), 10);
     EXPECT_EQ(arrayType->element_type(), i32);
     EXPECT_EQ(arrayType->size(), 40); // 10 * 4 bytes
@@ -43,9 +43,8 @@ TEST(TypeSystem, ArrayType)
 TEST(TypeSystem, StructType)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
-    StructType *structType = StructType::create(&m, "MyStruct");
-    structType->set_body({i32, i32});
+    IntegerType *i32 = m.get_integer_type(32);
+    StructType *structType = m.get_struct_type("MyStruct", {i32, i32});
     EXPECT_EQ(structType->get_member_type(0), i32);
     EXPECT_EQ(structType->get_member_offset(0), 0);
     EXPECT_EQ(structType->get_member_offset(1), 4);
@@ -87,10 +86,9 @@ TEST(TypeSystem, FunctionType)
     EXPECT_EQ(func_type->name(), "i32 (i32, f32)");
 }
 
-
 // TEST(ValueUser, ValueLifecycle) {
 //     Module m;
-//     IntegerType *i32 = IntegerType::get(&m, 32);
+//     IntegerType *i32 = m.get_integer_type( 32);
 //     Value *v1 = new Value(i32, "v1");
 //     Value *v2 = new Value(i32, "v2");
 
@@ -103,7 +101,7 @@ TEST(TypeSystem, FunctionType)
 
 // TEST(ValueUser, UserOperandManagement) {
 //     Module m;
-//     IntegerType *i32 = IntegerType::get(&m, 32);
+//     IntegerType *i32 = m.get_integer_type( 32);
 //     User *u = new User(i32, "u");
 //     Value *v = new Value(i32, "v");
 
@@ -118,7 +116,7 @@ TEST(TypeSystem, FunctionType)
 TEST(BasicBlockInstruction, InstructionList)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb = f->create_basic_block("bb");
 
@@ -134,7 +132,7 @@ TEST(BasicBlockInstruction, InstructionList)
 TEST(BasicBlockInstruction, ControlFlow)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb1 = f->create_basic_block("bb1");
     BasicBlock *bb2 = f->create_basic_block("bb2");
@@ -150,8 +148,8 @@ TEST(BasicBlockInstruction, ControlFlow)
 TEST(Function, FunctionParameters)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
-    PointerType *ptrType = PointerType::get(&m, i32);
+    IntegerType *i32 = m.get_integer_type(32);
+    PointerType *ptrType = m.get_pointer_type(i32);
     Function *f = m.create_function("func", i32, {{"a", i32}, {"b", ptrType}});
 
     EXPECT_EQ(f->param_types().size(), 2);
@@ -174,7 +172,7 @@ TEST(Module, TypeUniqueness)
 TEST(Module, FunctionManagement)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     Function *f1 = m.create_function("func1", i32, {});
     Function *f2 = m.create_function("func2", i32, {});
 
@@ -186,9 +184,9 @@ TEST(Module, FunctionManagement)
 TEST(Constant, ConstantInt)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
-    ConstantInt *c1 = ConstantInt::get(&m, i32, 42);
-    ConstantInt *c2 = ConstantInt::get(&m, i32, 42);
+    IntegerType *i32 = m.get_integer_type(32);
+    ConstantInt *c1 = m.get_constant_int(i32, 42);
+    ConstantInt *c2 = m.get_constant_int(i32, 42);
 
     EXPECT_EQ(c1->value(), 42);
     EXPECT_EQ(c1, c2); // should be the same object
@@ -197,14 +195,14 @@ TEST(Constant, ConstantInt)
 TEST(InstructionSubclasses, PhiInst)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb1 = f->create_basic_block("bb1");
     BasicBlock *bb2 = f->create_basic_block("bb2");
 
     PhiInst *phi = PhiInst::create(i32, bb1);
-    phi->add_incoming(ConstantInt::get(&m, i32, 1), bb1);
-    phi->add_incoming(ConstantInt::get(&m, i32, 2), bb2);
+    phi->add_incoming(m.get_constant_int(i32, 1), bb1);
+    phi->add_incoming(m.get_constant_int(i32, 2), bb2);
 
     EXPECT_EQ(phi->num_incoming(), 2);
     auto v0 = phi->get_incoming_value(0);
@@ -221,12 +219,12 @@ TEST(InstructionSubclasses, PhiInst)
 TEST(InstructionSubclasses, ICmpInst)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb = f->create_basic_block("bb");
 
-    ConstantInt *c1 = ConstantInt::get(&m, i32, 1);
-    ConstantInt *c2 = ConstantInt::get(&m, i32, 2);
+    ConstantInt *c1 = m.get_constant_int(i32, 1);
+    ConstantInt *c2 = m.get_constant_int(i32, 2);
     ICmpInst *icmp = ICmpInst::create(ICmpInst::Predicate::SLT, c1, c2, bb);
 
     EXPECT_EQ(icmp->predicate(), ICmpInst::Predicate::SLT);
@@ -237,7 +235,7 @@ TEST(InstructionSubclasses, ICmpInst)
 TEST(InstructionSubclasses, MemoryOperations)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
+    IntegerType *i32 = m.get_integer_type(32);
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb = f->create_basic_block("bb");
 
@@ -247,7 +245,7 @@ TEST(InstructionSubclasses, MemoryOperations)
     LoadInst *load = LoadInst::create(alloca, bb);
     EXPECT_EQ(load->pointer(), alloca);
 
-    StoreInst *store = StoreInst::create(ConstantInt::get(&m, i32, 42), alloca, bb);
+    StoreInst *store = StoreInst::create(m.get_constant_int(i32, 42), alloca, bb);
     auto stored_value = store->stored_value();
     ConstantInt *c = dynamic_cast<ConstantInt *>(stored_value);
     EXPECT_EQ(c->value(), 42);
@@ -257,13 +255,13 @@ TEST(InstructionSubclasses, MemoryOperations)
 TEST(InstructionSubclasses, GEPInstruction)
 {
     Module m;
-    IntegerType *i32 = IntegerType::get(&m, 32);
-    ArrayType *arrayType = ArrayType::get(&m, i32, 10);
+    IntegerType *i32 = m.get_integer_type(32);
+    ArrayType *arrayType = m.get_array_type(i32, 10);
     Function *f = m.create_function("func", i32, {});
     BasicBlock *bb = f->create_basic_block("bb");
 
     AllocaInst *alloca = AllocaInst::create(arrayType, bb);
-    GetElementPtrInst *gep = GetElementPtrInst::create(alloca, {ConstantInt::get(&m, i32, 5)}, bb);
+    GetElementPtrInst *gep = GetElementPtrInst::create(alloca, {m.get_constant_int(i32, 5)}, bb);
 
     EXPECT_EQ(gep->base_pointer(), alloca);
     EXPECT_EQ(gep->indices().size(), 1);

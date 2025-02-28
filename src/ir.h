@@ -73,6 +73,8 @@ namespace std
 //===----------------------------------------------------------------------===//
 //                               Type System
 //===----------------------------------------------------------------------===//
+using ParamList = std::vector<std::pair<std::string, Type *>>;
+
 class Type
 {
 public:
@@ -221,20 +223,30 @@ class FunctionType : public Type
 public:
     Type *return_type() const { return return_type_; }
 
-    const std::vector<Type *> &param_types() const { return param_types_; }
-    const Type *param_type(unsigned index) const { return param_types_.at(index); }
+    const std::vector<Type *> param_types() const
+    {
+        std::vector<Type *> result;
+        for (auto &p : params_)
+        {
+            result.push_back(p.second);
+        }
+        return result;
+    }
+    const Type *param_type(unsigned index) const { return params_[index].second; }
+    const std::string &param_name(unsigned index) const { return params_[index].first; }
 
-    size_t num_params() const { return param_types_.size(); }
+    ParamList params() const { return ParamList(params_.begin(), params_.end()); }
+    size_t num_params() const { return params_.size(); }
     size_t size() const override { return 0; }
 
     std::string name() const override
     {
         std::string result = return_type_->name() + " (";
-        for (size_t i = 0; i < param_types_.size(); ++i)
+        for (size_t i = 0; i < params_.size(); ++i)
         {
             if (i != 0)
                 result += ", ";
-            result += param_types_[i]->name();
+            result += params_[i].second->name();
         }
         result += ")";
         return result;
@@ -243,11 +255,20 @@ public:
     unsigned bits() const override { return 0; }
 
 private:
-    FunctionType(Module *m, Type *return_type, const std::vector<Type *> &param_types)
-        : Type(FuncTy, m), return_type_(return_type), param_types_(param_types) {}
+    FunctionType(Module *m, Type *return_type, const ParamList &params)
+        : Type(FuncTy, m), return_type_(return_type), params_(params.begin(), params.end())
+    {
+        for (size_t i = 0; i < params_.size(); ++i)
+        {
+            if (params_[i].first.empty())
+            {
+                params_[i].first = "__arg" + std::to_string(i);
+            }
+        }
+    }
 
     Type *return_type_;
-    std::vector<Type *> param_types_;
+    ParamList params_;
 
     friend class Module;
 };
@@ -298,9 +319,6 @@ public:
         return result;
     }
     unsigned bits() const override { return size() * 8; }
-
-    // Creates an opaque struct (forward declaration)
-    static StructType *create(Module *m, const std::string &name);
 
     // Completes the struct definition
     void set_body(std::vector<Type *> members);
@@ -516,8 +534,6 @@ private:
 class Function : public Value
 {
 public:
-    using ParamList = std::vector<std::pair<std::string, Type *>>;
-
     Function(const std::string &name, Module *parent, Type *return_type,
              const ParamList &params);
     ~Function() override;
@@ -544,8 +560,8 @@ public:
 private:
     Module *parent_;
     Type *return_type_;
-    std::vector<std::unique_ptr<Argument>> arguments_; // 参数所有权
-    std::vector<Argument *> args_;                     // 参数视图
+    std::vector<std::unique_ptr<Argument>> arguments_;
+    std::vector<Argument *> args_;
     std::vector<std::unique_ptr<BasicBlock>> basic_blocks_;
     std::vector<BasicBlock *> basic_block_ptrs_;
     bool is_instance_method_ = false;
@@ -650,23 +666,24 @@ public:
     ConstantStruct *get_constant_struct(StructType *type, const std::vector<Constant *> &members);
     ConstantArray *get_constant_array(ArrayType *type, const std::vector<Constant *> &elements);
 
-    const std::vector<Function *> &functions() const
+    const std::vector<Function *> functions() const
     {
-        std::vector<Function *> result(functions_.size());
+        std::vector<Function *> result;
+        result.reserve(functions_.size());
         for (auto &f : functions_)
             result.push_back(f.get());
         return result;
     }
 
-    const std::vector<GlobalVariable *> &global_variables() const
+    const std::vector<GlobalVariable *> global_variables() const
     {
-        std::vector<GlobalVariable *> result(global_variables_.size());
+        std::vector<GlobalVariable *> result;
+        result.reserve(global_variables_.size());
         for (auto &gv : global_variables_)
             result.push_back(gv.second.get());
         return result;
     }
 
-    
     StructType *get_struct_type_anonymous(const std::vector<Type *> &members, bool is_const = false);
     StructType *try_get_struct_type(const std::string &name, bool is_const = false);
     ArrayType *get_array_type(Type *element_type, uint64_t num_elements, bool is_const = false);
