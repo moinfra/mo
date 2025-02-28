@@ -19,7 +19,7 @@ protected:
         delete p;
     }
 
-    ast::Program* p;
+    ast::Program *p;
 };
 
 bool has_error(const std::vector<std::string> &errors, const std::string &substr)
@@ -29,17 +29,18 @@ bool has_error(const std::vector<std::string> &errors, const std::string &substr
                        { return msg.find(substr) != std::string::npos; });
 }
 
-void expect_no_error(const TypeChecker::TypeCheckResult &result)
+bool no_error(const TypeChecker::TypeCheckResult &result)
 {
     if (!result.ok)
     {
         std::cerr << "Errors:\n";
+        auto indent = "  ";
         for (const auto &error : result.errors)
         {
-            std::cerr << error << "\n";
+            std::cerr << indent << error << "\n";
         }
     }
-    EXPECT_TRUE(result.ok);
+    return result.ok;
 }
 
 TEST_F(TypeCheckerTest, TypesEqual)
@@ -63,7 +64,7 @@ TEST_F(TypeCheckerTest, ResolveAlias)
 {
     ast::TypeAliasDecl alias("MyInt", std::make_unique<ast::Type>(ast::Type::get_int_type()));
     program_->aliases.push_back(std::make_unique<ast::TypeAliasDecl>(std::move(alias)));
-    expect_no_error(check());
+    EXPECT_TRUE(no_error(check()));
     auto resolved = resolve_alias("MyInt");
     EXPECT_NE(resolved, nullptr);
     EXPECT_TRUE(types_equal(*resolved, ast::Type::get_int_type()));
@@ -124,10 +125,11 @@ TEST_F(TypeCheckerTest, ValidBreakContinue)
     body.statements.push_back(std::make_unique<ast::BreakStmt>());
     body.statements.push_back(std::make_unique<ast::ContinueStmt>());
 
-    program_->functions.push_back(std::make_unique<ast::FunctionDecl>());
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
     program_->functions.back()->body.push_back(std::move(while_loop));
 
-    expect_no_error(check());
+    EXPECT_TRUE(no_error(check()));
 }
 
 TEST_F(TypeCheckerTest, InvalidBreakOutsideLoop)
@@ -140,7 +142,8 @@ TEST_F(TypeCheckerTest, InvalidBreakOutsideLoop)
     auto &then_block = static_cast<ast::BlockStmt &>(*if_stmt->then_branch);
     then_block.statements.push_back(std::make_unique<ast::BreakStmt>());
 
-    program_->functions.push_back(std::make_unique<ast::FunctionDecl>());
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
     program_->functions.back()->body.push_back(std::move(if_stmt));
 
     auto result = check();
@@ -157,7 +160,7 @@ TEST_F(TypeCheckerTest, ValidNumericConversion)
 
     program_->globals.push_back(std::make_unique<ast::GlobalDecl>(std::move(*var_decl)));
 
-    expect_no_error(check());
+    EXPECT_TRUE(no_error(check()));
 }
 
 TEST_F(TypeCheckerTest, InvalidPointerConversion)
@@ -166,7 +169,8 @@ TEST_F(TypeCheckerTest, InvalidPointerConversion)
     cast_expr->target_type = ast::Type::get_int_type().clone();
     cast_expr->expr = std::make_unique<ast::FloatLiteralExpr>(3.14f);
 
-    program_->functions.push_back(std::make_unique<ast::FunctionDecl>());
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
     program_->functions.back()->body.push_back(
         std::make_unique<ast::ExprStmt>(std::move(cast_expr)));
 
@@ -188,11 +192,12 @@ TEST_F(TypeCheckerTest, UndefinedVariable)
         std::move(var_expr), "x", TokenType::Dot);
 
     program_->structs.push_back(std::move(struct_decl));
-    program_->functions.push_back(std::make_unique<ast::FunctionDecl>());
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
     program_->functions.back()->body.push_back(
         std::make_unique<ast::ExprStmt>(std::move(member_access)));
 
-    EXPECT_TRUE(has_error(check().errors, "Undefined variable"));
+    EXPECT_TRUE(has_error(check().errors, "Undefined symbol"));
 }
 
 TEST_F(TypeCheckerTest, StructMemberAccess)
@@ -214,11 +219,12 @@ TEST_F(TypeCheckerTest, StructMemberAccess)
 
     program_->structs.push_back(std::move(struct_decl));
     program_->globals.push_back(std::make_unique<ast::GlobalDecl>(std::move(*var_decl)));
-    program_->functions.push_back(std::make_unique<ast::FunctionDecl>());
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
     program_->functions.back()->body.push_back(
         std::make_unique<ast::ExprStmt>(std::move(member_access)));
 
-    expect_no_error(check());
+    EXPECT_TRUE(no_error(check()));
 }
 
 TEST_F(TypeCheckerTest, UndefinedStructAccess)
@@ -227,7 +233,8 @@ TEST_F(TypeCheckerTest, UndefinedStructAccess)
     auto member_access = std::make_unique<ast::MemberAccessExpr>(
         std::move(var_expr), "x", TokenType::Dot);
 
-    program_->functions.push_back(std::make_unique<ast::FunctionDecl>());
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
     program_->functions.back()->body.push_back(
         std::make_unique<ast::ExprStmt>(std::move(member_access)));
 
@@ -264,5 +271,278 @@ TEST_F(TypeCheckerTest, TypeAliasResolution)
 
     program_->globals.push_back(std::make_unique<ast::GlobalDecl>(std::move(*var_decl)));
 
-    expect_no_error(check());
+    EXPECT_TRUE(no_error(check()));
+}
+TEST_F(TypeCheckerTest, VariableExprTypeInference)
+{
+
+    auto var_decl = std::make_unique<ast::VarDeclStmt>();
+    var_decl->name = "x";
+    var_decl->type = ast::Type::get_int_type().clone();
+    program_->globals.push_back(std::make_unique<ast::GlobalDecl>(std::move(*var_decl)));
+
+    auto var_expr = std::make_unique<ast::VariableExpr>("x");
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(var_expr)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_TRUE(types_equal(*stmt.expr->type, ast::Type::get_int_type()));
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::LValue);
+}
+
+TEST_F(TypeCheckerTest, IntegerLiteralExprTypeInference)
+{
+
+    auto int_literal = std::make_unique<ast::IntegerLiteralExpr>(42);
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(int_literal)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_TRUE(types_equal(*stmt.expr->type, ast::Type::get_int_type()));
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::RValue);
+}
+
+TEST_F(TypeCheckerTest, FloatLiteralExprTypeInference)
+{
+
+    auto float_literal = std::make_unique<ast::FloatLiteralExpr>(3.14f);
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(float_literal)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_TRUE(types_equal(*stmt.expr->type, ast::Type::get_float_type()));
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::RValue);
+}
+
+TEST_F(TypeCheckerTest, StringLiteralExprTypeInference)
+{
+
+    auto string_literal = std::make_unique<ast::StringLiteralExpr>("hello");
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(string_literal)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_TRUE(types_equal(*stmt.expr->type, ast::Type::get_string_type()));
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::RValue);
+}
+
+TEST_F(TypeCheckerTest, BinaryExprTypeInference)
+{
+
+    auto binary_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Plus,
+        std::make_unique<ast::IntegerLiteralExpr>(1),
+        std::make_unique<ast::IntegerLiteralExpr>(2));
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(binary_expr)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_TRUE(types_equal(*stmt.expr->type, ast::Type::get_int_type()));
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::RValue);
+}
+
+TEST_F(TypeCheckerTest, UnaryExprTypeInference)
+{
+
+    auto var_decl = std::make_unique<ast::VarDeclStmt>();
+    var_decl->name = "x";
+    var_decl->type = ast::Type::get_int_type().clone();
+    program_->globals.push_back(std::make_unique<ast::GlobalDecl>(std::move(*var_decl)));
+
+    auto var_expr = std::make_unique<ast::VariableExpr>("x");
+    auto unary_expr = std::make_unique<ast::UnaryExpr>(
+        TokenType::Ampersand, std::move(var_expr));
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(unary_expr)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_EQ(stmt.expr->type->kind, ast::Type::Kind::Pointer);
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::RValue);
+}
+
+TEST_F(TypeCheckerTest, CallExprTypeInference)
+{
+
+    auto func_decl = std::make_unique<ast::FunctionDecl>();
+    func_decl->name = "foo";
+    func_decl->return_type = ast::Type::get_int_type().clone();
+    func_decl->params.push_back({ast::Type::get_float_type().clone(), "x"});
+    program_->functions.push_back(std::move(func_decl));
+
+    std::vector<ast::ExprPtr> args;
+    args.push_back(std::make_unique<ast::FloatLiteralExpr>(3.14f));
+    auto call_expr = std::make_unique<ast::CallExpr>(
+        "foo",
+        std::move(args));
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(call_expr)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_TRUE(types_equal(*stmt.expr->type, ast::Type::get_int_type()));
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::RValue);
+}
+
+TEST_F(TypeCheckerTest, MemberAccessExprTypeInference)
+{
+
+    auto fields = std::vector<ast::TypedField>{
+        {ast::Type::get_int_type().clone(), "x"},
+        {ast::Type::get_float_type().clone(), "y"}};
+
+    auto struct_decl = std::make_unique<ast::StructDecl>("Point", fields);
+    program_->structs.push_back(std::move(struct_decl));
+
+    auto var_decl = std::make_unique<ast::VarDeclStmt>();
+    var_decl->name = "p";
+    var_decl->type = std::make_unique<ast::Type>(ast::Type::get_struct_type("Point", fields));
+    program_->globals.push_back(std::make_unique<ast::GlobalDecl>(std::move(*var_decl)));
+
+    auto var_expr = std::make_unique<ast::VariableExpr>("p");
+    auto member_access = std::make_unique<ast::MemberAccessExpr>(
+        std::move(var_expr), "x", TokenType::Dot);
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(member_access)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_TRUE(types_equal(*stmt.expr->type, ast::Type::get_int_type()));
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::RValue);
+}
+
+TEST_F(TypeCheckerTest, ArrayAccessExprTypeInference)
+{
+
+    // fn main() {
+    //     let arr: int[];
+    //     arr[0]; // standalone array access considered as a left value
+    // }
+    auto var_decl = std::make_unique<ast::VarDeclStmt>();
+    var_decl->name = "arr";
+    var_decl->type = std::make_unique<ast::Type>(ast::Type::get_array_type(ast::Type::get_int_type().clone(), -1));
+    program_->globals.push_back(std::make_unique<ast::GlobalDecl>(std::move(*var_decl)));
+
+    auto var_expr = std::make_unique<ast::VariableExpr>("arr");
+    auto array_access = std::make_unique<ast::ArrayAccessExpr>(
+        std::move(var_expr), std::make_unique<ast::IntegerLiteralExpr>(0));
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(array_access)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_TRUE(types_equal(*stmt.expr->type, ast::Type::get_int_type()));
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::LValue);
+}
+
+TEST_F(TypeCheckerTest, ArrayAccessAssignment)
+{
+    // fn main() {
+    //     let arr: int[];
+    //     arr[0] = 1;
+    // }
+
+    {
+        auto var_decl = std::make_unique<ast::VarDeclStmt>();
+        var_decl->name = "arr";
+        var_decl->type = std::make_unique<ast::Type>(ast::Type::get_array_type(ast::Type::get_int_type().clone(), -1));
+        program_->globals.push_back(std::make_unique<ast::GlobalDecl>(std::move(*var_decl)));
+
+        auto var_expr = std::make_unique<ast::VariableExpr>("arr");
+        auto array_access = std::make_unique<ast::ArrayAccessExpr>(
+            std::move(var_expr), std::make_unique<ast::IntegerLiteralExpr>(0));
+
+        auto assignment_expr = std::make_unique<ast::BinaryExpr>(
+            TokenType::Assign, std::move(array_access), std::make_unique<ast::IntegerLiteralExpr>(1));
+
+        program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+            ast::FunctionDecl::create_main_function()));
+        program_->functions.back()->body.push_back(
+            std::make_unique<ast::ExprStmt>(std::move(assignment_expr)));
+    }
+
+    auto result = check();
+    EXPECT_TRUE(no_error(result));
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_EQ(stmt.expr->type->basic_kind, ast::Type::BasicKind::Int);
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::RValue);
+
+    auto assignment_expr = dynamic_cast<ast::BinaryExpr *>(stmt.expr.get());
+    EXPECT_TRUE(assignment_expr);
+    auto left = dynamic_cast<ast::ArrayAccessExpr *>(assignment_expr->left.get());
+    EXPECT_TRUE(left);
+    EXPECT_EQ(left->expr_category, ast::Expr::Category::LValue);
+    auto right = dynamic_cast<ast::IntegerLiteralExpr *>(assignment_expr->right.get());
+    EXPECT_TRUE(right);
+    EXPECT_EQ(right->expr_category, ast::Expr::Category::RValue);
+}
+
+TEST_F(TypeCheckerTest, SizeofExprTypeInference)
+{
+
+    auto sizeof_expr = std::make_unique<ast::SizeofExpr>(
+        std::make_unique<ast::Type>(ast::Type::get_int_type()));
+
+    program_->functions.push_back(std::make_unique<ast::FunctionDecl>(
+        ast::FunctionDecl::create_main_function()));
+    program_->functions.back()->body.push_back(
+        std::make_unique<ast::ExprStmt>(std::move(sizeof_expr)));
+
+    auto result = check();
+    no_error(result);
+
+    auto &stmt = static_cast<ast::ExprStmt &>(*program_->functions.back()->body.back());
+    EXPECT_TRUE(types_equal(*stmt.expr->type, ast::Type::get_int_type()));
+    EXPECT_EQ(stmt.expr->expr_category, ast::Expr::Category::RValue);
 }

@@ -12,7 +12,7 @@ TypePtr Scope::find(const std::string &name) const
 {
     if (name.empty())
     {
-        throw std::invalid_argument("Name cannot be empty");
+        throw std::invalid_argument("Cannot find empty name");
     }
 
     auto var_it = variables_.find(name);
@@ -34,7 +34,7 @@ bool Scope::insert(std::string name, TypePtr type)
 {
     if (name.empty())
     {
-        throw std::invalid_argument("Name cannot be empty");
+        throw std::invalid_argument("Cannot insert empty name");
     }
     if (!type)
     {
@@ -55,7 +55,7 @@ TypePtr Scope::resolve_type(const std::string &name) const
 {
     if (name.empty())
     {
-        throw std::invalid_argument("Name cannot be empty");
+        throw std::invalid_argument("Cannot resolve empty name");
     }
 
     auto type_it = types_.find(name);
@@ -72,7 +72,7 @@ TypePtr Scope::resolve_type(const std::string &name) const
     return nullptr;
 }
 
-TypeChecker::TypeChecker(ast::Program* program)
+TypeChecker::TypeChecker(ast::Program *program)
     : program_(program),
       global_scope_(std::make_unique<Scope>(nullptr))
 {
@@ -81,7 +81,8 @@ TypeChecker::TypeChecker(ast::Program* program)
 
 TypeChecker::TypeCheckResult TypeChecker::check()
 {
-    if(!program_) {
+    if (!program_)
+    {
         return {false, {"Program not set"}};
     }
 
@@ -310,7 +311,7 @@ void TypeChecker::visit(VariableExpr &expr)
     }
     else
     {
-        add_error("Undefined variable '" + expr.name + "'");
+        add_error("Undefined symbol '" + expr.name + "'");
         expr.type = std::make_unique<Type>();
     }
 }
@@ -423,7 +424,6 @@ void TypeChecker::visit(TypeAliasDecl &decl)
         add_error("Duplicate type name for alias: " + decl.name);
     }
 }
-
 
 // Binary expression type rules
 void TypeChecker::visit(BinaryExpr &expr)
@@ -711,6 +711,7 @@ void TypeChecker::visit(VarDeclStmt &stmt)
     }
 
     // Register the variable in the current scope
+    assert(!stmt.name.empty() && "Variable name must be set");
     if (!current_scope_->insert(stmt.name, stmt.type->clone()))
     {
         add_error("Failed to register variable in scope: " + stmt.name);
@@ -762,13 +763,23 @@ void TypeChecker::visit(BlockStmt &stmt)
 // Function declaration handling
 void TypeChecker::visit(FunctionDecl &func)
 {
-    push_scope();
     auto prev_return_type = current_return_type_;
     current_return_type_ = func.return_type.get();
+
+    // To handle recursive function calls, we need to add current function to the
+    // current scope before checking its body.
+    assert(!func.name.empty() && "Function name must be set");
+    if (!current_scope_->insert(func.name, func.type()))
+    {
+        add_error("Duplicate function name: " + func.name);
+    }
+
+    push_scope();
 
     // Add parameters to scope
     for (auto &param : func.params)
     {
+        assert(!param.name.empty() && "Parameter name must be set");
         if (!current_scope_->insert(param.name, param.type->clone()))
         {
             add_error("Duplicate parameter name: " + param.name);
@@ -834,12 +845,19 @@ void TypeChecker::visit(ArrayAccessExpr &expr)
         add_error("Array index must be integer type");
     }
 
+    if (expr.array->type->kind == ast::Type::Kind::Pointer &&
+        expr.array->type->pointee->kind == Type::Kind::Void)
+    {
+        add_error("Cannot subscript void* pointer");
+    }
+
     // Handle array/pointer types
     switch (expr.array->type->kind)
     {
     case Type::Kind::Array:
         expr.type = expr.array->type->element_type->clone();
         expr.expr_category = Expr::Category::LValue;
+        // expr.is_const = expr.array->type->is_const; TODO: const propagation
         break;
     case Type::Kind::Pointer:
         expr.type = expr.array->type->pointee->clone();
