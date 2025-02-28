@@ -296,6 +296,22 @@ const TypedField *StructDecl::get_field(std::string_view name) const
     return nullptr;
 }
 
+// Add a method to the struct
+void StructDecl::add_method(FunctionDecl method) {
+    methods.emplace_back(std::move(method));
+    method_map[methods.back().name] = methods.size() - 1;
+}
+
+// Get a method by name
+FunctionDecl *StructDecl::get_method(std::string_view name) const {
+    auto it = method_map.find(name);
+    if (it != method_map.end() && it->second < methods.size()) {
+        return const_cast<FunctionDecl*>(&methods[it->second]);
+    }
+    return nullptr;
+}
+
+
 //===----------------------------------------------------------------------===//
 //                          FunctionDecl Implementation
 //===----------------------------------------------------------------------===//

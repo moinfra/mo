@@ -91,6 +91,11 @@ namespace ast
 
         TypePtr clone() const;
 
+        bool is_aggregate() const
+        {
+            return kind == Kind::Struct || kind == Kind::Array;
+        }
+
         static Type get_void_type();
         static Type get_int_type();
         static Type get_float_type();
@@ -196,6 +201,7 @@ namespace ast
         std::string member;
         TokenType accessor;
 
+        bool is_call = false; // obj.member(...) or obj.method(...)
         bool is_method_call = false;
         std::vector<ExprPtr> args;
 
@@ -416,7 +422,9 @@ namespace ast
     public:
         std::string name;
         std::vector<TypedField> fields;
+        std::vector<FunctionDecl> methods;
         std::unordered_map<std::string_view, size_t> field_map; // Map for quick field lookup
+        std::unordered_map<std::string_view, size_t> method_map; // Map for quick method lookup
 
         StructDecl() = default;
         StructDecl(std::string name, std::vector<TypedField> fields);
@@ -427,6 +435,14 @@ namespace ast
 
         // Get a field by name
         const TypedField *get_field(std::string_view name) const;
+
+        // Add a method to the struct
+        void add_method(FunctionDecl method);
+
+        // Get a method by name
+        FunctionDecl *get_method(std::string_view name) const;
+
+        // Get the type of the struct
         TypePtr type() const
         {
             return std::make_unique<Type>(Type::get_struct_type(name, fields));
@@ -440,7 +456,9 @@ namespace ast
         std::vector<TypedField> params;
         std::vector<StmtPtr> body;
 
+        // method
         bool is_method = false;
+        bool is_static = false;
         TypePtr receiver_type = nullptr;
 
         void add_param(const std::string &name, TypePtr type);
