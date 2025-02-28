@@ -431,6 +431,10 @@ ExprPtr Parser::parse_member_access(ExprPtr left)
         return parse_expr(get_precedence(expr->accessor));
     }
 
+    if(match(TokenType::LParen)) {
+        expr->is_call = true;
+    }
+
     return expr;
 }
 
@@ -526,9 +530,9 @@ std::unique_ptr<BlockStmt> Parser::parse_block()
 TypeAliasDecl Parser::parse_type_alias_decl()
 {
     TypeAliasDecl decl;
-    
+
     consume(TokenType::Type, "Expected 'type' keyword");
-    
+
     decl.name = current_.lexeme;
     consume(TokenType::Identifier, "Expected alias name");
 
@@ -543,7 +547,6 @@ TypeAliasDecl Parser::parse_type_alias_decl()
 
     return decl;
 }
-
 
 StructDecl Parser::parse_struct_decl()
 {
@@ -737,9 +740,12 @@ void Parser::parse_type_alias(std::unique_ptr<Type> &type)
     std::string name = current_.lexeme;
     type->kind = Type::Kind::Alias;
     type->name = name;
-    if (auto it = type_aliases_.find(name); it != type_aliases_.end()) {
+    if (auto it = type_aliases_.find(name); it != type_aliases_.end())
+    {
         type = it->second->clone();
-    } else {
+    }
+    else
+    {
         error("Undefined type alias: " + name);
     }
     advance();
@@ -958,12 +964,15 @@ ExprPtr Parser::parse_sizeof()
     TypePtr target_type = parse_type_safe();
     ExprPtr target_expr = nullptr;
     std::unique_ptr<SizeofExpr> expr = nullptr;
-    if (!target_type) {
+    if (!target_type)
+    {
         debug("parser: sizeof target is not a type, try parse expr");
         target_expr = parse_expr();
         expr = std::make_unique<SizeofExpr>(SizeofExpr::Kind::Expr);
         expr->target_expr = std::move(target_expr);
-    } else {
+    }
+    else
+    {
         expr = std::make_unique<SizeofExpr>(SizeofExpr::Kind::Type);
         expr->target_type = std::move(target_type);
     }
@@ -1166,7 +1175,7 @@ VarDeclStmt Parser::parse_var_decl()
     return stmt;
 }
 
-FunctionDecl Parser::parse_function_decl()
+FunctionDecl Parser::parse_function_decl(Type *receiver_type)
 {
     FunctionDecl func;
     consume(TokenType::Fn, "Expected 'fn'");
@@ -1176,6 +1185,24 @@ FunctionDecl Parser::parse_function_decl()
 
     // Params
     consume(TokenType::LParen, "Expected (");
+    // receiver
+    if (func.is_method)
+    {
+        assert(receiver_type != nullptr && "receiver_type is null");
+        // case 1: impl Ty { fn method(this, args) {... } }
+        if (try_consume(TokenType::This))
+        {
+            func.is_static = false;
+        }
+        // case 2: impl Ty { fn method(args) {... } }
+        else
+        {
+            func.is_static = true;
+        }
+        func.receiver_type = std::make_unique<Type>(*receiver_type);
+        assert(!receiver_type->name.empty() && "receiver_type name is empty");
+        func.name = receiver_type->name + "::" + func.name;
+    }
     while (!match(TokenType::RParen))
     {
         std::string name = current_.lexeme;
@@ -1199,22 +1226,6 @@ FunctionDecl Parser::parse_function_decl()
     else
     {
         func.return_type = std::make_unique<Type>(Type::get_void_type());
-    }
-
-    // Receiver
-    if (func.is_method && match(TokenType::LParen))
-    {
-        /*1. `self: Type`
-        2. `self: *Type`
-        3. `&self` */
-        advance();
-        consume(TokenType::Identifier, "Expected self parameter");
-        consume(TokenType::Colon, "Expected : in receiver");
-        std::unique_ptr<Type> receiver_type = parse_type();
-        func.receiver_type = std::make_unique<Type>(*receiver_type);
-        consume(TokenType::RParen, "Expected ) in receiver");
-        func.is_method = true;
-        func.add_param("self", std::move(receiver_type));
     }
 
     StmtPtr body = parse_block();
@@ -1305,7 +1316,7 @@ Program Parser::parse()
     return program;
 }
 
-FunctionDecl Parser::parse_method()
+FunctionDecl Parser::parse_method(ast::Type *target_type)
 {
     FunctionDecl method = parse_function_decl();
     method.is_method = true;
@@ -1323,7 +1334,7 @@ ImplBlock Parser::parse_impl_block()
 
     while (!match(TokenType::RBrace))
     {
-        impl.methods.push_back(std::make_unique<FunctionDecl>(parse_method()));
+        impl.methods.push_back(std::make_unique<FunctionDecl>(parse_method(impl.target_type.get())));
     }
 
     consume(TokenType::RBrace, "Expected '}' to close impl block");
