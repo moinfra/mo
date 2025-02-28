@@ -1,4 +1,4 @@
-// type_checker.cpp
+// type_checker.cc
 #include "type_checker.h"
 #include "lexer.h"
 #include <cassert>
@@ -133,8 +133,8 @@ void TypeChecker::add_error(const std::string &message)
     errors_.push_back(message);
 }
 
-// Type system implementation
-bool TypeChecker::types_equal(const Type &t1, const Type &t2) const
+// Type system implementation. NOTE: alias kind t1 will be resolved
+bool TypeChecker::types_equal(Type &t1, const Type &t2) const
 {
     if (t1.kind != t2.kind)
         return false;
@@ -163,11 +163,28 @@ bool TypeChecker::types_equal(const Type &t1, const Type &t2) const
     case Type::Kind::Alias:
     {
         auto real_type = resolve_alias(t1.name);
-        return resolve_alias(t1.name) ? types_equal(*real_type, t2) : false;
+        // return real_type ? types_equal(*real_type, t2) : false;
+        if (real_type)
+        {
+            t1.resolved_alias_target = real_type->clone();
+            return types_equal(*real_type, t2);
+        }
+        else
+        {
+            return false;
+        }
     }
     }
 
     return false;
+}
+
+bool TypeChecker::is_valid_lvalue(Expr &expr)
+{
+    return dynamic_cast<VariableExpr *>(&expr) ||
+           dynamic_cast<MemberAccessExpr *>(&expr) ||
+           dynamic_cast<ArrayAccessExpr *>(&expr) ||
+           dynamic_cast<DerefExpr *>(&expr);
 }
 
 // Expression checking entry point
@@ -175,11 +192,17 @@ void TypeChecker::check_expr(Expr &expr)
 {
     switch (expr.expr_category)
     {
+    case Expr::Category::Unknown:
+        add_error("Expression has unknown category");
+        break;
     case Expr::Category::LValue:
-        // Handle lvalue-specific checks
+        if (!is_valid_lvalue(expr))
+        {
+            add_error("Expression marked as LValue is not a valid left value");
+            expr.expr_category = Expr::Category::Unknown; // 标记为错误状态
+        }
         break;
     case Expr::Category::RValue:
-        // Handle rvalue-specific checks
         break;
     }
 
@@ -442,6 +465,10 @@ void TypeChecker::visit(BinaryExpr &expr)
         {
             add_error("Cannot assign to rvalue");
         }
+        if (expr.left->type->is_const)
+        {
+            add_error("Cannot modify a constant expression");
+        }
         if (!is_convertible(*expr.right->type, *expr.left->type))
         {
             add_error("Type mismatch in assignment");
@@ -519,7 +546,7 @@ void TypeChecker::visit(BinaryExpr &expr)
     // Bitwise operators
     case TokenType::Modulo:
     case TokenType::Ampersand:
-    // case TokenType::BitOr:
+    // case TokenType::Pipe:
     case TokenType::Not:
     {
         if (!types_equal(*expr.left->type, Type::get_int_type()) ||
@@ -819,6 +846,40 @@ void TypeChecker::visit(MemberAccessExpr &expr)
         return;
     }
 
+    // if followed by call, prioritize method call over function pointer member call
+    if (expr.is_call)
+    {
+        // Find method
+        auto method = (*struct_decl)->get_method(expr.member);
+        if (!method)
+        {
+            debug("No method '%s' in struct '%s'", expr.member.c_str(), expr.object->type->name.c_str());
+            debug("Falling back to function pointer member access");
+        }
+        else
+        {
+            // Check method signature
+            if (method->params.size() != expr.args.size())
+            {
+                add_error("Argument count mismatch in method call");
+            }
+            for (size_t i = 0; i < expr.args.size(); ++i)
+            {
+                auto &arg_type = expr.args[i]->type;
+                auto &param_type = method->params[i].type;
+
+                if (!is_convertible(*arg_type, *param_type))
+                {
+                    add_error("Argument type mismatch in method call");
+                }
+            }
+            expr.resolved_func = method;
+            expr.type = method->return_type->clone();
+            expr.expr_category = Expr::Category::RValue;
+            return;
+        }
+    }
+
     // Find member
     auto member_it = (*struct_decl)->field_map.find(expr.member);
     if (member_it == (*struct_decl)->field_map.end())
@@ -828,6 +889,7 @@ void TypeChecker::visit(MemberAccessExpr &expr)
     }
 
     expr.type = (*struct_decl)->fields[member_it->second].type->clone();
+    // FIXME: to be thought twice
     expr.expr_category = expr.accessor == TokenType::Arrow ? Expr::Category::LValue : Expr::Category::RValue;
 }
 
@@ -894,7 +956,7 @@ void TypeChecker::visit(InitListExpr &expr)
 }
 
 // Enhanced type conversion rules
-bool TypeChecker::is_convertible(const Type &from, const Type &to) const
+bool TypeChecker::is_convertible(Type &from, const Type &to) const
 {
 
     if (types_equal(from, to))
@@ -1023,6 +1085,7 @@ void TypeChecker::visit(StructLiteralExpr &expr)
     expr.type->kind = Type::Kind::Struct;
     expr.type->name = expr.struct_name;
 }
+
 // Alias resolution
 TypePtr TypeChecker::resolve_alias(const std::string &name) const
 {
