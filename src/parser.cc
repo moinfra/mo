@@ -32,9 +32,9 @@ const static std::unordered_map<std::pair<TokenType, ASSOC>, int, TokenTypeAssoc
 
     {{TokenType::Or, L_ASSOC}, 10},
     {{TokenType::And, L_ASSOC}, 11},
-    // {{TokenType::BitOr, L_ASSOC}, 12},
-    // {{TokenType::BitXor, L_ASSOC}, 12},
-    // {{TokenType::BitAnd, L_ASSOC}, 13},
+    {{TokenType::Pipe, L_ASSOC}, 12},
+    {{TokenType::Caret, L_ASSOC}, 12},
+    {{TokenType::Ampersand, L_ASSOC}, 13},
 
     {{TokenType::Eq, L_ASSOC}, 20},
     {{TokenType::Ne, L_ASSOC}, 20},
@@ -431,7 +431,8 @@ ExprPtr Parser::parse_member_access(ExprPtr left)
         return parse_expr(get_precedence(expr->accessor));
     }
 
-    if(match(TokenType::LParen)) {
+    if (match(TokenType::LParen))
+    {
         expr->is_call = true;
     }
 
