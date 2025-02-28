@@ -20,6 +20,7 @@ enum class TokenType
     Struct,
     Impl,
     Fn,
+    This,
     Return,
     Type,
     // Types

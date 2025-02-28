@@ -34,6 +34,8 @@ std::string token_type_to_string(TokenType type)
         return "impl";
     case TokenType::Fn:
         return "fn";
+    case TokenType::This:
+        return "this";
     case TokenType::Type:
         return "type";
     case TokenType::Return:
@@ -460,6 +462,7 @@ Token Lexer::parse_identifier_or_keyword()
         {"struct", TokenType::Struct},
         {"impl", TokenType::Impl},
         {"fn", TokenType::Fn},
+        {"this", TokenType::This},
         {"type", TokenType::Type},
         {"return", TokenType::Return},
         {"int", TokenType::Int},
