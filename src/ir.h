@@ -1,3 +1,5 @@
+// ir.h - SSA IR Types and Values
+
 #pragma once
 
 #include <iostream>
@@ -35,6 +37,11 @@ class VoidType;
 class PointerType;
 class ArrayType;
 class StructType;
+class ConstantString;
+class ConstantPointerNull;
+class ConstantAggregateZero;
+class ConstantStruct;
+class ConstantArray;
 
 //===----------------------------------------------------------------------===//
 //                              Hash function specialization
@@ -47,6 +54,18 @@ namespace std
         size_t operator()(const std::pair<Type *, uint64_t> &p) const
         {
             return hash<Type *>{}(p.first) ^ (hash<uint64_t>{}(p.second) << 1);
+        }
+    };
+}
+
+namespace std
+{
+    template <>
+    struct hash<std::pair<Type *, bool>>
+    {
+        size_t operator()(const std::pair<Type *, bool> &key) const
+        {
+            return hash<Type *>()(key.first) ^ (hash<bool>()(key.second) << 1);
         }
     };
 }
@@ -93,14 +112,14 @@ public:
         }
     }
 
-    // Modified constructor: Module* is now a required parameter
-    Type(TypeID tid, Module *m) : tid_(tid), module_(m) {}
+    Type(TypeID tid, Module *m, bool const_ = false) : tid_(tid), module_(m) {}
     virtual ~Type() = default;
 
     TypeID type_id() const { return tid_; }
     virtual size_t size() const = 0;
     virtual std::string name() const = 0;
     virtual unsigned bits() const = 0;
+    virtual size_t alignment() const { return size(); } // TODO: for different architectures
 
     Module *module() const { return module_; }
 
@@ -114,21 +133,25 @@ public:
     bool is_struct() const { return tid_ == StructTy; }
     bool is_vector() const { return tid_ == VecTy; }
 
+    bool is_const() const { return is_const_; }
+
+    Type *element_type() const;
+
 protected:
     TypeID tid_;
     Module *module_;
+    bool is_const_ = false;
 };
 
 class IntegerType : public Type
 {
 public:
-    static IntegerType *get(Module *m, unsigned bits);
     size_t size() const override { return (bits_ + 7) / 8; }
     std::string name() const override { return "i" + std::to_string(bits_); }
     unsigned bits() const override { return bits_; }
 
 private:
-    explicit IntegerType(Module *m, unsigned bits);
+    explicit IntegerType(Module *m, unsigned bits, bool is_const = false);
     unsigned bits_;
 
     friend Module;
@@ -145,15 +168,13 @@ public:
         Quad    // 128-bit
     };
 
-    static FloatType *get(Module *m, Precision precision);
-
     Precision precision() const { return precision_; }
     unsigned bits() const override { return bits_; }
     size_t size() const override { return (bits_ + 7) / 8; }
     std::string name() const override { return "f" + std::to_string(bits_); }
 
 private:
-    explicit FloatType(Module *m, Precision precision);
+    explicit FloatType(Module *m, Precision precision, bool is_const = false);
     unsigned bits_;
 
     Precision precision_;
@@ -163,8 +184,6 @@ private:
 class VoidType : public Type
 {
 public:
-    static VoidType *get(Module *m);
-
     size_t size() const override { return 0; }
     std::string name() const override { return "void"; }
     unsigned bits() const override { return 0; }
@@ -180,17 +199,16 @@ private:
 class PointerType : public Type
 {
 public:
-    static PointerType *get(Module *m, Type *element_type);
-
     Type *element_type() const { return element_type_; }
 
     // FIXME: Size should be handled through DataLayout instead of hardcoding
     size_t size() const override { return sizeof(void *); }
     std::string name() const override { return element_type_->name() + "*"; }
     unsigned bits() const override { return sizeof(void *) * 8; }
+    PointerType as_const() const { return PointerType(module_, element_type_, true); }
 
 private:
-    PointerType(Module *m, Type *element_type);
+    PointerType(Module *m, Type *element_type, bool const_ = false);
 
     Type *element_type_;
     Module *module_;
@@ -201,12 +219,12 @@ private:
 class FunctionType : public Type
 {
 public:
-    static FunctionType *get(Module *m, Type *return_type, const std::vector<Type *> &param_types);
-
     Type *return_type() const { return return_type_; }
 
     const std::vector<Type *> &param_types() const { return param_types_; }
+    const Type *param_type(unsigned index) const { return param_types_.at(index); }
 
+    size_t num_params() const { return param_types_.size(); }
     size_t size() const override { return 0; }
 
     std::string name() const override
@@ -237,8 +255,6 @@ private:
 class ArrayType : public Type
 {
 public:
-    static ArrayType *get(Module *m, Type *element_type, uint64_t num_elements);
-
     Type *element_type() const { return element_type_; }
     uint64_t num_elements() const { return num_elements_; }
     size_t size() const override;
@@ -250,7 +266,7 @@ public:
     unsigned bits() const override { return size() * 8; }
 
 private:
-    ArrayType(Module *m, Type *element_type, uint64_t num_elements);
+    ArrayType(Module *m, Type *element_type, uint64_t num_elements, bool is_const = false);
 
     Type *element_type_;
     uint64_t num_elements_;
@@ -263,6 +279,8 @@ class StructType : public Type
 {
 public:
     friend class Module;
+    // For named structs, identifier is the name
+    // For anonymous structs, identifier is all members
 
     void set_name(const std::string &name) { name_ = name; }
     std::string name() const override
@@ -294,6 +312,7 @@ public:
     size_t get_member_offset(unsigned index) const;
 
     size_t get_member_index(const std::string &name) const;
+    bool has_member(const std::string &name) const;
 
     size_t size() const override;
 
@@ -301,7 +320,8 @@ public:
     const std::vector<Type *> &members() const { return members_; }
 
 private:
-    StructType(Module *m);
+    StructType(Module *m, const std::string &name, std::vector<Type *> members, bool is_const = false);
+    StructType(Module *m, std::vector<Type *> members, bool is_const = false);
 
     std::string name_;
     Module *module_;
@@ -316,8 +336,6 @@ private:
 class VectorType : public Type
 {
 public:
-    static VectorType *get(Module *m, Type *element_type, uint64_t num_elements);
-
     Type *element_type() const { return element_type_; }
     uint64_t num_elements() const { return num_elements_; }
 
@@ -337,7 +355,7 @@ public:
     }
 
 private:
-    VectorType(Module *m, Type *element_type, uint64_t num_elements)
+    VectorType(Module *m, Type *element_type, uint64_t num_elements, bool is_const = false)
         : Type(VecTy, m), element_type_(element_type), num_elements_(num_elements) {}
 
     Type *element_type_;
@@ -419,6 +437,9 @@ enum class Opcode
     FPExt,
     FPTrunc,
     BitCast,
+    BitAnd,
+    BitOr,
+    BitXor
 };
 
 class Instruction : public User
@@ -455,7 +476,7 @@ public:
     explicit BasicBlock(const std::string &name, Function *parent);
     ~BasicBlock() override;
 
-    Function *parent() const { return parent_; }
+    Function *parent_function() const { return parent_; }
 
     Instruction *first_instruction() const { return head_; }
     Instruction *last_instruction() const { return tail_; }
@@ -502,7 +523,7 @@ public:
     ~Function() override;
 
     BasicBlock *create_basic_block(const std::string &name = "");
-    Module *parent() const { return parent_; }
+    Module *parent_module() const { return parent_; }
 
     Type *return_type() const { return return_type_; }
     Type *arg_type(size_t idx) const { return args_.at(idx)->type(); }
@@ -541,7 +562,7 @@ class Module
         template <typename T1, typename T2>
         size_t operator()(const std::pair<T1, T2> &p) const
         {
-            // 确保 double 的二进制表示被完整哈希
+            // ensure double is hashed fully
             static_assert(sizeof(double) == sizeof(uint64_t), "Unexpected double size");
 
             size_t hash1 = std::hash<T1>{}(p.first);
@@ -549,7 +570,7 @@ class Module
 
             if constexpr (std::is_same_v<T2, double>)
             {
-                // 将 double 的二进制表示转为 uint64_t
+                // uint64_t convert double to uint64_t
                 std::memcpy(&bits, &p.second, sizeof(double));
             }
             else
@@ -558,7 +579,7 @@ class Module
             }
 
             size_t hash2 = std::hash<uint64_t>{}(bits);
-            return hash1 ^ (hash2 << 1); // 简单组合哈希（可用更复杂的方式）
+            return hash1 ^ (hash2 << 1);
         }
     };
 
@@ -606,15 +627,15 @@ public:
 
     Function *create_function(
         const std::string &name,
-        FunctionType* type);
+        FunctionType *type);
 
     GlobalVariable *create_global_variable(Type *type, bool is_constant, Constant *initializer, const std::string &name = "");
 
     Type *get_void_type();
-    IntegerType *get_integer_type(unsigned bits);
-    FloatType *get_float_type(FloatType::Precision precision);
+    IntegerType *get_integer_type(unsigned bits, bool is_const = false);
+    FloatType *get_float_type(FloatType::Precision precision, bool is_const = false);
 
-    PointerType *get_pointer_type(Type *element_type);
+    PointerType *get_pointer_type(Type *element_type, bool is_const = false);
     FunctionType *get_function_type(Type *return_type, const std::vector<Type *> &param_types);
 
     ConstantInt *get_constant_int(IntegerType *type, uint64_t value);
@@ -623,22 +644,44 @@ public:
     ConstantFP *get_constant_fp(FloatType *type, double value);
     ConstantFP *get_constant_fp(FloatType::Precision precision, double value);
 
-    const std::vector<Function *> &functions() const { return function_ptrs_; }
-    const std::vector<GlobalVariable *> &global_variables() const { return global_variable_ptrs_; }
+    ConstantString *get_constant_string(std::string value);
+    ConstantPointerNull *get_constant_pointer_null(PointerType *type);
+    ConstantAggregateZero *get_constant_aggregate_zero(Type *type);
+    ConstantStruct *get_constant_struct(StructType *type, const std::vector<Constant *> &members);
+    ConstantArray *get_constant_array(ArrayType *type, const std::vector<Constant *> &elements);
 
-    ArrayType *get_array_type(Type *element_type, uint64_t num_elements);
+    const std::vector<Function *> &functions() const
+    {
+        std::vector<Function *> result(functions_.size());
+        for (auto &f : functions_)
+            result.push_back(f.get());
+        return result;
+    }
 
-    StructType *create_struct_type(const std::string &name);
+    const std::vector<GlobalVariable *> &global_variables() const
+    {
+        std::vector<GlobalVariable *> result(global_variables_.size());
+        for (auto &gv : global_variables_)
+            result.push_back(gv.second.get());
+        return result;
+    }
 
-    StructType *get_struct_type(const std::vector<Type *> &members);
-    StructType *get_struct_type(const std::string &name);
-    VectorType *get_vector_type(Type *element_type, uint64_t num_elements);
+    
+    StructType *get_struct_type_anonymous(const std::vector<Type *> &members, bool is_const = false);
+    StructType *try_get_struct_type(const std::string &name, bool is_const = false);
+    ArrayType *get_array_type(Type *element_type, uint64_t num_elements, bool is_const = false);
+    StructType *get_struct_type(const std::string &name, const std::vector<Type *> &members, bool is_const = false);
+    VectorType *get_vector_type(Type *element_type, uint64_t num_elements, bool is_const = false);
+
+    // Get the type with const qualifier
+    Type *get_const_type(Type *type);
 
 private:
     std::unique_ptr<VoidType> void_type_;
     std::unordered_map<unsigned, std::unique_ptr<IntegerType>> integer_types_;
     std::unordered_map<FloatType::Precision, std::unique_ptr<FloatType>> float_types_;
-    std::unordered_map<Type *, std::unique_ptr<PointerType>> pointer_types_;
+    // (element_type, const) -> pointer_type
+    std::unordered_map<std::pair<Type *, bool>, std::unique_ptr<PointerType>, std::hash<std::pair<Type *, bool>>> pointer_types_;
 
     std::unordered_map<std::pair<Type *, uint64_t>,
                        std::unique_ptr<ConstantInt>>
@@ -652,10 +695,12 @@ private:
         constant_fps_;
 
     std::vector<std::unique_ptr<Function>> functions_;
-    std::vector<Function *> function_ptrs_;
-
-    std::vector<std::unique_ptr<GlobalVariable>> global_variables_;
-    std::vector<GlobalVariable *> global_variable_ptrs_;
+    std::unordered_map<std::string, std::unique_ptr<GlobalVariable>> global_variables_;
+    std::vector<std::unique_ptr<ConstantStruct>> constant_structs_;
+    std::vector<std::unique_ptr<ConstantArray>> constant_arrays_;
+    std::vector<std::unique_ptr<ConstantString>> constant_strings_;
+    std::vector<std::unique_ptr<ConstantPointerNull>> constant_pointer_nulls_;
+    std::vector<std::unique_ptr<ConstantAggregateZero>> constant_aggregate_zeros_;
 
     friend class ArrayType;
     friend class StructType;
@@ -702,8 +747,6 @@ protected:
 class ConstantInt : public Constant
 {
 public:
-    static ConstantInt *get(Module *m, IntegerType *type, uint64_t value);
-
     uint64_t value() const { return value_; }
 
     ConstantInt *zext_value(Module *m, IntegerType *dest_type) const;
@@ -722,9 +765,6 @@ private:
 class ConstantFP : public Constant
 {
 public:
-    static ConstantFP *get(Module *m, FloatType *type, double value);
-    static ConstantFP *get(Module *m, FloatType::Precision precision, double value);
-
     double value() const { return value_; }
 
     std::string as_string() const override;
@@ -740,9 +780,6 @@ private:
 class ConstantArray : public Constant
 {
 public:
-    static ConstantArray *get(Module *m, ArrayType *type,
-                              const std::vector<Constant *> &elements);
-
     const std::vector<Constant *> &elements() const { return elements_; }
 
     std::string as_string() const override;
@@ -756,28 +793,24 @@ private:
 };
 
 // String constant
-class ConstantString : public Constant {
-    public:
-      static ConstantString *get(Module *m, const std::string &value);
-      const std::string &value() const;
-      std::string as_string() const override;
-    
-    private:
-      ConstantString(ArrayType *type, const std::string &value);
-      static std::string escape_string(const std::string &input);
-    
-      std::string value_;
-      friend class Module;
-    };
-    
+class ConstantString : public Constant
+{
+public:
+    const std::string &value() const;
+    std::string as_string() const override;
+
+private:
+    ConstantString(ArrayType *type, const std::string &value);
+    static std::string escape_string(const std::string &input);
+
+    std::string value_;
+    friend class Module;
+};
 
 // Structure constant
 class ConstantStruct : public Constant
 {
 public:
-    static ConstantStruct *get(Module *m, StructType *type,
-                               const std::vector<Constant *> &members);
-
     const std::vector<Constant *> &members() const { return members_; }
 
     std::string as_string() const override;
@@ -793,9 +826,6 @@ private:
 class GlobalVariable : public Constant
 {
 public:
-    static GlobalVariable *get(Module *m, Type *type, bool is_constant,
-                               Constant *initializer, const std::string &name);
-
     bool is_constant() const { return is_constant_; }
     Constant *initializer() const { return initializer_; }
 
@@ -816,8 +846,6 @@ private:
 class ConstantPointerNull : public Constant
 {
 public:
-    static ConstantPointerNull *get(Module *m, PointerType *type);
-
     std::string as_string() const override;
 
 private:
@@ -831,8 +859,6 @@ private:
 class ConstantAggregateZero : public Constant
 {
 public:
-    static ConstantAggregateZero *get(Module *m, Type *type);
-
     std::string as_string() const override;
 
 private:
@@ -1053,14 +1079,29 @@ private:
 class CallInst : public Instruction
 {
 public:
-    static CallInst *create(Function *func, const std::vector<Value *> &args, BasicBlock *parent, const std::string &name);
+    static CallInst *create(Value *callee, Type *return_type, const std::vector<Value *> &args, BasicBlock *parent, const std::string &name);
+    static CallInst *create(Function *callee, const std::vector<Value *> &args, BasicBlock *parent, const std::string &name);
 
-    Function *called_function() const { return static_cast<Function *>(operand(0)); }
-    std::vector<Value *> create_operand_list(Function *func, const std::vector<Value *> &args);
+    // Warning: This function is not safe to use if the function is not a direct
+    // function call, but rather a function pointer or a function reference.
+    Function *called_function() const { return dynamic_cast<Function *>(operand(0)); }
+    std::vector<Value *> create_operand_list(Value *callee, const std::vector<Value *> &args);
     std::vector<Value *> arguments() const;
 
 private:
-    CallInst(BasicBlock *parent, Function *func, const std::vector<Value *> &args, const std::string &name);
+    CallInst(BasicBlock *parent, Value *callee, Type *return_type, const std::vector<Value *> &args, const std::string &name);
+};
+
+class RawCallInst : public Instruction
+{
+public:
+    static RawCallInst *create(Value *callee, const std::vector<Value *> &args, BasicBlock *parent, const std::string &name);
+
+    Value *callee() const { return operand(0); }
+    std::vector<Value *> arguments() const;
+
+private:
+    RawCallInst(BasicBlock *parent, Value *callee, const std::vector<Value *> &args, const std::string &name);
 };
 
 class SExtInst : public CastInst
@@ -1134,3 +1175,22 @@ public:
 private:
     FPTruncInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
 };
+
+//===----------------------------------------------------------------------===//
+//      Structure Layout
+//===----------------------------------------------------------------------===//
+
+struct Member
+{
+    Type *type;
+    size_t offset;
+};
+
+struct StructLayout
+{
+    std::vector<Member> members;
+    size_t size;
+    size_t alignment;
+};
+
+StructLayout calculate_aligned_layout(const std::vector<Type *> &members);

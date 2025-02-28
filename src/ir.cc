@@ -11,16 +11,28 @@ Type *Type::get_void_type(Module *m)
     return m->get_void_type();
 }
 
-IntegerType::IntegerType(Module *m, unsigned bits)
-    : Type(IntTy, m), bits_(bits) {}
-
-IntegerType *IntegerType::get(Module *m, unsigned bits)
+Type *Type::element_type() const
 {
-    return m->get_integer_type(bits);
+    if (is_array())
+    {
+        return dynamic_cast<const ArrayType *>(this)->element_type();
+    }
+    else if (is_vector())
+    {
+        return dynamic_cast<const VectorType *>(this)->element_type();
+    }
+    else
+    {
+        std::cerr << "Type::element_type() called on non-aggregate type" << std::endl;
+        return nullptr;
+    }
 }
 
-FloatType::FloatType(Module *m, FloatType::Precision precision)
-    : Type(FpTy, m), precision_(precision)
+IntegerType::IntegerType(Module *m, unsigned bits, bool is_const)
+    : Type(IntTy, m, is_const), bits_(bits) {}
+
+FloatType::FloatType(Module *m, FloatType::Precision precision, bool is_const)
+    : Type(FpTy, m, is_const), precision_(precision)
 {
     switch (precision)
     {
@@ -41,30 +53,11 @@ FloatType::FloatType(Module *m, FloatType::Precision precision)
     }
 }
 
-FloatType *FloatType::get(Module *m, FloatType::Precision precision)
-{
-    return m->get_float_type(precision);
-}
+PointerType::PointerType(Module *m, Type *element_type, bool is_const)
+    : Type(PtrTy, m, is_const), element_type_(element_type) {}
 
-PointerType::PointerType(Module *m, Type *element_type)
-    : Type(PtrTy, m), element_type_(element_type) {}
-
-PointerType *PointerType::get(Module *m, Type *element_type)
-{
-    return m->get_pointer_type(element_type);
-}
-
-VoidType *VoidType::get(Module *m)
-{
-    if (!m->void_type_)
-    {
-        m->void_type_ = std::unique_ptr<VoidType>(new VoidType(m));
-    }
-    return static_cast<VoidType *>(m->void_type_.get());
-}
-
-ArrayType::ArrayType(Module *m, Type *element_type, uint64_t num_elements)
-    : Type(ArrayTy, m), element_type_(element_type),
+ArrayType::ArrayType(Module *m, Type *element_type, uint64_t num_elements, bool is_const)
+    : Type(ArrayTy, m, is_const), element_type_(element_type),
       num_elements_(num_elements)
 {
     assert(element_type && "Invalid element type");
@@ -75,13 +68,60 @@ size_t ArrayType::size() const
     return element_type_->size() * num_elements_;
 }
 
-ArrayType *ArrayType::get(Module *m, Type *element_type, uint64_t num_elements)
+StructLayout calculate_aligned_layout(const std::vector<Type *> &members)
 {
-    return m->get_array_type(element_type, num_elements);
+    StructLayout layout;
+    size_t offset = 0;
+    size_t max_alignment = 1;
+
+    for (auto *member_type : members)
+    {
+        size_t alignment = member_type->alignment();
+
+        if (alignment > max_alignment)
+        {
+            max_alignment = alignment;
+        }
+
+        if (offset % alignment != 0)
+        {
+            offset += alignment - (offset % alignment);
+        }
+
+        // 记录成员的偏移量
+        layout.members.push_back({member_type, offset});
+
+        // 更新偏移量
+        offset += member_type->size();
+    }
+
+    if (offset % max_alignment != 0)
+    {
+        offset += max_alignment - (offset % max_alignment);
+    }
+
+    layout.size = offset;
+    layout.alignment = max_alignment;
+
+    return layout;
 }
 
-StructType::StructType(Module *m)
-    : Type(StructTy, m), is_opaque_(true), size_(0) {}
+StructType::StructType(Module *m, const std::string &name, std::vector<Type *> members, bool is_const)
+    : Type(StructTy, m, is_const), name_(name), is_opaque_(false), size_(0)
+{
+    if (!members.empty())
+    {
+        set_body(members);
+    }
+}
+
+StructType::StructType(Module *m, std::vector<Type *> members, bool is_const) : Type(StructTy, m, is_const), name_(""), is_opaque_(true), size_(0)
+{
+    if (!members.empty())
+    {
+        set_body(members);
+    }
+}
 
 void StructType::set_body(std::vector<Type *> members)
 {
@@ -90,17 +130,12 @@ void StructType::set_body(std::vector<Type *> members)
     is_opaque_ = false;
 
     // Calculate offsets (simple compact layout)
-    size_ = 0;
-    for (auto *ty : members_)
+    StructLayout layout = calculate_aligned_layout(members_);
+    size_ = layout.size;
+    for (auto &member : layout.members)
     {
-        offsets_.push_back(size_);
-        size_ += ty->size();
+        offsets_.push_back(member.offset);
     }
-}
-
-StructType *StructType::create(Module *m, const std::string &name)
-{
-    return m->create_struct_type(name);
 }
 
 Type *StructType::get_member_type(unsigned i) const
@@ -128,6 +163,18 @@ size_t StructType::get_member_index(const std::string &name) const
     // TODO: better error handling
     // assert(0 && "Invalid member name");
     return std::numeric_limits<size_t>::max();
+}
+
+bool StructType::has_member(const std::string &name) const
+{
+    for (auto *ty : members_)
+    {
+        if (ty->name() == name)
+        {
+            return true;
+        }
+    }
+    return false;
 }
 
 size_t StructType::size() const
@@ -222,7 +269,7 @@ Instruction *Instruction::create(Opcode opc, Type *type,
 //                           BasicBlock Implementation
 //===----------------------------------------------------------------------===//
 BasicBlock::BasicBlock(const std::string &name, Function *parent)
-    : Value(Type::get_void_type(parent->parent()), name),
+    : Value(Type::get_void_type(parent->parent_module()), name),
       parent_(parent), head_(nullptr), tail_(nullptr) {}
 
 BasicBlock::~BasicBlock()
@@ -331,7 +378,7 @@ void BasicBlock::append(Instruction *inst)
     }
 }
 
-Instruction* BasicBlock::get_terminator() const
+Instruction *BasicBlock::get_terminator() const
 {
     if (!tail_)
         return nullptr;
@@ -382,7 +429,6 @@ BasicBlock *Function::create_basic_block(const std::string &name)
 //===----------------------------------------------------------------------===//
 Module::Module()
 {
-    VoidType::get(this);
 }
 
 Module::~Module() = default;
@@ -394,8 +440,7 @@ Function *Module::create_function(
 {
     functions_.push_back(
         std::make_unique<Function>(name, this, return_type, params));
-    function_ptrs_.push_back(functions_.back().get());
-    return function_ptrs_.back();
+    return functions_.back().get();
 }
 
 Function *Module::create_function(
@@ -410,12 +455,10 @@ GlobalVariable *Module::create_global_variable(Type *type, bool is_constant, Con
 {
     auto *gv_ptr = new GlobalVariable(type, is_constant, initializer, name);
     auto gv = std::unique_ptr<GlobalVariable>(gv_ptr);
-    global_variables_.push_back(std::move(gv));
-    global_variable_ptrs_.push_back(gv_ptr);
     return gv_ptr;
 }
 
-IntegerType *Module::get_integer_type(unsigned bits)
+IntegerType *Module::get_integer_type(unsigned bits, bool is_const)
 {
     auto &type = integer_types_[bits];
     if (!type)
@@ -425,7 +468,7 @@ IntegerType *Module::get_integer_type(unsigned bits)
     return type.get();
 }
 
-FloatType *Module::get_float_type(FloatType::Precision precision)
+FloatType *Module::get_float_type(FloatType::Precision precision, bool is_const)
 {
     auto &type = float_types_[precision];
     if (!type)
@@ -435,12 +478,14 @@ FloatType *Module::get_float_type(FloatType::Precision precision)
     return type.get();
 }
 
-PointerType *Module::get_pointer_type(Type *element_type)
+PointerType *Module::get_pointer_type(Type *element_type, bool is_const)
 {
-    auto &type = pointer_types_[element_type];
+    auto key = std::make_pair(element_type, is_const);
+
+    auto &type = pointer_types_[key];
     if (!type)
     {
-        type = std::unique_ptr<PointerType>(new PointerType(this, element_type));
+        type = std::unique_ptr<PointerType>(new PointerType(this, element_type, is_const));
     }
     return type.get();
 }
@@ -465,22 +510,15 @@ Type *Module::get_void_type()
     return void_type_.get();
 }
 
-ArrayType *Module::get_array_type(Type *element_type, uint64_t num_elements)
+ArrayType *Module::get_array_type(Type *element_type, uint64_t num_elements, bool is_const)
 {
-    auto ty = new ArrayType(this, element_type, num_elements);
+    auto ty = new ArrayType(this, element_type, num_elements, is_const);
     array_types_[{element_type, num_elements}] = std::unique_ptr<ArrayType>(ty);
     return ty;
 }
 
-StructType *Module::create_struct_type(const std::string &name)
-{
-    auto ty = new StructType(this);
-    this->struct_types_.push_back(std::unique_ptr<StructType>(ty));
-    return ty;
-}
-
 // FIXME: should not get by members
-StructType *Module::get_struct_type(const std::vector<Type *> &members)
+StructType *Module::get_struct_type_anonymous(const std::vector<Type *> &members, bool is_const)
 {
     // Find existing struct
     for (auto &st : struct_types_)
@@ -492,27 +530,32 @@ StructType *Module::get_struct_type(const std::vector<Type *> &members)
     }
 
     // Create new struct
-    auto *st = new StructType(this);
-    st->set_body(members);
+    auto *st = new StructType(this, members, is_const);
     struct_types_.push_back(std::unique_ptr<StructType>(st));
     return st;
 }
 
-StructType *Module::get_struct_type(const std::string &name) {
+StructType *Module::try_get_struct_type(const std::string &name, bool is_const)
+{
+    assert(!name.empty() && "Invalid struct name");
+
     // Check existing struct types
-    for (auto &st : struct_types_) {
-        if (st->name() == name) {
+    for (auto &st : struct_types_)
+    {
+        if (st->name() == name)
+        {
             return st.get();
         }
     }
     // Check opaque types
-    if (auto it = opaque_structs_.find(name); it != opaque_structs_.end()) {
+    if (auto it = opaque_structs_.find(name); it != opaque_structs_.end())
+    {
         return it->second.get();
     }
     return nullptr;
 }
 
-VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements)
+VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements, bool is_const)
 {
     auto key = std::make_pair(element_type, num_elements);
     auto it = vector_types_.find(key);
@@ -561,21 +604,131 @@ ConstantFP *Module::get_constant_fp(FloatType::Precision precision, double value
     return get_constant_fp(get_float_type(precision), value);
 }
 
+ConstantString *Module::get_constant_string(std::string value)
+{
+    for (auto &constant : constant_strings_)
+    {
+        if (constant->value() == value)
+        {
+            return constant.get();
+        }
+    }
+
+    auto &constant = constant_strings_.emplace_back(
+        std::unique_ptr<ConstantString>(new ConstantString(get_array_type(get_integer_type(8), value.size() + 1), value)));
+    return constant.get();
+}
+
+ConstantAggregateZero *Module::get_constant_aggregate_zero(Type *type)
+{
+    for (auto &constant : constant_aggregate_zeros_)
+    {
+        if (constant->type() == type)
+        {
+            return constant.get();
+        }
+    }
+
+    auto &constant = constant_aggregate_zeros_.emplace_back(
+        std::unique_ptr<ConstantAggregateZero>(new ConstantAggregateZero(type)));
+    return constant.get();
+}
+
+ConstantPointerNull *Module::get_constant_pointer_null(PointerType *type)
+{
+    for (auto &constant : constant_pointer_nulls_)
+    {
+        if (constant->type() == type)
+        {
+            return constant.get();
+        }
+    }
+}
+
+ConstantStruct *Module::get_constant_struct(StructType *type, const std::vector<Constant *> &members)
+{
+    for (auto &constant : constant_structs_)
+    {
+        if (constant->type() == type && constant->members() == members)
+        {
+            return constant.get();
+        }
+    }
+
+    auto &constant = constant_structs_.emplace_back(
+        std::unique_ptr<ConstantStruct>(new ConstantStruct(type, members)));
+    return constant.get();
+}
+
+ConstantArray *Module::get_constant_array(ArrayType *type, const std::vector<Constant *> &elements)
+{
+    for (auto &constant : constant_arrays_)
+    {
+        if (constant->type() == type && constant->elements() == elements)
+        {
+            return constant.get();
+        }
+    }
+
+    auto &constant = constant_arrays_.emplace_back(
+        std::unique_ptr<ConstantArray>(new ConstantArray(type, elements)));
+    return constant.get();
+}
+
+Type *Module::get_const_type(Type *type)
+{
+    if (type->is_const())
+        return type;
+
+    switch (type->type_id())
+    {
+    case Type::IntTy:
+        return this->get_integer_type(
+            static_cast<IntegerType *>(type)->bits(), true);
+
+    case Type::FpTy:
+        return this->get_float_type(
+            static_cast<FloatType *>(type)->precision(), true);
+
+    case Type::PtrTy:
+    {
+        auto ptr_ty = static_cast<PointerType *>(type);
+        return this->get_pointer_type(ptr_ty->element_type(), true);
+    }
+
+    case Type::ArrayTy:
+    {
+        auto arr_ty = static_cast<ArrayType *>(type);
+        Type *const_elem = get_const_type(arr_ty->element_type());
+        return this->get_array_type(const_elem, arr_ty->num_elements());
+    }
+
+    case Type::StructTy:
+    {
+        auto struct_ty = static_cast<StructType *>(type);
+        std::vector<Type *> const_members;
+        for (auto member : struct_ty->members())
+        {
+            const_members.push_back(get_const_type(member));
+        }
+        return this->get_struct_type_anonymous(const_members);
+    }
+
+    default:
+        return type; // void/function etc is not const applicable
+    }
+}
+
 //===----------------------------------------------------------------------===//
 //                            ConstantInt Implementation
 //===----------------------------------------------------------------------===//
 ConstantInt::ConstantInt(IntegerType *type, uint64_t value)
     : Constant(type, ""), value_(value) {}
 
-ConstantInt *ConstantInt::get(Module *m, IntegerType *type, uint64_t value)
-{
-    return m->get_constant_int(type, value);
-}
-
 ConstantInt *ConstantInt::zext_value(Module *m, IntegerType *dest_type) const
 {
     assert(dest_type->bits() > type()->bits());
-    return ConstantInt::get(m, dest_type, value_);
+    return m->get_constant_int(dest_type, value_);
 }
 
 ConstantInt *ConstantInt::sext_value(Module *m, IntegerType *dest_type) const
@@ -583,7 +736,7 @@ ConstantInt *ConstantInt::sext_value(Module *m, IntegerType *dest_type) const
     assert(dest_type->bits() > type()->bits());
     const uint64_t sign_bit = 1ULL << (type()->bits() - 1);
     const uint64_t sign_extended = (value_ & sign_bit) ? (value_ | ~((1ULL << type()->bits()) - 1)) : value_;
-    return ConstantInt::get(m, dest_type, sign_extended);
+    return m->get_constant_int(dest_type, sign_extended);
 }
 
 std::string ConstantInt::as_string() const
@@ -605,16 +758,6 @@ std::string ConstantFP::as_string() const
 
 ConstantFP::ConstantFP(FloatType *type, double value)
     : Constant(type, ""), value_(value) {}
-
-ConstantFP *ConstantFP::get(Module *m, FloatType *type, double value)
-{
-    return m->get_constant_fp(type, value);
-}
-
-ConstantFP *ConstantFP::get(Module *m, FloatType::Precision precision, double value)
-{
-    return m->get_constant_fp(m->get_float_type(precision), value);
-}
 
 // ---------- ConstantArray ----------
 
@@ -704,7 +847,7 @@ std::string ConstantAggregateZero::as_string() const
 //===----------------------------------------------------------------------===//
 BranchInst::BranchInst(BasicBlock *target, BasicBlock *parent,
                        std::vector<Value *> ops)
-    : Instruction(Opcode::Br, Type::get_void_type(parent->parent()->parent()),
+    : Instruction(Opcode::Br, Type::get_void_type(parent->parent_function()->parent_module()),
                   parent, ops),
       true_bb_(target),
       false_bb_(nullptr) {}
@@ -739,7 +882,7 @@ BasicBlock *BranchInst::get_false_successor() const
 }
 
 ReturnInst::ReturnInst(Value *value, BasicBlock *parent)
-    : Instruction(Opcode::Ret, Type::get_void_type(parent->parent()->parent()),
+    : Instruction(Opcode::Ret, Type::get_void_type(parent->parent_function()->parent_module()),
                   parent, {value}) {}
 
 ReturnInst *ReturnInst::create(Value *value, BasicBlock *parent)
@@ -768,7 +911,7 @@ BasicBlock *PhiInst::get_incoming_block(unsigned i) const
 }
 
 ICmpInst::ICmpInst(BasicBlock *parent, std::vector<Value *> ops)
-    : Instruction(Opcode::ICmp, IntegerType::get(parent->parent()->parent(), 1),
+    : Instruction(Opcode::ICmp, parent->parent_function()->parent_module()->get_integer_type(1),
                   parent, ops),
       pred_(EQ) {}
 
@@ -796,7 +939,7 @@ AllocaInst::AllocaInst(Type *allocated_type, Type *ptr_type, BasicBlock *parent)
 AllocaInst *AllocaInst::create(Type *allocated_type, BasicBlock *parent,
                                const std::string &name)
 {
-    Type *ptr_type = PointerType::get(parent->parent()->parent(), allocated_type);
+    Type *ptr_type = parent->parent_function()->parent_module()->get_pointer_type(allocated_type);
     auto *inst = new AllocaInst(allocated_type, ptr_type, parent);
     inst->set_name(name); // TODO: set by intializer?
     return inst;
@@ -815,7 +958,7 @@ LoadInst *LoadInst::create(Value *ptr, BasicBlock *parent,
 }
 
 StoreInst::StoreInst(BasicBlock *parent, Value *value, Value *ptr)
-    : Instruction(Opcode::Store, Type::get_void_type(parent->parent()->parent()),
+    : Instruction(Opcode::Store, Type::get_void_type(parent->parent_function()->parent_module()),
                   parent, {value, ptr}) {}
 
 StoreInst *StoreInst::create(Value *value, Value *ptr, BasicBlock *parent)
@@ -886,7 +1029,7 @@ Type *GetElementPtrInst::get_result_type(Type *base_type,
         assert(false && "Invalid GEP index sequence");
     }
 
-    return PointerType::get(base_type->module(), current_type);
+    return base_type->module()->get_pointer_type(current_type);
 }
 
 GetElementPtrInst *GetElementPtrInst::create(Value *ptr, std::vector<Value *> indices,
@@ -944,21 +1087,26 @@ BitCastInst *BitCastInst::create(Value *val, Type *target_type, BasicBlock *pare
     return new BitCastInst(parent, val, target_type, name);
 }
 
-CallInst::CallInst(BasicBlock *parent, Function *func, const std::vector<Value *> &args, const std::string &name)
-    : Instruction(Opcode::Call, func->return_type(), parent, create_operand_list(func, args), name) {}
+CallInst::CallInst(BasicBlock *parent, Value *callee, Type *return_type, const std::vector<Value *> &args, const std::string &name)
+    : Instruction(Opcode::Call, return_type, parent, create_operand_list(callee, args), name) {}
 
-std::vector<Value *> CallInst::create_operand_list(Function *func, const std::vector<Value *> &args)
+CallInst *CallInst::create(Value *callee, Type *return_type, const std::vector<Value *> &args, BasicBlock *parent, const std::string &name)
+{
+    return new CallInst(parent, callee, return_type, args, name);
+}
+CallInst *CallInst::create(Function *callee, const std::vector<Value *> &args, BasicBlock *parent, const std::string &name)
+{
+    auto return_type = callee->return_type();
+    return new CallInst(parent, callee, return_type, args, name);
+}
+
+std::vector<Value *> CallInst::create_operand_list(Value *callee, const std::vector<Value *> &args)
 {
     std::vector<Value *> operands;
     operands.reserve(args.size() + 1);
-    operands.push_back(func);
+    operands.push_back(callee);
     operands.insert(operands.end(), args.begin(), args.end());
     return operands;
-}
-
-CallInst *CallInst::create(Function *func, const std::vector<Value *> &args, BasicBlock *parent, const std::string &name)
-{
-    return new CallInst(parent, func, args, name);
 }
 
 std::vector<Value *> CallInst::arguments() const
