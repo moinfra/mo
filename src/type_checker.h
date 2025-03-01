@@ -45,8 +45,8 @@ protected:
     void add_error(const std::string &message);
 
     // Type system helpers
-    bool types_equal(ast::Type &t1, const ast::Type &t2) const;
-    bool is_convertible(ast::Type &from, const ast::Type &to) const;
+    bool types_equal(const ast::Type &t1, const ast::Type &t2) const;
+    bool is_convertible(const ast::Type &from, const ast::Type &to) const;
     bool verify_assignable(const ast::Expr &target, const ast::Expr &value);
     ast::TypePtr resolve_alias(const std::string &name) const;
     ast::StructDecl *find_struct(const std::string &name) const;

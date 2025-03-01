@@ -134,45 +134,77 @@ void TypeChecker::add_error(const std::string &message)
 }
 
 // Type system implementation. NOTE: alias kind t1 will be resolved
-bool TypeChecker::types_equal(Type &t1, const Type &t2) const
+bool TypeChecker::types_equal(const Type &t1, const Type &t2) const
 {
-    if (t1.kind != t2.kind)
+    if (t1.kind() != t2.kind())
         return false;
 
-    switch (t1.kind)
+    switch (t1.kind())
     {
-    case Type::Kind::Unknown:
-        return false;
-    case Type::Kind::Basic:
-        return t1.basic_kind == t2.basic_kind;
-    case Type::Kind::Pointer:
-        return types_equal(*t1.pointee, *t2.pointee);
-    case Type::Kind::Array:
-        return t1.array_size == t2.array_size &&
-               types_equal(*t1.element_type, *t2.element_type);
-    case Type::Kind::Struct:
-        return t1.name == t2.name;
+    case Type::Kind::Placeholder:
+        return true;
     case Type::Kind::Void:
-        return t1.kind == t2.kind;
+        return true;
+    case Type::Kind::Int:
+    {
+        auto i1 = static_cast<const IntType *>(&t1);
+        auto i2 = static_cast<const IntType *>(&t2);
+        return i1->bit_width() == i2->bit_width();
+    }
+    case Type::Kind::Float:
+    {
+        auto f1 = static_cast<const FloatType *>(&t1);
+        auto f2 = static_cast<const FloatType *>(&t2);
+        return f1->precision() == f2->precision();
+    }
+    case Type::Kind::Bool:
+        return true;
+    case Type::Kind::String:
+        return true;
+    case Type::Kind::Pointer:
+    {
+        auto p1 = static_cast<const PointerType *>(&t1);
+        auto p2 = static_cast<const PointerType *>(&t2);
+        return types_equal(p1->pointee(), p2->pointee());
+    }
+    case Type::Kind::Array:
+    {
+        auto a1 = static_cast<const ArrayType *>(&t1);
+        auto a2 = static_cast<const ArrayType *>(&t2);
+        return a1->size() == a2->size() &&
+               types_equal(a1->element_type(), a2->element_type());
+    }
+    case Type::Kind::Struct:
+    {
+        auto s1 = static_cast<const StructType *>(&t1);
+        auto s2 = static_cast<const StructType *>(&t2);
+        return s1->name() == s2->name();
+    }
     case Type::Kind::Function:
-        return types_equal(*t1.return_type, *t2.return_type) &&
-               t1.params.size() == t2.params.size() &&
-               std::all_of(t1.params.begin(), t1.params.end(),
-                           [&t2, this](const TypePtr &t1)
-                           { return types_equal(*t1, t2); });
+    {
+        auto f1 = static_cast<const FunctionType *>(&t1);
+        auto f2 = static_cast<const FunctionType *>(&t2);
+        if (!types_equal(f1->return_type(), f2->return_type()))
+            return false;
+        if (f1->params().size() != f2->params().size())
+            return false;
+        for (size_t i = 0; i < f1->params().size(); ++i)
+        {
+            if (!types_equal(*f1->params()[i], *f2->params()[i]))
+                return false;
+        }
+        return true;
+    }
     case Type::Kind::Alias:
     {
-        auto real_type = resolve_alias(t1.name);
-        // return real_type ? types_equal(*real_type, t2) : false;
-        if (real_type)
-        {
-            t1.resolved_alias_target = real_type->clone();
-            return types_equal(*real_type, t2);
-        }
-        else
-        {
-            return false;
-        }
+        auto a1 = static_cast<const AliasType *>(&t1);
+        return types_equal(a1->target(), t2);
+    }
+    case Type::Kind::Qualified:
+    {
+        auto q1 = static_cast<const QualifiedType *>(&t1);
+        auto q2 = static_cast<const QualifiedType *>(&t2);
+        return q1->qualifiers() == q2->qualifiers() && types_equal(q1->base_type(), q2->base_type());
     }
     }
 
@@ -272,7 +304,7 @@ void TypeChecker::visit(SizeofExpr &expr)
     switch (expr.kind)
     {
     case SizeofExpr::Kind::Type:
-        if (!expr.target_type || expr.target_type->kind == Type::Kind::Unknown)
+        if (!expr.target_type || expr.target_type->kind() == Type::Kind::Placeholder)
         {
             add_error("Invalid type in sizeof operator");
         }
@@ -288,7 +320,7 @@ void TypeChecker::visit(SizeofExpr &expr)
     }
 
     // sizeof always returns integer
-    expr.type = Type::get_int_type().clone();
+    expr.type = Type::create_int();
     expr.expr_category = Expr::Category::RValue;
 }
 
@@ -306,9 +338,7 @@ void TypeChecker::visit(AddressOfExpr &expr)
         return;
     }
 
-    expr.type = std::make_unique<Type>();
-    expr.type->kind = Type::Kind::Pointer;
-    expr.type->pointee = expr.operand->type->clone();
+    expr.type = Type::create_pointer(expr.operand->type->clone());
     expr.expr_category = Expr::Category::RValue;
 }
 
@@ -317,16 +347,14 @@ void TypeChecker::visit(DerefExpr &expr)
 {
     check_expr(*expr.operand);
 
-    if (!expr.operand->type)
-        return;
-
-    if (expr.operand->type->kind != Type::Kind::Pointer)
+    if (expr.operand->type->kind() != Type::Kind::Pointer)
     {
         add_error("Dereference of non-pointer type");
         return;
     }
 
-    expr.type = expr.operand->type->pointee->clone();
+    auto pointer_type = static_cast<PointerType *>(expr.operand->type.get());
+    expr.type = pointer_type->pointee().clone();
     expr.expr_category = Expr::Category::LValue;
 }
 
@@ -342,25 +370,25 @@ void TypeChecker::visit(VariableExpr &expr)
     else
     {
         add_error("Undefined symbol '" + expr.name + "'");
-        expr.type = std::make_unique<Type>();
+        expr.type = Type::create_placeholder();
     }
 }
 
 void TypeChecker::visit(IntegerLiteralExpr &expr)
 {
-    expr.type = Type::get_int_type().clone();
+    expr.type = Type::create_int();
     expr.expr_category = Expr::Category::RValue;
 }
 
 void TypeChecker::visit(FloatLiteralExpr &expr)
 {
-    expr.type = Type::get_float_type().clone();
+    expr.type = Type::create_float();
     expr.expr_category = Expr::Category::RValue;
 }
 
 void TypeChecker::visit(StringLiteralExpr &expr)
 {
-    expr.type = std::make_unique<Type>(Type::get_string_type());
+    expr.type = Type::create_string();
     expr.expr_category = Expr::Category::RValue;
 }
 
@@ -368,15 +396,15 @@ void TypeChecker::visit(StructDecl &decl)
 {
     for (auto &field : decl.fields)
     {
-        if (field.type->kind == Type::Kind::Struct)
+        if (field.type->kind() == Type::Kind::Struct)
         {
-            if (!find_struct(field.type->name))
+            if (!find_struct(static_cast<StructType *>(field.type.get())->name()))
             {
-                add_error("Undefined struct type in field '" + field.name + "': " + field.type->name);
+                add_error("Undefined struct type in field '" + field.name + "': " + static_cast<StructType *>(field.type.get())->name());
             }
         }
 
-        if (types_equal(*field.type, Type::get_void_type()))
+        if (types_equal(*field.type, *Type::create_void()))
         {
             add_error("Field '" + field.name + "' cannot have void type");
         }
@@ -390,11 +418,11 @@ void TypeChecker::visit(StructDecl &decl)
 
 void TypeChecker::visit(GlobalDecl &decl)
 {
-    if (decl.type->kind == Type::Kind::Struct)
+    if (decl.type->kind() == Type::Kind::Struct)
     {
-        if (!find_struct(decl.type->name))
+        if (!find_struct(static_cast<StructType *>(decl.type.get())->name()))
         {
-            add_error("Undefined struct type in global variable '" + decl.name + "': " + decl.type->name);
+            add_error("Undefined struct type in global variable '" + decl.name + "': " + static_cast<StructType *>(decl.type.get())->name());
         }
     }
 
@@ -412,6 +440,19 @@ void TypeChecker::visit(GlobalDecl &decl)
         add_error("Constant global variable '" + decl.name + "' must be initialized");
     }
 
+    if (auto alias = decl.type->as_alias())
+    {
+        auto name = alias->name();
+        if (auto type = current_scope_->resolve_type(name))
+        {
+            decl.type = type->clone();
+        }
+        else
+        {
+            add_error("Undefined type for unresolved symbol: " + name);
+        }
+    }
+
     if (!global_scope_->insert(decl.name, decl.type->clone()))
     {
         add_error("Duplicate global variable name: " + decl.name);
@@ -422,11 +463,11 @@ void TypeChecker::visit(GlobalDecl &decl)
 void TypeChecker::visit(ImplBlock &impl)
 {
     // Verify target type exists
-    if (impl.target_type->kind == Type::Kind::Struct)
+    if (impl.target_type->kind() == Type::Kind::Struct)
     {
-        if (!find_struct(impl.target_type->name))
+        if (!find_struct(static_cast<StructType *>(impl.target_type.get())->name()))
         {
-            add_error("Impl for undefined struct: " + impl.target_type->name);
+            add_error("Impl for undefined struct: " + static_cast<StructType *>(impl.target_type.get())->name());
         }
     }
 
@@ -472,10 +513,6 @@ void TypeChecker::visit(BinaryExpr &expr)
         {
             add_error("Cannot assign to rvalue");
         }
-        if (expr.left->type->is_const)
-        {
-            add_error("Cannot modify a constant expression");
-        }
         if (!is_convertible(*expr.right->type, *expr.left->type))
         {
             add_error("Type mismatch in assignment");
@@ -490,15 +527,13 @@ void TypeChecker::visit(BinaryExpr &expr)
     case TokenType::Star:
     case TokenType::Divide:
     {
-        if (types_equal(*expr.left->type, Type::get_int_type()) &&
-            types_equal(*expr.right->type, Type::get_int_type()))
+        if (expr.left->type->kind() == Type::Kind::Int && expr.right->type->kind() == Type::Kind::Int)
         {
-            expr.type = Type::get_int_type().clone();
+            expr.type = Type::create_int();
         }
-        else if (is_convertible(*expr.left->type, Type::get_float_type()) &&
-                 is_convertible(*expr.right->type, Type::get_float_type()))
+        else if (expr.left->type->kind() == Type::Kind::Float && expr.right->type->kind() == Type::Kind::Float)
         {
-            expr.type = Type::get_float_type().clone();
+            expr.type = Type::create_float();
         }
         else
         {
@@ -515,24 +550,19 @@ void TypeChecker::visit(BinaryExpr &expr)
     case TokenType::Gt:
     case TokenType::Ge:
     {
-        // if (!is_convertible(*expr.left->type, *expr.right->type)) {
-        //     add_error("Type mismatch in comparison");
-        // }
         if (!types_equal(*expr.left->type, *expr.right->type))
         {
             add_error("Operands must have same type for comparison");
             break;
         }
-        const bool numeric_operands = expr.left->type->kind == Type::Kind::Basic &&
-                                      (expr.left->type->basic_kind == Type::BasicKind::Int ||
-                                       expr.left->type->basic_kind == Type::BasicKind::Float);
+        const bool numeric_operands = expr.left->type->is_scalar();
 
         if (!numeric_operands)
         {
             add_error("Comparison requires numeric operands");
         }
 
-        expr.type = Type::get_int_type().clone(); // Comparison result is int (boolean)
+        expr.type = Type::create_bool(); // Comparison result is bool
         expr.expr_category = Expr::Category::RValue;
         break;
     }
@@ -540,12 +570,12 @@ void TypeChecker::visit(BinaryExpr &expr)
     case TokenType::And:
     case TokenType::Or:
     {
-        if (!types_equal(*expr.left->type, Type::get_int_type()) ||
-            !types_equal(*expr.right->type, Type::get_int_type()))
+        if (expr.left->type->kind() != Type::Kind::Bool ||
+            expr.right->type->kind() != Type::Kind::Bool)
         {
-            add_error("Logical operators require integer operands");
+            add_error("Logical operators require boolean operands");
         }
-        expr.type = Type::get_int_type().clone(); // Logical result is int (boolean)
+        expr.type = Type::create_bool(); // Logical result is bool
         expr.expr_category = Expr::Category::RValue;
         break;
     }
@@ -556,12 +586,12 @@ void TypeChecker::visit(BinaryExpr &expr)
     // case TokenType::Pipe:
     case TokenType::Not:
     {
-        if (!types_equal(*expr.left->type, Type::get_int_type()) ||
-            !types_equal(*expr.right->type, Type::get_int_type()))
+        if (expr.left->type->kind() != Type::Kind::Int ||
+            expr.right->type->kind() != Type::Kind::Int)
         {
             add_error("Bitwise operators require integer operands");
         }
-        expr.type = Type::get_int_type().clone();
+        expr.type = Type::create_int();
         expr.expr_category = Expr::Category::RValue;
         break;
     }
@@ -584,8 +614,8 @@ void TypeChecker::visit(UnaryExpr &expr)
     switch (expr.op)
     {
     case TokenType::Minus:
-        if (!types_equal(*expr.operand->type, Type::get_int_type()) &&
-            !types_equal(*expr.operand->type, Type::get_float_type()))
+        if (expr.operand->type->kind() != Type::Kind::Int &&
+            expr.operand->type->kind() != Type::Kind::Float)
         {
             add_error("Unary minus on non-numeric type");
         }
@@ -598,20 +628,21 @@ void TypeChecker::visit(UnaryExpr &expr)
         {
             add_error("Cannot take address of rvalue");
         }
-        expr.type = std::make_unique<Type>();
-        expr.type->kind = Type::Kind::Pointer;
-        expr.type->pointee = expr.operand->type->clone();
+        expr.type = Type::create_pointer(expr.operand->type->clone());
         expr.expr_category = Expr::Category::RValue;
         break;
 
     case TokenType::Star:
-        if (expr.operand->type->kind != Type::Kind::Pointer)
+    {
+        if (expr.operand->type->kind() != Type::Kind::Pointer)
         {
             add_error("Dereference of non-pointer type");
         }
-        expr.type = expr.operand->type->pointee->clone();
+        auto pointer_type = static_cast<PointerType *>(expr.operand->type.get());
+        expr.type = pointer_type->pointee().clone();
         expr.expr_category = Expr::Category::LValue;
         break;
+    }
 
     default:
         add_error("Unsupported unary operator");
@@ -628,14 +659,16 @@ void TypeChecker::visit(CallExpr &expr)
         return;
 
     // Function type checking
-    if (expr.callee->type->kind != Type::Kind::Function)
+    if (expr.callee->type->kind() != Type::Kind::Function)
     {
         add_error("Calling non-function type");
         return;
     }
 
+    auto function_type = static_cast<FunctionType *>(expr.callee->type.get());
+
     // Check argument count
-    if (expr.args.size() != expr.callee->type->params.size())
+    if (expr.args.size() != function_type->params().size())
     {
         add_error("Argument count mismatch in function call");
         return;
@@ -645,7 +678,7 @@ void TypeChecker::visit(CallExpr &expr)
     for (size_t i = 0; i < expr.args.size(); ++i)
     {
         auto &arg_type = expr.args[i]->type;
-        auto &param_type = expr.callee->type->params[i];
+        auto &param_type = function_type->params()[i];
         if (!arg_type || !param_type)
             continue;
 
@@ -655,7 +688,7 @@ void TypeChecker::visit(CallExpr &expr)
         }
     }
 
-    expr.type = expr.callee->type->return_type->clone();
+    expr.type = function_type->return_type().clone();
     expr.expr_category = Expr::Category::RValue;
 }
 
@@ -707,7 +740,7 @@ void TypeChecker::visit(VarDeclStmt &stmt)
         if (!stmt.init_expr->type)
         {
             add_error("Cannot deduce variable type from invalid initializer: " + stmt.name);
-            stmt.type = std::make_unique<Type>(); // Create a placeholder for unknown type
+            stmt.type = Type::create_placeholder(); // Create a placeholder for unknown type
         }
         else
         {
@@ -719,11 +752,12 @@ void TypeChecker::visit(VarDeclStmt &stmt)
     else
     {
         // Verify type validity (e.g., check if user-defined struct exists)
-        if (stmt.type->kind == Type::Kind::Struct)
+        if (stmt.type->kind() == Type::Kind::Struct)
         {
-            if (!find_struct(stmt.type->name))
+            auto struct_type = static_cast<StructType *>(stmt.type.get());
+            if (!find_struct(struct_type->name()))
             {
-                add_error("Undefined struct type: " + stmt.type->name);
+                add_error("Undefined struct type: " + struct_type->name());
             }
         }
 
@@ -732,7 +766,17 @@ void TypeChecker::visit(VarDeclStmt &stmt)
             check_expr(*stmt.init_expr);
             if (stmt.init_expr->type && !is_convertible(*stmt.init_expr->type, *stmt.type))
             {
-                add_error("Type mismatch in variable initialization: " + stmt.name + " (" + stmt.type->name + " vs " + stmt.init_expr->type->name + ")");
+                std::string init_type_name = "unknown";
+                if (stmt.init_expr->type->kind() == Type::Kind::Struct)
+                {
+                    init_type_name = static_cast<StructType *>(stmt.init_expr->type.get())->name();
+                }
+                std::string stmt_type_name = "unknown";
+                if (stmt.type->kind() == Type::Kind::Struct)
+                {
+                    stmt_type_name = static_cast<StructType *>(stmt.type.get())->name();
+                }
+                add_error("Type mismatch in variable initialization: " + stmt.name + " (" + stmt_type_name + " vs " + init_type_name + ")");
             }
         }
     }
@@ -780,7 +824,7 @@ void TypeChecker::visit(ReturnStmt &stmt)
         }
     }
     else if (current_return_type_ &&
-             !types_equal(*current_return_type_, Type::get_void_type()))
+             current_return_type_->kind() != Type::Kind::Void)
     {
         add_error("Non-void function missing return value");
     }
@@ -835,21 +879,20 @@ void TypeChecker::visit(MemberAccessExpr &expr)
     if (!expr.object->type)
         return;
 
-    if (expr.object->type->kind != Type::Kind::Struct)
+    if (expr.object->type->kind() != Type::Kind::Struct)
     {
         add_error("Member access on non-struct type");
         return;
     }
 
-    // Find struct declaration
-    auto struct_decl = std::find_if(
-        program_->structs.begin(), program_->structs.end(),
-        [&](auto &s)
-        { return s->name == expr.object->type->name; });
+    auto struct_type = static_cast<StructType *>(expr.object->type.get());
 
-    if (struct_decl == program_->structs.end())
+    // Find struct declaration
+    StructDecl *struct_decl = find_struct(struct_type->name());
+
+    if (!struct_decl)
     {
-        add_error("Undefined struct type: " + expr.object->type->name);
+        add_error("Undefined struct type: " + struct_type->name());
         return;
     }
 
@@ -857,10 +900,10 @@ void TypeChecker::visit(MemberAccessExpr &expr)
     if (expr.is_call)
     {
         // Find method
-        auto method = (*struct_decl)->get_method(expr.member);
+        auto method = struct_decl->get_method(expr.member);
         if (!method)
         {
-            debug("No method '%s' in struct '%s'", expr.member.c_str(), expr.object->type->name.c_str());
+            debug("No method '%s' in struct '%s'", expr.member.c_str(), struct_type->name().c_str());
             debug("Falling back to function pointer member access");
         }
         else
@@ -888,14 +931,14 @@ void TypeChecker::visit(MemberAccessExpr &expr)
     }
 
     // Find member
-    auto member_it = (*struct_decl)->field_map.find(expr.member);
-    if (member_it == (*struct_decl)->field_map.end())
+    Type *member_type = struct_decl->get_field(expr.member)->type.get();
+    if (!member_type)
     {
-        add_error("No member '" + expr.member + "' in struct '" + expr.object->type->name + "'");
+        add_error("No member '" + expr.member + "' in struct '" + struct_type->name() + "'");
         return;
     }
 
-    expr.type = (*struct_decl)->fields[member_it->second].type->clone();
+    expr.type = member_type->clone();
     // FIXME: to be thought twice
     expr.expr_category = expr.accessor == TokenType::Arrow ? Expr::Category::LValue : Expr::Category::RValue;
 }
@@ -909,32 +952,40 @@ void TypeChecker::visit(ArrayAccessExpr &expr)
         return;
 
     // Verify index type
-    if (!types_equal(*expr.index->type, Type::get_int_type()))
+    if (expr.index->type->kind() != Type::Kind::Int)
     {
         add_error("Array index must be integer type");
     }
 
-    if (expr.array->type->kind == ast::Type::Kind::Pointer &&
-        expr.array->type->pointee->kind == Type::Kind::Void)
+    if (expr.array->type->kind() == ast::Type::Kind::Pointer)
     {
-        add_error("Cannot subscript void* pointer");
+        auto pointer_type = static_cast<PointerType *>(expr.array->type.get());
+        if (pointer_type->pointee().kind() == Type::Kind::Void)
+        {
+            add_error("Cannot subscript void* pointer");
+        }
     }
 
     // Handle array/pointer types
-    switch (expr.array->type->kind)
+    switch (expr.array->type->kind())
     {
     case Type::Kind::Array:
-        expr.type = expr.array->type->element_type->clone();
+    {
+        auto array_type = static_cast<ArrayType *>(expr.array->type.get());
+        expr.type = array_type->element_type().clone();
         expr.expr_category = Expr::Category::LValue;
-        // expr.is_const = expr.array->type->is_const; TODO: const propagation
         break;
+    }
     case Type::Kind::Pointer:
-        expr.type = expr.array->type->pointee->clone();
+    {
+        auto pointer_type = static_cast<PointerType *>(expr.array->type.get());
+        expr.type = pointer_type->pointee().clone();
         expr.expr_category = Expr::Category::LValue;
         break;
+    }
     default:
         add_error("Subscripted value is not array or pointer");
-        expr.type = std::make_unique<Type>();
+        expr.type = Type::create_placeholder();
     }
 }
 
@@ -955,51 +1006,59 @@ void TypeChecker::visit(InitListExpr &expr)
     }
 
     // Create array type (size may be unknown)
-    expr.type = std::make_unique<Type>();
-    expr.type->kind = Type::Kind::Array;
-    expr.type->element_type = common_type ? common_type->clone()
-                                          : std::make_unique<Type>();
-    expr.type->array_size = expr.members.size();
+    expr.type = Type::create_array(common_type ? common_type->clone() : Type::create_placeholder(), expr.members.size());
+    expr.expr_category = Expr::Category::RValue;
 }
 
 // Enhanced type conversion rules
-bool TypeChecker::is_convertible(Type &from, const Type &to) const
+bool TypeChecker::is_convertible(const Type &from, const Type &to) const
 {
-
     if (types_equal(from, to))
         return true;
 
-    // Allow numeric conversions
-    if (from.kind == Type::Kind::Basic &&
-        to.kind == Type::Kind::Basic)
+    if (from.kind() == Type::Kind::Int && to.kind() == Type::Kind::Float)
     {
-        return (from.basic_kind == Type::BasicKind::Int &&
-                to.basic_kind == Type::BasicKind::Float)
-            // || (from.basic_kind == Type::BasicKind::Float &&
-            // to.basic_kind == Type::BasicKind::Int);
-            ;
+        return true;
     }
 
     // Array to pointer decay
-    if (from.kind == Type::Kind::Array &&
-        to.kind == Type::Kind::Pointer)
+    if (from.kind() == Type::Kind::Array &&
+        to.kind() == Type::Kind::Pointer)
     {
-        return types_equal(*from.element_type, *to.pointee);
+        auto array_type = static_cast<const ArrayType *>(&from);
+        auto pointer_type = static_cast<const PointerType *>(&to);
+        return types_equal(array_type->element_type(), pointer_type->pointee());
     }
 
     // Null pointer conversion
-    if (from.kind == Type::Kind::Basic && from.basic_kind == Type::BasicKind::Int &&
-        to.kind == Type::Kind::Pointer)
+    if (from.kind() == Type::Kind::Int && static_cast<const IntType &>(from).bit_width() == MO_DEFAULT_INT_BITWIDTH && to.kind() == Type::Kind::Pointer)
     {
         return true; // Allow 0 to null pointer conversion
     }
 
     // Void pointer conversions
-    if (from.kind == Type::Kind::Pointer && to.kind == Type::Kind::Pointer)
+    if (from.kind() == Type::Kind::Pointer && to.kind() == Type::Kind::Pointer)
     {
-        const bool from_void = from.pointee->kind == Type::Kind::Void;
-        const bool to_void = to.pointee->kind == Type::Kind::Void;
-        return from_void || to_void || types_equal(*from.pointee, *to.pointee);
+        auto from_pointer = static_cast<const PointerType *>(&from);
+        auto to_pointer = static_cast<const PointerType *>(&to);
+
+        const bool from_void = from_pointer->pointee().kind() == Type::Kind::Void;
+        const bool to_void = to_pointer->pointee().kind() == Type::Kind::Void;
+        return from_void || to_void || types_equal(from_pointer->pointee(), to_pointer->pointee());
+    }
+
+    // Conversion from alias to its target type
+    if (from.kind() == Type::Kind::Alias)
+    {
+        auto alias_type = static_cast<const AliasType *>(&from);
+        return is_convertible(alias_type->target(), to);
+    }
+
+    // Conversion to alias from its target type
+    if (to.kind() == Type::Kind::Alias)
+    {
+        auto alias_type = static_cast<const AliasType *>(&to);
+        return is_convertible(from, alias_type->target());
     }
 
     return false;
@@ -1019,14 +1078,13 @@ void TypeChecker::visit(FunctionPointerExpr &expr)
     }
 
     // Build function type
-    expr.type = std::make_unique<Type>();
-    expr.type->kind = Type::Kind::Function;
-    expr.type->params.reserve(expr.param_types.size());
+    std::vector<TypePtr> params;
     for (auto &param : expr.param_types)
     {
-        expr.type->params.push_back(param->clone());
+        params.push_back(param->clone());
     }
-    expr.type->return_type = expr.return_type->clone();
+    expr.type = Type::create_function(expr.return_type->clone(), std::move(params));
+    expr.expr_category = Expr::Category::RValue;
 }
 
 // Enhanced error recovery
@@ -1039,7 +1097,7 @@ void TypeChecker::check_expr_safe(Expr &expr)
     catch (const std::exception &e)
     {
         // Create dummy type to prevent cascading errors
-        expr.type = std::make_unique<Type>();
+        expr.type = Type::create_placeholder();
         expr.expr_category = Expr::Category::RValue;
         add_error("Critical error in expression: " + std::string(e.what()));
     }
@@ -1063,15 +1121,15 @@ void TypeChecker::visit(StructLiteralExpr &expr)
         check_expr(*value);
 
         // Find struct field
-        auto field = struct_decl->get_field(name);
-        if (!field)
+        const Type *field_type = struct_decl->get_field(name)->type.get();
+        if (!field_type)
         {
             add_error("No member '" + name + "' in struct " + expr.struct_name);
             continue;
         }
 
         // Check type compatibility
-        if (!is_convertible(*value->type, *field->type))
+        if (!is_convertible(*value->type, *field_type))
         {
             add_error("Type mismatch initializing member '" + name + "'");
         }
@@ -1080,17 +1138,18 @@ void TypeChecker::visit(StructLiteralExpr &expr)
     }
 
     // Check missing required members
-    for (auto &field : struct_decl->fields)
+    auto struct_type = static_cast<StructType *>(struct_decl->type().get());
+    for (size_t i = 0; i < struct_type->member_count(); ++i)
     {
-        if (!initialized_members.count(field.name))
+        const auto &member = struct_type->get_member(i);
+        if (!initialized_members.count(member.name))
         {
-            add_error("Missing initialization for member '" + field.name + "'");
+            add_error("Missing initialization for member '" + member.name + "'");
         }
     }
 
-    expr.type = std::make_unique<Type>();
-    expr.type->kind = Type::Kind::Struct;
-    expr.type->name = expr.struct_name;
+    expr.type = struct_decl->type()->clone();
+    expr.expr_category = Expr::Category::RValue;
 }
 
 // Alias resolution
@@ -1100,9 +1159,10 @@ TypePtr TypeChecker::resolve_alias(const std::string &name) const
     if (!type)
         return nullptr;
 
-    while (type->kind == Type::Kind::Alias)
+    while (type->kind() == Type::Kind::Alias)
     {
-        type = current_scope_->resolve_type(type->name);
+        auto alias_type = static_cast<AliasType *>(type.get());
+        type = current_scope_->resolve_type(alias_type->name());
         if (!type)
             break;
     }
@@ -1114,7 +1174,7 @@ StructDecl *TypeChecker::find_struct(const std::string &name) const
     // TODO: make this more efficient by storing a map of struct names to decls
     for (const auto &struct_decl : program_->structs)
     {
-        if (struct_decl->name == name)
+        if (static_cast<StructType *>(struct_decl->type().get())->name() == name)
         {
             return struct_decl.get();
         }
@@ -1154,8 +1214,8 @@ void TypeChecker::visit(WhileStmt &stmt)
     // Ensure the condition is of a numeric type (int or float)
     if (stmt.condition->type)
     {
-        bool isInt = types_equal(*stmt.condition->type, Type::get_int_type());
-        bool isFloat = types_equal(*stmt.condition->type, Type::get_float_type());
+        bool isInt = stmt.condition->type->kind() == Type::Kind::Int;
+        bool isFloat = stmt.condition->type->kind() == Type::Kind::Float;
 
         if (!isInt && !isFloat)
         {
@@ -1181,8 +1241,8 @@ void TypeChecker::visit(IfStmt &stmt)
     // Ensure the condition is of a numeric type (int or float)
     if (stmt.condition->type)
     {
-        bool isInt = types_equal(*stmt.condition->type, Type::get_int_type());
-        bool isFloat = types_equal(*stmt.condition->type, Type::get_float_type());
+        bool isInt = stmt.condition->type->kind() == Type::Kind::Int;
+        bool isFloat = stmt.condition->type->kind() == Type::Kind::Float;
 
         if (!isInt && !isFloat)
         {
