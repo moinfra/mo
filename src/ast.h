@@ -40,6 +40,14 @@ namespace ast
     // Type Definition
     struct Type
     {
+
+        enum Qualifier : uint8_t
+        {
+            Const = 1,
+            Volatile = 1 << 1,
+            Restrict = 1 << 2,
+        };
+
         enum class Kind
         {
             Unknown,
@@ -49,8 +57,10 @@ namespace ast
             Array,    // T[N]
             Function, // fn() -> T
             Struct,   // struct { ... }
-            Alias
+            Alias,
+            Qualified,
         };
+
         enum class BasicKind
         {
             Int,
@@ -60,7 +70,6 @@ namespace ast
 
         Kind kind = Kind::Unknown;
         std::string name;
-        bool is_const = false;
         BasicKind basic_kind;
 
         // for pointer type
@@ -76,6 +85,10 @@ namespace ast
 
         // for struct type
         std::unordered_map<std::string, TypePtr> members;
+
+        // for qualified type
+        Qualifier qualifiers = Qualifier(0);
+        TypePtr base_type;
 
         Type() : kind(Kind::Unknown) {}
 
@@ -428,7 +441,7 @@ namespace ast
         std::string name;
         std::vector<TypedField> fields;
         std::vector<FunctionDecl> methods;
-        std::unordered_map<std::string_view, size_t> field_map; // Map for quick field lookup
+        std::unordered_map<std::string_view, size_t> field_map;  // Map for quick field lookup
         std::unordered_map<std::string_view, size_t> method_map; // Map for quick method lookup
 
         StructDecl() = default;

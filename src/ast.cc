@@ -18,7 +18,7 @@ bool Type::operator!=(const Type &other) const
 
 bool Type::operator==(const Type &other) const
 {
-    if (kind != other.kind || is_const != other.is_const)
+    if (kind != other.kind)
         return false;
 
     switch (kind)
@@ -51,7 +51,6 @@ Type &Type::operator=(Type &&other) noexcept
     {
         kind = std::exchange(other.kind, Type::Kind::Unknown);
         name = std::move(other.name);
-        is_const = std::exchange(other.is_const, false);
         basic_kind = std::exchange(other.basic_kind, Type::BasicKind::Int);
         pointee = std::move(other.pointee);
         element_type = std::move(other.element_type);
@@ -76,7 +75,6 @@ Type &Type::operator=(const Type &other)
 // for copy constructor
 Type::Type(const Type &other) : kind(other.kind),
                                 name(other.name),
-                                is_const(other.is_const),
                                 basic_kind(other.basic_kind),
                                 array_size(other.array_size)
 {
@@ -109,7 +107,6 @@ void Type::swap(Type &a, Type &b) noexcept
     using std::swap;
     swap(a.kind, b.kind);
     swap(a.name, b.name);
-    swap(a.is_const, b.is_const);
     swap(a.basic_kind, b.basic_kind);
     swap(a.pointee, b.pointee);
     swap(a.element_type, b.element_type);
