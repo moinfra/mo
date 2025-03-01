@@ -58,18 +58,6 @@ namespace std
     };
 }
 
-namespace std
-{
-    template <>
-    struct hash<std::pair<Type *, bool>>
-    {
-        size_t operator()(const std::pair<Type *, bool> &key) const
-        {
-            return hash<Type *>()(key.first) ^ (hash<bool>()(key.second) << 1);
-        }
-    };
-}
-
 //===----------------------------------------------------------------------===//
 //                               Type System
 //===----------------------------------------------------------------------===//
@@ -114,7 +102,7 @@ public:
         }
     }
 
-    Type(TypeID tid, Module *m, bool const_ = false) : tid_(tid), module_(m) {}
+    Type(TypeID tid, Module *m) : tid_(tid), module_(m) {}
     virtual ~Type() = default;
 
     TypeID type_id() const { return tid_; }
@@ -153,7 +141,7 @@ public:
     unsigned bits() const override { return bits_; }
 
 private:
-    explicit IntegerType(Module *m, unsigned bits, bool is_const = false);
+    explicit IntegerType(Module *m, unsigned bits);
     unsigned bits_;
 
     friend Module;
@@ -176,7 +164,7 @@ public:
     std::string name() const override { return "f" + std::to_string(bits_); }
 
 private:
-    explicit FloatType(Module *m, Precision precision, bool is_const = false);
+    explicit FloatType(Module *m, Precision precision);
     unsigned bits_;
 
     Precision precision_;
@@ -207,10 +195,9 @@ public:
     size_t size() const override { return sizeof(void *); }
     std::string name() const override { return element_type_->name() + "*"; }
     unsigned bits() const override { return sizeof(void *) * 8; }
-    PointerType as_const() const { return PointerType(module_, element_type_, true); }
 
 private:
-    PointerType(Module *m, Type *element_type, bool const_ = false);
+    PointerType(Module *m, Type *element_type);
 
     Type *element_type_;
     Module *module_;
@@ -287,7 +274,7 @@ public:
     unsigned bits() const override { return size() * 8; }
 
 private:
-    ArrayType(Module *m, Type *element_type, uint64_t num_elements, bool is_const = false);
+    ArrayType(Module *m, Type *element_type, uint64_t num_elements);
 
     Type *element_type_;
     uint64_t num_elements_;
@@ -338,8 +325,8 @@ public:
     const std::vector<Type *> &members() const { return members_; }
 
 private:
-    StructType(Module *m, const std::string &name, std::vector<Type *> members, bool is_const = false);
-    StructType(Module *m, std::vector<Type *> members, bool is_const = false);
+    StructType(Module *m, const std::string &name, std::vector<Type *> members);
+    StructType(Module *m, std::vector<Type *> members);
 
     std::string name_;
     Module *module_;
@@ -373,7 +360,7 @@ public:
     }
 
 private:
-    VectorType(Module *m, Type *element_type, uint64_t num_elements, bool is_const = false)
+    VectorType(Module *m, Type *element_type, uint64_t num_elements)
         : Type(VecTy, m), element_type_(element_type), num_elements_(num_elements) {}
 
     Type *element_type_;
@@ -712,10 +699,10 @@ public:
     GlobalVariable *create_global_variable(Type *type, bool is_constant, Constant *initializer, const std::string &name = "");
 
     Type *get_void_type();
-    IntegerType *get_integer_type(unsigned bits, bool is_const = false);
-    FloatType *get_float_type(FloatType::Precision precision, bool is_const = false);
+    IntegerType *get_integer_type(unsigned bits);
+    FloatType *get_float_type(FloatType::Precision precision);
 
-    PointerType *get_pointer_type(Type *element_type, bool is_const = false);
+    PointerType *get_pointer_type(Type *element_type);
     FunctionType *get_function_type(Type *return_type, const std::vector<Type *> &param_types);
 
     ConstantInt *get_constant_int(IntegerType *type, uint64_t value);
@@ -759,22 +746,19 @@ public:
         return result;
     }
 
-    StructType *get_struct_type_anonymous(const std::vector<Type *> &members, bool is_const = false);
-    StructType *try_get_struct_type(const std::string &name, bool is_const = false);
-    ArrayType *get_array_type(Type *element_type, uint64_t num_elements, bool is_const = false);
-    StructType *get_struct_type(const std::string &name, const std::vector<Type *> &members, bool is_const = false);
-    VectorType *get_vector_type(Type *element_type, uint64_t num_elements, bool is_const = false);
-
-    // Get the type with const qualifier
-    Type *get_const_type(Type *type);
+    StructType *get_struct_type_anonymous(const std::vector<Type *> &members);
+    StructType *try_get_struct_type(const std::string &name);
+    ArrayType *get_array_type(Type *element_type, uint64_t num_elements);
+    StructType *get_struct_type(const std::string &name, const std::vector<Type *> &members);
+    VectorType *get_vector_type(Type *element_type, uint64_t num_elements);
 
 private:
     std::string name_;
     std::unique_ptr<VoidType> void_type_;
     std::unordered_map<unsigned, std::unique_ptr<IntegerType>> integer_types_;
     std::unordered_map<FloatType::Precision, std::unique_ptr<FloatType>> float_types_;
-    // (element_type, const) -> pointer_type
-    std::unordered_map<std::pair<Type *, bool>, std::unique_ptr<PointerType>, std::hash<std::pair<Type *, bool>>> pointer_types_;
+    // (element_type) -> pointer_type
+    std::unordered_map<Type *, std::unique_ptr<PointerType>> pointer_types_;
 
     std::unordered_map<std::pair<Type *, uint64_t>,
                        std::unique_ptr<ConstantInt>>

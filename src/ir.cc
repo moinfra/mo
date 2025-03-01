@@ -29,11 +29,11 @@ Type *Type::element_type() const
     }
 }
 
-IntegerType::IntegerType(Module *m, unsigned bits, bool is_const)
-    : Type(IntTy, m, is_const), bits_(bits) {}
+IntegerType::IntegerType(Module *m, unsigned bits)
+    : Type(IntTy, m), bits_(bits) {}
 
-FloatType::FloatType(Module *m, FloatType::Precision precision, bool is_const)
-    : Type(FpTy, m, is_const), precision_(precision)
+FloatType::FloatType(Module *m, FloatType::Precision precision)
+    : Type(FpTy, m), precision_(precision)
 {
     switch (precision)
     {
@@ -54,11 +54,11 @@ FloatType::FloatType(Module *m, FloatType::Precision precision, bool is_const)
     }
 }
 
-PointerType::PointerType(Module *m, Type *element_type, bool is_const)
-    : Type(PtrTy, m, is_const), element_type_(element_type) {}
+PointerType::PointerType(Module *m, Type *element_type)
+    : Type(PtrTy, m), element_type_(element_type) {}
 
-ArrayType::ArrayType(Module *m, Type *element_type, uint64_t num_elements, bool is_const)
-    : Type(ArrayTy, m, is_const), element_type_(element_type),
+ArrayType::ArrayType(Module *m, Type *element_type, uint64_t num_elements)
+    : Type(ArrayTy, m), element_type_(element_type),
       num_elements_(num_elements)
 {
     assert(element_type && "Invalid element type");
@@ -107,8 +107,8 @@ StructLayout calculate_aligned_layout(const std::vector<Type *> &members)
     return layout;
 }
 
-StructType::StructType(Module *m, const std::string &name, std::vector<Type *> members, bool is_const)
-    : Type(StructTy, m, is_const), name_(name), is_opaque_(false), size_(0)
+StructType::StructType(Module *m, const std::string &name, std::vector<Type *> members)
+    : Type(StructTy, m), name_(name), is_opaque_(false), size_(0)
 {
     if (!members.empty())
     {
@@ -116,7 +116,7 @@ StructType::StructType(Module *m, const std::string &name, std::vector<Type *> m
     }
 }
 
-StructType::StructType(Module *m, std::vector<Type *> members, bool is_const) : Type(StructTy, m, is_const), name_(""), is_opaque_(members.empty()), size_(0)
+StructType::StructType(Module *m, std::vector<Type *> members) : Type(StructTy, m), name_(""), is_opaque_(members.empty()), size_(0)
 {
     if (!members.empty())
     {
@@ -465,7 +465,7 @@ GlobalVariable *Module::create_global_variable(Type *type, bool is_constant, Con
     return gv_ptr;
 }
 
-IntegerType *Module::get_integer_type(unsigned bits, bool is_const)
+IntegerType *Module::get_integer_type(unsigned bits)
 {
     auto &type = integer_types_[bits];
     if (!type)
@@ -475,7 +475,7 @@ IntegerType *Module::get_integer_type(unsigned bits, bool is_const)
     return type.get();
 }
 
-FloatType *Module::get_float_type(FloatType::Precision precision, bool is_const)
+FloatType *Module::get_float_type(FloatType::Precision precision)
 {
     auto &type = float_types_[precision];
     if (!type)
@@ -485,16 +485,14 @@ FloatType *Module::get_float_type(FloatType::Precision precision, bool is_const)
     return type.get();
 }
 
-PointerType *Module::get_pointer_type(Type *element_type, bool is_const)
+PointerType *Module::get_pointer_type(Type *element_type)
 {
     assert(element_type && "Invalid element type");
 
-    auto key = std::make_pair(element_type, is_const);
-
-    auto &type = pointer_types_[key];
+    auto &type = pointer_types_[element_type];
     if (!type)
     {
-        type = std::unique_ptr<PointerType>(new PointerType(this, element_type, is_const));
+        type = std::unique_ptr<PointerType>(new PointerType(this, element_type));
     }
     return type.get();
 }
@@ -527,15 +525,15 @@ Type *Module::get_void_type()
     return void_type_.get();
 }
 
-ArrayType *Module::get_array_type(Type *element_type, uint64_t num_elements, bool is_const)
+ArrayType *Module::get_array_type(Type *element_type, uint64_t num_elements)
 {
-    auto ty = new ArrayType(this, element_type, num_elements, is_const);
+    auto ty = new ArrayType(this, element_type, num_elements);
     array_types_[{element_type, num_elements}] = std::unique_ptr<ArrayType>(ty);
     return ty;
 }
 
 // FIXME: should not get by members
-StructType *Module::get_struct_type_anonymous(const std::vector<Type *> &members, bool is_const)
+StructType *Module::get_struct_type_anonymous(const std::vector<Type *> &members)
 {
     // Find existing struct
     for (auto &st : struct_types_)
@@ -547,12 +545,12 @@ StructType *Module::get_struct_type_anonymous(const std::vector<Type *> &members
     }
 
     // Create new struct
-    auto *st = new StructType(this, members, is_const);
+    auto *st = new StructType(this, members);
     struct_types_.push_back(std::unique_ptr<StructType>(st));
     return st;
 }
 
-StructType *Module::try_get_struct_type(const std::string &name, bool is_const)
+StructType *Module::try_get_struct_type(const std::string &name)
 {
     assert(!name.empty() && "Invalid struct name");
 
@@ -572,10 +570,10 @@ StructType *Module::try_get_struct_type(const std::string &name, bool is_const)
     return nullptr;
 }
 
-StructType *Module::get_struct_type(const std::string &name, const std::vector<Type *> &members, bool is_const)
+StructType *Module::get_struct_type(const std::string &name, const std::vector<Type *> &members)
 {
     // Check existing struct types
-    if (auto st = try_get_struct_type(name, is_const); st)
+    if (auto st = try_get_struct_type(name); st)
     {
         // Check if the struct has the same members
         if (st->members() != members)
@@ -586,12 +584,12 @@ StructType *Module::get_struct_type(const std::string &name, const std::vector<T
     }
 
     // Create new struct
-    auto *st = new StructType(this, name, members, is_const);
+    auto *st = new StructType(this, name, members);
     struct_types_.push_back(std::unique_ptr<StructType>(st));
     return st;
 }
 
-VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements, bool is_const)
+VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements)
 {
     auto key = std::make_pair(element_type, num_elements);
     auto it = vector_types_.find(key);
@@ -715,49 +713,6 @@ ConstantArray *Module::get_constant_array(ArrayType *type, const std::vector<Con
     return constant.get();
 }
 
-Type *Module::get_const_type(Type *type)
-{
-    if (type->is_const())
-        return type;
-
-    switch (type->type_id())
-    {
-    case Type::IntTy:
-        return this->get_integer_type(
-            static_cast<IntegerType *>(type)->bits(), true);
-
-    case Type::FpTy:
-        return this->get_float_type(
-            static_cast<FloatType *>(type)->precision(), true);
-
-    case Type::PtrTy:
-    {
-        auto ptr_ty = static_cast<PointerType *>(type);
-        return this->get_pointer_type(ptr_ty->element_type(), true);
-    }
-
-    case Type::ArrayTy:
-    {
-        auto arr_ty = static_cast<ArrayType *>(type);
-        Type *const_elem = get_const_type(arr_ty->element_type());
-        return this->get_array_type(const_elem, arr_ty->num_elements());
-    }
-
-    case Type::StructTy:
-    {
-        auto struct_ty = static_cast<StructType *>(type);
-        std::vector<Type *> const_members;
-        for (auto member : struct_ty->members())
-        {
-            const_members.push_back(get_const_type(member));
-        }
-        return this->get_struct_type_anonymous(const_members);
-    }
-
-    default:
-        return type; // void/function etc is not const applicable
-    }
-}
 
 //===----------------------------------------------------------------------===//
 //                            ConstantInt Implementation
