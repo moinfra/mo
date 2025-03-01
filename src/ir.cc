@@ -430,7 +430,8 @@ BasicBlock *Function::create_basic_block(const std::string &name)
 //===----------------------------------------------------------------------===//
 //                             Module Implementation
 //===----------------------------------------------------------------------===//
-Module::Module()
+Module::Module(std::string name)
+    : name_(std::move(name))
 {
     void_type_ = std::unique_ptr<VoidType>(new VoidType(this));
 }
@@ -486,6 +487,8 @@ FloatType *Module::get_float_type(FloatType::Precision precision, bool is_const)
 
 PointerType *Module::get_pointer_type(Type *element_type, bool is_const)
 {
+    assert(element_type && "Invalid element type");
+
     auto key = std::make_pair(element_type, is_const);
 
     auto &type = pointer_types_[key];
@@ -498,6 +501,8 @@ PointerType *Module::get_pointer_type(Type *element_type, bool is_const)
 
 FunctionType *Module::get_function_type(Type *return_type, const std::vector<Type *> &param_types)
 {
+    assert(return_type && "Invalid return type");
+
     auto key = std::make_pair(return_type, param_types);
     auto it = function_types_.find(key);
     if (it != function_types_.end())

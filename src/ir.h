@@ -507,6 +507,68 @@ public:
     void add_successor(BasicBlock *bb);
     void append(Instruction *inst);
 
+    class iterator
+    {
+    public:
+        iterator(Instruction *ptr) : ptr_(ptr) {}
+
+        Instruction &operator*() const { return *ptr_; }
+        Instruction *operator->() { return ptr_; }
+        iterator &operator++()
+        {
+            ptr_ = ptr_->next();
+            return *this;
+        }
+        iterator operator++(int)
+        {
+            iterator tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        bool operator==(const iterator &other) const { return ptr_ == other.ptr_; }
+        bool operator!=(const iterator &other) const { return ptr_ != other.ptr_; }
+
+    private:
+        Instruction *ptr_;
+    };
+
+    class const_iterator
+    {
+    public:
+        const_iterator(const Instruction *ptr) : ptr_(ptr) {}
+
+        const Instruction &operator*() const { return *ptr_; }
+        const Instruction *operator->() { return ptr_; }
+        const_iterator &operator++()
+        {
+            ptr_ = ptr_->next();
+            return *this;
+        }
+        const_iterator operator++(int)
+        {
+            const_iterator tmp = *this;
+            ++(*this);
+            return tmp;
+        }
+
+        bool operator==(const const_iterator &other) const { return ptr_ == other.ptr_; }
+        bool operator!=(const const_iterator &other) const { return ptr_ != other.ptr_; }
+
+    private:
+        const Instruction *ptr_;
+    };
+
+    iterator begin() { return iterator(head_); }
+    iterator end() { return iterator(nullptr); }
+
+    const_iterator begin() const { return const_iterator(head_); }
+    const_iterator end() const { return const_iterator(nullptr); }
+
+    using value_type = Instruction;
+    using reference = Instruction &;
+    using const_reference = const Instruction &;
+
 private:
     Function *parent_;
     Instruction *head_;
@@ -554,6 +616,8 @@ public:
             types.push_back(arg->type());
         return types;
     }
+    auto begin() { return basic_blocks_.begin(); }
+    auto end() { return basic_blocks_.end(); }
 
     const std::vector<BasicBlock *> &basic_blocks() const { return basic_block_ptrs_; }
 
@@ -625,7 +689,7 @@ public:
     friend class StructType;
     friend class ArrayType;
 
-    Module();
+    Module(std::string name = "");
     ~Module();
 
     Function *create_function(
@@ -675,6 +739,17 @@ public:
         return result;
     }
 
+    Function* get_function(const std::string &name) const {
+        for (auto &f : functions_)
+        {
+            if (f->name() == name)
+            {
+                return f.get();
+            }
+        }
+        return nullptr;
+    }
+
     const std::vector<GlobalVariable *> global_variables() const
     {
         std::vector<GlobalVariable *> result;
@@ -694,6 +769,7 @@ public:
     Type *get_const_type(Type *type);
 
 private:
+    std::string name_;
     std::unique_ptr<VoidType> void_type_;
     std::unordered_map<unsigned, std::unique_ptr<IntegerType>> integer_types_;
     std::unordered_map<FloatType::Precision, std::unique_ptr<FloatType>> float_types_;
