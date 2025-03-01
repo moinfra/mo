@@ -7,16 +7,16 @@ cc_library(
 
 cc_library(
     name = "parser",
-    srcs = ["parser.cc", "ast.cc"],
-    hdrs = ["parser.h", "ast.h"],
+    srcs = ["parser.cc", "ast.cc", "ast_type.cc"],
+    hdrs = ["parser.h", "ast.h", "ast_type.h"],
     deps = [":lexer"],
     visibility = ["//visibility:public"],
 )
 
 cc_library(
     name = "type_checker",
-    srcs = ["type_checker.cc", "ast.cc"],
-    hdrs = ["type_checker.h", "ast.h"],
+    srcs = ["type_checker.cc", "ast.cc", "ast_type.cc"],
+    hdrs = ["type_checker.h", "ast.h", "ast_type.h"],
     deps = [":lexer"],
     visibility = ["//visibility:public"],
 )
@@ -55,6 +55,14 @@ cc_library(
     srcs = ["ir_builder.cc"],
     hdrs = ["ir_builder.h"],
     deps = [":ir"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "ir_generator",
+    srcs = ["ir_generator.cc"],
+    hdrs = ["ir_generator.h"],
+    deps = [":parser", ":ir_builder"],
     visibility = ["//visibility:public"],
 )
 

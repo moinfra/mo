@@ -9,9 +9,11 @@
 #include <utility>
 
 #include "lexer.h"
+#include "ast_type.h"
+
 namespace ast
 {
-    // Forwards declarations
+
     struct Expr;
     struct Statement;
     struct TypeAliasDecl;
@@ -35,92 +37,6 @@ namespace ast
         std::vector<std::unique_ptr<ImplBlock>> impl_blocks;
         std::vector<std::unique_ptr<FunctionDecl>> functions;
         std::vector<std::unique_ptr<GlobalDecl>> globals;
-    };
-
-    // Type Definition
-    struct Type
-    {
-
-        enum Qualifier : uint8_t
-        {
-            Const = 1,
-            Volatile = 1 << 1,
-            Restrict = 1 << 2,
-        };
-
-        enum class Kind
-        {
-            Unknown,
-            Void,
-            Basic,    // Int/Float/String
-            Pointer,  // T*
-            Array,    // T[N]
-            Function, // fn() -> T
-            Struct,   // struct { ... }
-            Alias,
-            Qualified,
-        };
-
-        enum class BasicKind
-        {
-            Int,
-            Float,
-            String
-        };
-
-        Kind kind = Kind::Unknown;
-        std::string name;
-        BasicKind basic_kind;
-
-        // for pointer type
-        TypePtr pointee;
-
-        // for array type
-        TypePtr element_type;
-        int array_size = -1;
-
-        // for function type
-        std::vector<TypePtr> params;
-        TypePtr return_type;
-
-        // for struct type
-        std::unordered_map<std::string, TypePtr> members;
-
-        // for qualified type
-        Qualifier qualifiers = Qualifier(0);
-        TypePtr base_type;
-
-        Type() : kind(Kind::Unknown) {}
-
-        // for type comparison
-        bool operator==(const Type &other) const;
-        bool operator!=(const Type &other) const;
-
-        Type &operator=(Type &&other) noexcept;
-        Type &operator=(const Type &other);
-
-        // for copy constructor
-        Type(const Type &other);
-
-        static void swap(Type &a, Type &b) noexcept;
-
-        TypePtr clone() const;
-
-        bool is_aggregate() const
-        {
-            return kind == Kind::Struct || kind == Kind::Array;
-        }
-
-        static Type get_void_type();
-        static Type get_int_type();
-        static Type get_float_type();
-        static Type get_string_type();
-        static Type get_struct_type(const std::string &name, std::vector<ast::TypedField> fields);
-        static Type get_pointer_type(std::unique_ptr<ast::Type> pointee);
-        static Type get_array_type(std::unique_ptr<Type> element_type, int size);
-
-        // after type checking
-        TypePtr resolved_alias_target; // for kind == Kind::Alias
     };
 
     // Expressions
@@ -422,19 +338,6 @@ namespace ast
     {
     };
 
-    struct TypedField
-    {
-        TypePtr type;
-        std::string name;
-
-        TypedField(TypePtr type, std::string name);
-        TypedField(const TypedField &other);
-        TypedField(TypedField &&other) noexcept = default;
-        TypedField &operator=(TypedField other) noexcept;
-
-        static void swap(TypedField &a, TypedField &b) noexcept;
-    };
-
     class StructDecl : public Statement
     {
     public:
@@ -448,7 +351,6 @@ namespace ast
         StructDecl(std::string name, std::vector<TypedField> fields);
 
         // Add a field to the struct
-        void add_field(TypePtr type, std::string name);
         void add_field(TypedField field);
 
         // Get a field by name
@@ -463,7 +365,7 @@ namespace ast
         // Get the type of the struct
         TypePtr type() const
         {
-            return std::make_unique<Type>(Type::get_struct_type(name, fields));
+            return Type::create_struct(name, fields);
         }
     };
 
