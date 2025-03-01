@@ -91,54 +91,67 @@ string ASTPrinter::print(const Statement &stmt)
     return "unknown_statement";
 }
 
-string ASTPrinter::print(const Type &type)
-{
-    string result;
-    if (type.is_const)
-    {
-        result += "const ";
+std::string ASTPrinter::print(const Type& type) {
+    if (const QualifiedType* q = type.as_qualified()) {
+        std::string qual;
+        if (static_cast<uint8_t>(q->qualifiers() & Qualifier::Const)) qual += "const ";
+        if (static_cast<uint8_t>(q->qualifiers() & Qualifier::Volatile)) qual += "volatile ";
+        return qual + print(q->base_type());
     }
-    switch (type.kind)
-    {
-    case Type::Kind::Basic:
-        result += type.name;
-        break;
-    case Type::Kind::Pointer:
-        result += "*" + print(*type.pointee);
-        break;
-    case Type::Kind::Array:
-        result += print(*type.element_type) + "[" + to_string(type.array_size) + "]";
-        break;
-    case Type::Kind::Function:
-    {
-        result += "func(";
-        for (size_t i = 0; i < type.params.size(); ++i)
-        {
-            result += print(*type.params[i]);
-            if (i != type.params.size() - 1)
-            {
-                result += ", ";
-            }
-        }
-        result += ") -> " + print(*type.return_type);
-        break;
-    }
-    case Type::Kind::Struct:
-        result += "struct " + type.name;
-        break;
-    case Type::Kind::Alias:
-        result += type.name;
-        break;
-    case Type::Kind::Void:
-        result += "void";
-        break;
-    default:
-        result += "unknown_type";
-        break;
-    }
-    return result;
-}
 
+    if (const PointerType* p = type.as_pointer()) {
+        return "*" + print(p->pointee());
+    }
+
+    if (const ArrayType* a = type.as_array()) {
+        std::string size = a->size() >= 0 ? std::to_string(a->size()) : "";
+        return print(a->element_type()) + "[" + size + "]";
+    }
+
+    if (const FunctionType* f = type.as_function()) {
+        std::string params;
+        for (size_t i = 0; i < f->params().size(); ++i) {
+            params += print(*f->params()[i]);
+            if (i != f->params().size() - 1) params += ", ";
+        }
+        return "func(" + params + ") -> " + print(f->return_type());
+    }
+
+    if (const StructType* s = type.as_struct()) {
+        std::string members;
+        for (size_t i = 0; i < s->member_count(); ++i) {
+            const auto& m = s->get_member(i);
+            members += m.name + ": " + print(*m.type);
+            if (i != s->member_count() - 1) members += "; ";
+        }
+        return "struct " + s->name() + " { " + members + " }";
+    }
+
+    if (const AliasType* a = type.as_alias()) {
+        return a->name();
+    }
+
+    if (const IntType* i = type.as_int()) {
+        auto bw = i->bit_width();
+        return "i" + std::to_string(bw);
+    }
+    if (const FloatType* f = type.as_float()) {
+        auto bw = static_cast<uint8_t>(f->precision());
+        return "f" + std::to_string(bw); 
+    }
+    if (const BoolType* b = type.as_bool()) {
+        return "bool";
+    }
+    if (const StringType* s = type.as_string()) {
+        return "string";
+    }
+
+    if (type.kind() == Type::Kind::Void) {
+        return "void";
+    }
+
+    return "unknown_type";
+}
 string ASTPrinter::print(const TypeAliasDecl &type_alias_decl)
 {
     string result = "type " + type_alias_decl.name + " = " + print(*type_alias_decl.type) + ";";

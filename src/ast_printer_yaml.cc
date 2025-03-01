@@ -122,57 +122,83 @@ string ASTPrinter::print(const Program &program)
     return oss.str();
 }
 
-string ASTPrinter::print_type(const Type &type)
+std::string ASTPrinter::print_type(const Type &type)
 {
-    ostringstream oss;
+    std::ostringstream oss;
     enter_scope();
     oss << "\n";
     oss << indent() << "kind: ";
-    switch (type.kind)
+    switch (type.kind())
     {
-    case Type::Kind::Unknown:
-        oss << "Unknown";
+    case Type::Kind::Placeholder:
+        oss << "Placeholder";
         break;
     case Type::Kind::Void:
         oss << "Void";
         break;
-    case Type::Kind::Basic:
-        oss << "Basic\n";
-        oss << indent() << "name: \"" << type.name << "\"\n";
-        oss << indent() << "basic_kind: ";
-        switch (type.basic_kind)
+    case Type::Kind::Int:
+    {
+        auto &int_type = static_cast<const IntType &>(type);
+        oss << "Int\n";
+        oss << indent() << "bit_width: " << int_type.bit_width();
+        break;
+    }
+    case Type::Kind::Float:
+    {
+        auto &float_type = static_cast<const FloatType &>(type);
+        oss << "Float\n";
+        oss << indent() << "precision: ";
+        switch (float_type.precision())
         {
-        case Type::BasicKind::Int:
-            oss << "Int";
+        case FloatType::Precision::Half:
+            oss << "Half";
             break;
-        case Type::BasicKind::Float:
-            oss << "Float";
+        case FloatType::Precision::Single:
+            oss << "Single";
             break;
-        case Type::BasicKind::String:
-            oss << "String";
+        case FloatType::Precision::Double:
+            oss << "Double";
+            break;
+        case FloatType::Precision::Quad:
+            oss << "Quad";
             break;
         }
         break;
+    }
+    case Type::Kind::Bool:
+        oss << "Bool";
+        break;
+    case Type::Kind::String:
+        oss << "String";
+        break;
     case Type::Kind::Pointer:
+    {
+        auto &pointer_type = static_cast<const PointerType &>(type);
         oss << "Pointer\n";
         oss << indent() << "pointee:";
         enter_scope();
-        oss << print_type(*type.pointee);
+        oss << print_type(pointer_type.pointee());
         leave_scope();
         break;
+    }
     case Type::Kind::Array:
+    {
+        auto &array_type = static_cast<const ArrayType &>(type);
         oss << "Array\n";
         oss << indent() << "element_type:";
         enter_scope();
-        oss << print_type(*type.element_type) << "\n";
+        oss << print_type(array_type.element_type()) << "\n";
         leave_scope();
-        oss << indent() << "size: " << type.array_size;
+        oss << indent() << "size: " << array_type.size();
         break;
+    }
     case Type::Kind::Function:
+    {
+        auto &function_type = static_cast<const FunctionType &>(type);
         oss << "Function\n";
         oss << indent() << "params:";
         enter_scope();
-        for (const auto &p : type.params)
+        for (const auto &p : function_type.params())
         {
             oss << indent() << "- \n";
             enter_scope();
@@ -182,20 +208,43 @@ string ASTPrinter::print_type(const Type &type)
         leave_scope();
         oss << indent() << "return_type:";
         enter_scope();
-        oss << print_type(*type.return_type);
+        oss << print_type(function_type.return_type());
         leave_scope();
         break;
+    }
     case Type::Kind::Struct:
+    {
+        auto &struct_type = static_cast<const StructType &>(type);
         oss << "Struct\n";
-        oss << indent() << "name: \"" << escape_string(type.name) << "\"";
-        break;
-    case Type::Kind::Alias:
-        oss << "Alias\n";
-        oss << indent() << "name: \"" << escape_string(type.name) << "\"";
+        oss << indent() << "name: \"" << escape_string(struct_type.name()) << "\"";
         break;
     }
-    oss << "\n"
-        << indent() << "is_const: " << (type.is_const ? "true" : "false");
+    case Type::Kind::Alias:
+    {
+        auto &alias_type = static_cast<const AliasType &>(type);
+        oss << "Alias\n";
+        oss << indent() << "name: \"" << escape_string(alias_type.name()) << "\"";
+        break;
+    }
+    case Type::Kind::Qualified:
+    {
+        auto &qualified_type = static_cast<const QualifiedType &>(type);
+        oss << "Qualified\n";
+        oss << indent() << "qualifiers: ";
+        if ((qualified_type.qualifiers() & Qualifier::Const) != Qualifier(0))
+            oss << "Const ";
+        if ((qualified_type.qualifiers() & Qualifier::Volatile) != Qualifier(0))
+            oss << "Volatile ";
+        if ((qualified_type.qualifiers() & Qualifier::Restrict) != Qualifier(0))
+            oss << "Restrict ";
+        oss << "\n";
+        oss << indent() << "base_type:";
+        enter_scope();
+        oss << print_type(qualified_type.base_type());
+        leave_scope();
+        break;
+    }
+    }
     leave_scope();
     return oss.str();
 }
@@ -472,14 +521,17 @@ string ASTPrinter::print(const SizeofExpr &expr)
     enter_scope();
     if (expr.kind == SizeofExpr::Kind::Type)
     {
-    oss << indent() << "target_type: " << print_type(*expr.target_type) << "\n";
-    } else if (expr.kind == SizeofExpr::Kind::Expr)
+        oss << indent() << "target_type: " << print_type(*expr.target_type) << "\n";
+    }
+    else if (expr.kind == SizeofExpr::Kind::Expr)
     {
         oss << indent() << "target_expr:\n";
         enter_scope();
         oss << print(*expr.target_expr);
         leave_scope();
-    } else {
+    }
+    else
+    {
         unreachable();
     }
     leave_scope();
@@ -511,7 +563,6 @@ string ASTPrinter::print(const DerefExpr &expr)
     leave_scope();
     return oss.str();
 }
-
 
 string ASTPrinter::print(const StructLiteralExpr &expr)
 {
