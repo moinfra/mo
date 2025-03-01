@@ -16,6 +16,7 @@ public:
     //===--------------------------------------------------------------------===//
     void set_insert_point(BasicBlock *bb);
     void set_insert_point(Instruction *inst);
+    BasicBlock *get_insert_block() const { return insert_block_; }
 
     //===--------------------------------------------------------------------===//
     //                               Constants
@@ -60,8 +61,6 @@ public:
     StoreInst *create_store(Value *value, Value *ptr);
     GetElementPtrInst *create_gep(Value *ptr, std::vector<Value *> indices,
                                   const std::string &name = "");
-    template <typename... Args>
-    GetElementPtrInst *create_gep(Value *ptr, Args... indices);
     Value *create_struct_gep(Value *struct_ptr, unsigned idx,
                              const std::string &name = "");
 
