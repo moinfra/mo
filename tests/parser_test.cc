@@ -206,7 +206,7 @@ TEST(ParserTest, NestedExpression)
 
 TEST(ParserTest, BasicVarDecl)
 {
-    std::string input = "let x: int = 10;";
+    std::string input = "let x: i32 = 10;";
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
@@ -236,26 +236,26 @@ TEST(ParserTest, PointerMemberAccess)
 
 TEST(ParserTest, HelloWorld)
 {
-    std::string input = "fn main() -> int { (print(\"Hello, World!\")); return 0; }";
+    std::string input = "fn main() -> i32 { (print(\"Hello, World!\")); return 0; }";
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, PointerChainDecl)
 {
-    std::string input = "let p: **int = (malloc(8));";
+    std::string input = "let p: **i32 = (malloc(8));";
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, ConstDecl)
 {
-    std::string input = "const MAX: int = 100;";
+    std::string input = "const MAX: i32 = 100;";
 
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, StructDefinition)
 {
-    std::string input = "struct Point { x: float, y: float, }";
+    std::string input = "struct Point { x: f32, y: f32, }";
 
     EXPECT_EQ(parse_and_normalize(input), input);
 }
@@ -264,7 +264,7 @@ TEST(ParserTest, MethodImpl)
 {
     std::string input = normalize_whitespace(
         "impl Point {"
-        "   fn new(x: float, y: float) -> Point { }\n"
+        "   fn new(x: f32, y: f32) -> Point { }\n"
         "}");
 
     EXPECT_EQ(parse_and_normalize(input), input);
@@ -293,13 +293,13 @@ TEST(ParserTest, PointerArithmetic)
 
 TEST(ParserTest, InitializerList)
 {
-    std::string input = "let arr: int[3] = [1, 2, 3];";
+    std::string input = "let arr: i32[3] = [1, 2, 3];";
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
 TEST(ParserTest, NestedInitializerList)
 {
-    std::string input = "let matrix: int[2][2] = [[1, 2], [3, 4]];";
+    std::string input = "let matrix: i32[2][2] = [[1, 2], [3, 4]];";
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 

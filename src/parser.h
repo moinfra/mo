@@ -77,6 +77,7 @@ private:
     void error(const std::string &message) const;
     void synchronize();
 
+    uint8_t parse_bitwidth();
     ast::TypePtr parse_type_safe();
     ast::TypePtr parse_prefix_type();
     ast::TypePtr parse_pointer_type();
@@ -91,7 +92,7 @@ private:
     ast::TypeAliasDecl parse_type_alias_decl();
     ast::StructDecl parse_struct_decl();
     ast::TypedField parse_struct_member();
-    ast::FunctionDecl parse_function_decl(ast::Type* receiver_type = nullptr);
+    ast::FunctionDecl parse_function_decl(ast::StructType* receiver_type = nullptr);
     ast::FunctionDecl parse_method(ast::Type* target_type);
     ast::GlobalDecl parse_global_decl();
     ast::ImplBlock parse_impl_block();

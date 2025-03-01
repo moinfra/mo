@@ -226,90 +226,113 @@ int get_type_precedence(TokenType token_type, ASSOC assoc = L_ASSOC | R_ASSOC)
     return precedence;
 };
 
+uint8_t Parser::parse_bitwidth()
+{
+    auto lexeme = current_.lexeme;
+    advance();
+
+    assert(!lexeme.empty() && "Expected bitwidth lexeme");
+    if (lexeme == "int")
+        return 32;
+    if (lexeme == "bool")
+        return 1;
+    else if (lexeme == "float")
+        return 64;
+    else if (lexeme[0] == 'i')
+    {
+        return std::stoi(lexeme.substr(1));
+    }
+    else if (lexeme[0] == 'f')
+    {
+        return std::stoi(lexeme.substr(1));
+    }
+    else
+    {
+        error("Invalid bitwidth: " + lexeme);
+        return 0;
+    }
+}
+
 void Parser::init_type_pratt_rules()
 {
     auto add_prefix_rule = [&](TokenType type, std::function<TypePtr()> fn)
     {
-        type_pratt_rules_[type].insert({std::move(fn), nullptr});
+        type_pratt_rules_[type].insert({std::forward<decltype(fn)>(fn), nullptr});
     };
 
     auto add_postfix_rule = [&](TokenType type, std::function<TypePtr(TypePtr)> fn)
     {
-        type_pratt_rules_[type].insert({nullptr, std::move(fn)});
+        type_pratt_rules_[type].insert({nullptr, std::forward<decltype(fn)>(fn)});
     };
 
-    // 基础类型
+    add_prefix_rule(TokenType::Int, [&]
+                    { return Type::create_int(parse_bitwidth()); });
+    add_prefix_rule(TokenType::Float, [&]
+                    { return Type::create_float(parse_bitwidth()); });
+    add_prefix_rule(TokenType::String, [&]
+                    { advance(); return Type::create_string(); });
+
     add_prefix_rule(TokenType::Identifier, [&]
                     {
-        auto t = std::make_unique<Type>();
-        t->kind = Type::Kind::Basic; // FIXME: may be alias
-        t->name = current_.lexeme;
+        const std::string name = current_.lexeme;
         advance();
-        return t; });
+        return Type::create_alias(name, nullptr); });
 
-    auto basic_type_handler = [&]() -> TypePtr
-    {
-        auto t = std::make_unique<Type>();
-        t->kind = Type::Kind::Basic;
-        t->name = current_.lexeme;
-        advance();
-        return t;
-    };
-
-    add_prefix_rule(TokenType::Int, basic_type_handler);
-    add_prefix_rule(TokenType::Float, basic_type_handler);
-    add_prefix_rule(TokenType::String, basic_type_handler);
-
-    // 指针类型
     add_prefix_rule(TokenType::Star, [&]
                     {
-        advance(); // 消耗*
-        auto ptr = std::make_unique<Type>();
-        ptr->kind = Type::Kind::Pointer;
-        ptr->pointee = parse_type(get_precedence(TokenType::Star, R_ASSOC));
-        return ptr; });
+        advance(); // *
+        TypePtr pointee = parse_type(get_precedence(TokenType::Star, R_ASSOC) - 1);
+        return Type::create_pointer(std::move(pointee)); });
 
-    // 数组类型
-    add_postfix_rule(TokenType::LBracket, [&](std::unique_ptr<Type> left)
+    add_postfix_rule(TokenType::LBracket, [&](TypePtr element_type)
                      {
-        auto arr = std::make_unique<Type>();
-        arr->kind = Type::Kind::Array;
-        arr->element_type = std::move(left);
-        
         consume(TokenType::LBracket);
+        
+        int size = -1;
         if (match(TokenType::IntegerLiteral)) {
-            arr->array_size = std::stoi(current_.lexeme);
+            size = std::stoi(current_.lexeme);
             advance();
         }
-        consume(TokenType::RBracket);
-        return arr; });
-
-    // 函数类型
-    add_postfix_rule(TokenType::LParen, [&](std::unique_ptr<Type> left)
-                     {
-        auto fn = std::make_unique<Type>();
-        fn->kind = Type::Kind::Function;
-        fn->return_type = std::move(left);
         
+        consume(TokenType::RBracket);
+        return Type::create_array(std::move(element_type), size); });
+
+    add_postfix_rule(TokenType::LParen, [&](TypePtr return_type)
+                     {
         consume(TokenType::LParen);
+        
+        std::vector<TypePtr> params;
         while (!match(TokenType::RParen)) {
-            fn->params.push_back(parse_type());
+            params.emplace_back(parse_type());
             if (!try_consume(TokenType::Comma)) break;
         }
+        
         consume(TokenType::RParen);
         
         if (try_consume(TokenType::Arrow)) {
-            fn->return_type = parse_type();
+            return_type = parse_type();
         }
-        return fn; });
+        
+        return Type::create_function(std::move(return_type), std::move(params)); });
 
-    // const修饰符
     add_prefix_rule(TokenType::Const, [&]
                     {
-        advance();
-        auto base = parse_type(get_precedence(TokenType::Const, R_ASSOC));
-        apply_const_to_innermost(base.get());
-        return base; });
+        advance(); // const
+        TypePtr base = parse_type(get_precedence(TokenType::Const, R_ASSOC) - 1);
+        return Type::create_qualified(Qualifier::Const, std::move(base)); });
+}
+
+void apply_const_to_innermost(Type *type, Qualifier q)
+{
+    if (auto *qualified = type->as_qualified())
+    {
+        apply_const_to_innermost(&qualified->base_type(), q);
+    }
+    else
+    {
+        TypePtr base = type->clone();
+        type = Type::create_qualified(q, std::move(base)).release();
+    }
 }
 
 std::unique_ptr<Type> Parser::parse_type(int precedence)
@@ -588,210 +611,7 @@ TypedField Parser::parse_struct_member()
     consume(TokenType::Colon, "Expected ':' after field name");
     auto type = parse_type();
 
-    return TypedField(std::move(type), name);
-}
-
-Type::BasicKind basic_kind_from_string(const std::string &name)
-{
-    if (name == "int")
-        return Type::BasicKind::Int;
-    if (name == "float")
-        return Type::BasicKind::Float;
-    if (name == "string")
-        return Type::BasicKind::String;
-
-    throw std::runtime_error("Invalid basic type name: " + name);
-}
-
-void apply_const_to_innermost(Type *type)
-{
-    Type *current = type;
-    while (current)
-    {
-        if (current->kind == Type::Kind::Pointer)
-        {
-            if (!current->pointee)
-                break;
-            current = current->pointee.get();
-        }
-        else if (current->kind == Type::Kind::Array)
-        {
-            current = current->element_type.get();
-        }
-        else
-        {
-            current->is_const = true;
-            break;
-        }
-    }
-}
-
-std::unique_ptr<Type> Parser::parse_prefix_type()
-{
-    if (match(TokenType::LParen))
-    {
-        advance(); // Consume '('
-        auto type = parse_type();
-        consume(TokenType::RParen, "Expected ')' after grouped type");
-
-        while (match(TokenType::Star))
-        {
-            auto ptr_type = parse_pointer_type();
-            ptr_type->pointee = std::move(type);
-            type = std::move(ptr_type);
-        }
-        return type;
-    }
-
-    if (match(TokenType::Const))
-    {
-        advance();
-        auto type = parse_prefix_type();
-        apply_const_to_innermost(type.get());
-        return type;
-    }
-
-    if (match(TokenType::Star))
-    {
-        return parse_pointer_type();
-    }
-
-    return parse_non_pointer_type();
-}
-
-std::unique_ptr<Type> Parser::parse_pointer_type()
-{
-    consume(TokenType::Star, "Expected '*' in pointer type");
-    auto ptr_type = std::make_unique<Type>();
-    ptr_type->kind = Type::Kind::Pointer;
-
-    if (match(TokenType::Const))
-    {
-        advance();
-        ptr_type->is_const = true;
-    }
-
-    ptr_type->pointee = parse_prefix_type();
-    return ptr_type;
-}
-
-std::unique_ptr<Type> Parser::parse_non_pointer_type()
-{
-    auto type = std::make_unique<Type>();
-
-    if (match(TokenType::Int) || match(TokenType::Float) || match(TokenType::String))
-    {
-        parse_basic_type(type);
-    }
-    else if (match(TokenType::Identifier))
-    {
-        parse_type_alias(type);
-    }
-    else if (match(TokenType::Fn))
-    {
-        parse_function_type(type);
-    }
-    else if (match(TokenType::Struct))
-    {
-        parse_struct_type(type);
-    }
-    else
-    {
-        error("Expected type name");
-    }
-    return type;
-}
-
-std::unique_ptr<Type> Parser::parse_array_type(std::unique_ptr<Type> base_type)
-{
-    consume(TokenType::LBracket, "Expected '[' in array type");
-    auto array_type = std::make_unique<Type>();
-    array_type->kind = Type::Kind::Array;
-    array_type->element_type = std::move(base_type);
-
-    if (array_type->is_const)
-    {
-        apply_const_to_innermost(array_type->element_type.get());
-    }
-
-    if (match(TokenType::IntegerLiteral))
-    {
-        array_type->array_size = std::stoi(current_.lexeme);
-        advance();
-    }
-    else
-    {
-        array_type->array_size = -1; // 动态数组
-    }
-
-    consume(TokenType::RBracket, "Expected ']' in array type");
-    return array_type;
-}
-
-void Parser::parse_basic_type(std::unique_ptr<Type> &type)
-{
-    type->kind = Type::Kind::Basic;
-    type->name = current_.lexeme;
-    type->basic_kind = basic_kind_from_string(type->name);
-    advance();
-}
-
-void Parser::parse_type_alias(std::unique_ptr<Type> &type)
-{
-    std::string name = current_.lexeme;
-    type->kind = Type::Kind::Alias;
-    type->name = name;
-    if (auto it = type_aliases_.find(name); it != type_aliases_.end())
-    {
-        type = it->second->clone();
-    }
-    else
-    {
-        error("Undefined type alias: " + name);
-    }
-    advance();
-}
-
-void Parser::parse_function_type(std::unique_ptr<Type> &type)
-{
-    type->kind = Type::Kind::Function;
-    advance();
-    consume(TokenType::LParen, "Expected '(' in function type");
-
-    while (!match(TokenType::RParen))
-    {
-        type->params.push_back(parse_type());
-
-        if (!match(TokenType::Comma))
-            break;
-        advance();
-    }
-    consume(TokenType::RParen, "Expected ')' in function type");
-
-    if (match(TokenType::Arrow))
-    {
-        advance();
-        type->return_type = parse_type();
-    }
-}
-
-void Parser::parse_struct_type(std::unique_ptr<Type> &type)
-{
-    type->kind = Type::Kind::Struct;
-    advance();
-    consume(TokenType::LBrace, "Expected '{' in struct type");
-
-    while (!match(TokenType::RBrace))
-    {
-        std::string field_name = current_.lexeme;
-        consume(TokenType::Identifier, "Expected field name");
-        consume(TokenType::Colon, "Expected ':' after field name");
-        type->members[field_name] = parse_type();
-        if (!match(TokenType::Comma))
-            break;
-        advance();
-    }
-    consume(TokenType::RBrace, "Expected '}' in struct type");
+    return TypedField(name, std::move(type));
 }
 
 ExprPtr Parser::parse_function_pointer_expr()
@@ -895,7 +715,7 @@ std::unique_ptr<Type> Parser::parse_type_safe()
         errors_.push_back(e.what());
         synchronize_type();
         // Placeholder
-        return std::make_unique<Type>();
+        return Type::create_placeholder();
     }
 }
 
@@ -1176,7 +996,7 @@ VarDeclStmt Parser::parse_var_decl()
     return stmt;
 }
 
-FunctionDecl Parser::parse_function_decl(Type *receiver_type)
+FunctionDecl Parser::parse_function_decl(StructType *receiver_type)
 {
     FunctionDecl func;
     consume(TokenType::Fn, "Expected 'fn'");
@@ -1200,9 +1020,9 @@ FunctionDecl Parser::parse_function_decl(Type *receiver_type)
         {
             func.is_static = true;
         }
-        func.receiver_type = std::make_unique<Type>(*receiver_type);
-        assert(!receiver_type->name.empty() && "receiver_type name is empty");
-        func.name = receiver_type->name + "::" + func.name;
+        func.receiver_type = receiver_type->clone();
+        assert(!receiver_type->name().empty() && "receiver_type name is empty");
+        func.name = receiver_type->name() + "::" + func.name;
     }
     while (!match(TokenType::RParen))
     {
@@ -1210,7 +1030,7 @@ FunctionDecl Parser::parse_function_decl(Type *receiver_type)
         consume(TokenType::Identifier, "Expected parameter name");
         consume(TokenType::Colon, "Expected : after parameter name");
         auto type = parse_type();
-        func.params.emplace_back(std::move(type), name);
+        func.params.emplace_back(name, std::move(type));
 
         if (!match(TokenType::Comma))
             break;
@@ -1226,7 +1046,7 @@ FunctionDecl Parser::parse_function_decl(Type *receiver_type)
     }
     else
     {
-        func.return_type = std::make_unique<Type>(Type::get_void_type());
+        func.return_type = Type::create_void();
     }
 
     StmtPtr body = parse_block();
