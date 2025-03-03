@@ -47,19 +47,19 @@ bool no_error(const TypeChecker::TypeCheckResult &result)
 
 TEST_F(TypeCheckerTest, TypesEqual)
 {
-    auto intType = Type::create_int();
+    auto IntegerType = Type::create_int();
     auto floatType = Type::create_float();
-    EXPECT_TRUE(types_equal(*intType, *intType));
-    EXPECT_FALSE(types_equal(*intType, *floatType));
+    EXPECT_TRUE(types_equal(*IntegerType, *IntegerType));
+    EXPECT_FALSE(types_equal(*IntegerType, *floatType));
 }
 
 TEST_F(TypeCheckerTest, IsConvertible)
 {
-    auto intType = Type::create_int();
+    auto IntegerType = Type::create_int();
     auto floatType = Type::create_float();
 
-    EXPECT_TRUE(is_convertible(*intType, *floatType));
-    EXPECT_FALSE(is_convertible(*floatType, *intType));
+    EXPECT_TRUE(is_convertible(*IntegerType, *floatType));
+    EXPECT_FALSE(is_convertible(*floatType, *IntegerType));
 }
 
 TEST_F(TypeCheckerTest, ResolveAlias)
@@ -84,10 +84,10 @@ TEST_F(TypeCheckerTest, FindStruct)
 TEST_F(TypeCheckerTest, FindAndInsert)
 {
     Scope globalScope(nullptr);
-    auto intType = Type::create_int();
+    auto IntegerType = Type::create_int();
 
-    EXPECT_TRUE(globalScope.insert("x", intType->clone()));
-    EXPECT_TRUE(types_equal(*globalScope.find("x"), *intType));
+    EXPECT_TRUE(globalScope.insert("x", IntegerType->clone()));
+    EXPECT_TRUE(types_equal(*globalScope.find("x"), *IntegerType));
     EXPECT_EQ(globalScope.find("y"), nullptr);
 }
 
@@ -96,13 +96,13 @@ TEST_F(TypeCheckerTest, NestedScope)
     Scope globalScope(nullptr);
     Scope localScope(&globalScope);
 
-    auto intType = Type::create_int();
+    auto IntegerType = Type::create_int();
     auto floatType = Type::create_float();
 
-    globalScope.insert("x", intType->clone());
+    globalScope.insert("x", IntegerType->clone());
     localScope.insert("y", floatType->clone());
 
-    EXPECT_TRUE(types_equal(*localScope.find("x"), *intType));
+    EXPECT_TRUE(types_equal(*localScope.find("x"), *IntegerType));
     EXPECT_TRUE(types_equal(*localScope.find("y"), *floatType));
     EXPECT_EQ(localScope.find("z"), nullptr);
 }

@@ -147,8 +147,8 @@ bool TypeChecker::types_equal(const Type &t1, const Type &t2) const
         return true;
     case Type::Kind::Int:
     {
-        auto i1 = static_cast<const IntType *>(&t1);
-        auto i2 = static_cast<const IntType *>(&t2);
+        auto i1 = static_cast<const IntegerType *>(&t1);
+        auto i2 = static_cast<const IntegerType *>(&t2);
         return i1->bit_width() == i2->bit_width();
     }
     case Type::Kind::Float:
@@ -173,6 +173,19 @@ bool TypeChecker::types_equal(const Type &t1, const Type &t2) const
         auto a2 = static_cast<const ArrayType *>(&t2);
         return a1->size() == a2->size() &&
                types_equal(a1->element_type(), a2->element_type());
+    }
+    case Type::Kind::Tuple:
+    {
+        auto t1_tuple = static_cast<const TupleType *>(&t1);
+        auto t2_tuple = static_cast<const TupleType *>(&t2);
+        if (t1_tuple->element_types().size() != t2_tuple->element_types().size())
+            return false;
+        return std::equal(t1_tuple->element_types().begin(), t1_tuple->element_types().end(),
+                          t2_tuple->element_types().begin(),
+                          [this](const TypePtr &t1, const TypePtr &t2)
+                          {
+                              return types_equal(*t1, *t2);
+                          });
     }
     case Type::Kind::Struct:
     {
@@ -525,7 +538,7 @@ void TypeChecker::visit(BinaryExpr &expr)
     case TokenType::Plus:
     case TokenType::Minus:
     case TokenType::Star:
-    case TokenType::Divide:
+    case TokenType::Slash:
     {
         if (expr.left->type->kind() == Type::Kind::Int && expr.right->type->kind() == Type::Kind::Int)
         {
@@ -1031,7 +1044,7 @@ bool TypeChecker::is_convertible(const Type &from, const Type &to) const
     }
 
     // Null pointer conversion
-    if (from.kind() == Type::Kind::Int && static_cast<const IntType &>(from).bit_width() == MO_DEFAULT_INT_BITWIDTH && to.kind() == Type::Kind::Pointer)
+    if (from.kind() == Type::Kind::Int && static_cast<const IntegerType &>(from).bit_width() == MO_DEFAULT_INT_BITWIDTH && to.kind() == Type::Kind::Pointer)
     {
         return true; // Allow 0 to null pointer conversion
     }
