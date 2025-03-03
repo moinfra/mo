@@ -51,7 +51,7 @@ const static std::unordered_map<std::pair<TokenType, ASSOC>, int, TokenTypeAssoc
     {{TokenType::Minus, L_ASSOC}, 50},
 
     {{TokenType::Star, L_ASSOC}, 60},
-    {{TokenType::Divide, L_ASSOC}, 60},
+    {{TokenType::Slash, L_ASSOC}, 60},
     {{TokenType::Modulo, L_ASSOC}, 60},
 
     // {{TokenType::DotStar, L_ASSOC}, 70},
@@ -134,7 +134,7 @@ void Parser::init_pratt_rules()
     add_prefix_rule(TokenType::Not, [&]
                     { return parse_unary(get_precedence(TokenType::Not, R_ASSOC) - 1); });
     add_prefix_rule(TokenType::LParen, [&]
-                    { return parse_grouped(); });
+                    { return parse_tuple_or_grouped(); });
     add_prefix_rule(TokenType::Cast, [&]
                     { return parse_cast(); });
     add_prefix_rule(TokenType::Sizeof, [&]
@@ -152,8 +152,8 @@ void Parser::init_pratt_rules()
                    { return parse_binary(std::move(l), get_precedence(TokenType::Minus)); });
     add_infix_rule(TokenType::Star, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::Star)); });
-    add_infix_rule(TokenType::Divide, [&](ExprPtr l)
-                   { return parse_binary(std::move(l), get_precedence(TokenType::Divide)); });
+    add_infix_rule(TokenType::Slash, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Slash)); });
 
     add_infix_rule(TokenType::And, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::And)); });
@@ -266,7 +266,9 @@ void Parser::init_type_pratt_rules()
     };
 
     add_prefix_rule(TokenType::Int, [&]
-                    { return Type::create_int(parse_bitwidth()); });
+                    { 
+                        auto unsigned_ = current_.lexeme[0] == 'u';
+                        return Type::create_int(parse_bitwidth(), unsigned_); });
     add_prefix_rule(TokenType::Float, [&]
                     { return Type::create_float(parse_bitwidth()); });
     add_prefix_rule(TokenType::String, [&]
@@ -759,12 +761,43 @@ ExprPtr Parser::parse_literal()
     return expr;
 }
 
-ExprPtr Parser::parse_grouped()
+ExprPtr Parser::parse_tuple_or_grouped()
 {
-    advance();
-    auto expr = parse_expr();
-    consume(TokenType::RParen, "Expected ')' after expression");
-    return expr;
+    consume(TokenType::LParen, "Expect '('");
+
+    if (try_consume(TokenType::RParen))
+    {
+        return std::make_unique<TupleExpr>(std::vector<ExprPtr>{});
+    }
+
+    auto first_expr = parse_expr();
+
+    if (match(TokenType::Comma))
+    {
+        std::vector<ExprPtr> elements;
+        elements.push_back(std::move(first_expr));
+
+        do
+        {
+            consume(TokenType::Comma, "Expect ',' in tuple");
+            // Allow trailing comma like (a, b, )
+            if (match(TokenType::RParen))
+                break;
+            elements.push_back(parse_expr());
+        } while (match(TokenType::Comma));
+
+        consume(TokenType::RParen, "Expect ')' after tuple");
+        return std::make_unique<TupleExpr>(std::move(elements));
+    }
+    else if (try_consume(TokenType::RParen))
+    {
+        return first_expr;
+    }
+    else
+    {
+        error("Expected ',' or ')' after expression");
+        return nullptr;
+    }
 }
 
 ExprPtr Parser::parse_cast()

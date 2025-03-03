@@ -107,7 +107,7 @@ private:
 
     ast::ExprPtr parse_identifier(int min_precedence);
     ast::ExprPtr parse_literal();
-    ast::ExprPtr parse_grouped();
+    ast::ExprPtr parse_tuple_or_grouped();
     ast::ExprPtr parse_cast();
     ast::ExprPtr parse_sizeof();
     ast::ExprPtr parse_address_of();
