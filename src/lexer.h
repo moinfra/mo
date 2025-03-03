@@ -9,11 +9,6 @@
 #include <stdexcept>
 #include <cstdio>
 
-#define DEBUG
-#include <cstdarg>
-
-void debug(const char *fmt, ...);
-
 enum class TokenType
 {
     Invalid,
