@@ -189,12 +189,83 @@ public:
                << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
             break;
         }
+            // add other ConversionInst opcodes
+        case Opcode::SIToFP:
+        {
+            auto conv_inst = static_cast<const ConversionInst &>(inst);
+            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
+               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
+            break;
+        }
+        case Opcode::FPToSI:
+        {
+            auto conv_inst = static_cast<const ConversionInst &>(inst);
+            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
+               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
+            break;
+        }
+        case Opcode::FPExt:
+        {
+            auto conv_inst = static_cast<const ConversionInst &>(inst);
+            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
+               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
+            break;
+        }
+        case Opcode::FPTrunc:
+        {
+            auto conv_inst = static_cast<const ConversionInst &>(inst);
+            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
+               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
+            break;
+        }
+        case Opcode::BitCast:
+        {
+            auto conv_inst = static_cast<const ConversionInst &>(inst);
+            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
+               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
+            break;
+        }
+        case Opcode::BitAnd:
+        case Opcode::BitOr:
+        case Opcode::BitXor:
+        {
+            auto binary_inst = static_cast<const BinaryInst &>(inst);
+            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
+               << binary_inst.get_lhs()->type()->name() << " ";
+            os << format_value(binary_inst.get_lhs());
+            os << ", ";
+            os << format_value(binary_inst.get_rhs());
+            os << "\n";
+            break;
+        }
+        case Opcode::PtrToInt:
+        {
+            auto conv_inst = static_cast<const ConversionInst &>(inst);
+            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
+               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
+            break;
+        }
+        case Opcode::Call:
+        {
+            auto call_inst = static_cast<const CallInst &>(inst);
+            os << "  " << format_value(&inst) << " = call " << call_inst.called_function()->return_type()->name() << " @" << call_inst.called_function()->name() << "(";
+            auto args = call_inst.arguments();
+            for (unsigned i = 0; i < args.size(); ++i)
+            {
+                if (i != 0)
+                {
+                    os << ", ";
+                }
+                os << args[i]->type()->name() << " " << format_value(args[i]);
+            }
+            os << ")\n";
+            break;
+        }
         default:
             os << "  ; Unsupported instruction: " << get_opcode_str(inst.opcode()) << "\n";
             break;
         }
     }
-
     static std::string get_opcode_str(Opcode op)
     {
         switch (op)
@@ -215,9 +286,56 @@ public:
             return "sext";
         case Opcode::Trunc:
             return "trunc";
-        default:
-            return "unknown";
+        case Opcode::SIToFP:
+            return "sitofp";
+        case Opcode::FPToSI:
+            return "fptosi";
+        case Opcode::FPExt:
+            return "fpext";
+        case Opcode::FPTrunc:
+            return "fptrunc";
+        case Opcode::BitCast:
+            return "bitcast";
+        case Opcode::BitAnd:
+            return "and";
+        case Opcode::BitOr:
+            return "or";
+        case Opcode::BitXor:
+            return "xor";
+        case Opcode::PtrToInt:
+            return "ptrtoint";
+        case Opcode::Alloca:
+            return "alloca";
+        case Opcode::Load:
+            return "load";
+        case Opcode::Store:
+            return "store";
+        case Opcode::GetElementPtr:
+            return "getelementptr";
+        case Opcode::ICmp:
+            return "icmp";
+        case Opcode::FCmp:
+            return "fcmp";
+        case Opcode::Br:
+            return "br";
+        case Opcode::CondBr:
+            return "br";
+        case Opcode::Ret:
+            return "ret";
+        case Opcode::Phi:
+            return "phi";
+        case Opcode::Call:
+            return "call";
+        case Opcode::IntToPtr:
+            return "inttoptr";
+        case Opcode::FPToUI:
+            return "fptoui";
+        case Opcode::UIToFP:
+            return "uitofp";
         }
+
+        assert(false && "Invalid predicate");
+        return "<err>";
     }
 
     static std::string get_icmp_predicate_str(ICmpInst::Predicate pred)
@@ -244,9 +362,10 @@ public:
             return "ugt";
         case ICmpInst::UGE:
             return "uge";
-        default:
-            return "unknown";
         }
+
+        assert(false && "Invalid predicate");
+        return "<err>";
     }
 
     static std::string get_fcmp_predicate_str(FCmpInst::Predicate pred)
@@ -254,9 +373,21 @@ public:
         switch (pred)
         {
         case FCmpInst::EQ:
-            return "oeq";
+            return "eq";
         case FCmpInst::NE:
+            return "ne";
+        case FCmpInst::OEQ:
+            return "oeq";
+        case FCmpInst::ONE:
             return "one";
+        case FCmpInst::LT:
+            return "lt";
+        case FCmpInst::LE:
+            return "le";
+        case FCmpInst::GT:
+            return "gt";
+        case FCmpInst::GE:
+            return "ge";
         case FCmpInst::OLT:
             return "olt";
         case FCmpInst::OLE:
@@ -265,9 +396,10 @@ public:
             return "ogt";
         case FCmpInst::OGE:
             return "oge";
-        default:
-            return "unknown";
         }
+
+        assert(false && "Invalid predicate");
+        return "<err>";
     }
 
     static std::string format_value(const Value *value)
