@@ -131,7 +131,7 @@ std::string ASTPrinter::print(const Type& type) {
         return a->name();
     }
 
-    if (const IntType* i = type.as_int()) {
+    if (const IntegerType* i = type.as_int()) {
         auto bw = i->bit_width();
         return "i" + std::to_string(bw);
     }
