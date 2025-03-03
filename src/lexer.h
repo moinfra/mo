@@ -48,6 +48,16 @@ enum class TokenType
     Arrow,       // ->
     DoubleColon, // ::
     Assign,      // =
+    AddAssign,   // +=
+    SubAssign,   // -=
+    MulAssign,   // *=
+    DivAssign,   // /=
+    ModAssign,   // %=
+    AndAssign,   // &=
+    OrAssign,    // |=
+    XorAssign,   // ^=
+    LeftAssign,  // <<=
+    RightAssign, // >>=
     Colon,       // :
     Semicolon,   // ;
     Comma,       // ,
@@ -61,7 +71,7 @@ enum class TokenType
     RBracket,    // ]
     Plus,        // +
     Minus,       // -
-    Divide,      // /
+    Slash,       // /
     Modulo,      // %
     Eq,          // ==
     Ne,          // !=

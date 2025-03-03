@@ -102,7 +102,7 @@ std::string token_type_to_string(TokenType type)
         return "+";
     case TokenType::Minus:
         return "-";
-    case TokenType::Divide:
+    case TokenType::Slash:
         return "/";
     case TokenType::Modulo:
         return "%";
@@ -231,7 +231,7 @@ Token Lexer::next_token()
     case '+':
         return parse_single_char(TokenType::Plus, "+");
     case '/':
-        return parse_single_char(TokenType::Divide, "/");
+        return parse_single_char(TokenType::Slash, "/");
     case '%':
         return parse_single_char(TokenType::Modulo, "%");
     default:
@@ -476,6 +476,10 @@ Token Lexer::parse_identifier_or_keyword()
         {"i16", TokenType::Int},
         {"i32", TokenType::Int},
         {"i64", TokenType::Int},
+        {"u8", TokenType::Int},
+        {"u16", TokenType::Int},
+        {"u32", TokenType::Int},
+        {"u64", TokenType::Int},
         {"float", TokenType::Float},
         {"f32", TokenType::Float},
         {"f64", TokenType::Float},
