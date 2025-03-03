@@ -213,6 +213,35 @@ AllocaInst *IRBuilder::create_alloca(Type *type, const std::string &name)
     return inst;
 }
 
+AllocaInst *IRBuilder::create_entry_alloca(Type *type, const std::string &name)
+{
+    assert(type->size() > 0 && "Cannot allocate zero-sized type");
+    assert(insert_block_ && "Insert block must be set for entry alloca");
+
+    Function *cur_func = insert_block_->parent_function();
+    BasicBlock *entry_block = cur_func->entry_block();
+
+    BasicBlock *saved_block = insert_block_;
+    Instruction *saved_pos = insert_pos_;
+
+    auto first_non_phi = entry_block->first_non_phi();
+    if (first_non_phi != entry_block->last_instruction())
+    {
+        set_insert_point(first_non_phi);
+    }
+    else
+    {
+        set_insert_point(entry_block);
+    }
+
+    AllocaInst *inst = create_alloca(type, name);
+
+    insert_block_ = saved_block;
+    insert_pos_ = saved_pos;
+
+    return inst;
+}
+
 LoadInst *IRBuilder::create_load(Value *ptr, const std::string &name)
 {
     // Ensure pointer type
@@ -301,17 +330,6 @@ void IRBuilder::insert(Instruction *inst)
     }
 }
 
-// BitCast Instruction
-BitCastInst *IRBuilder::create_bitcast(Value *val, Type *target_type,
-                                       const std::string &name)
-{
-    assert(val->type()->size() == target_type->size() &&
-           "Bitcast types must have same size");
-    auto *inst = BitCastInst::create(val, target_type, insert_block_, name);
-    insert(inst);
-    return inst;
-}
-
 // Call Instruction
 CallInst *IRBuilder::create_call(Function *callee,
                                  const std::vector<Value *> &args,
@@ -354,6 +372,49 @@ CallInst *IRBuilder::create_indirect_call(Value *callee,
     return inst;
 }
 
+bool is_legal_bitcast(Type *src, Type *dst)
+{
+    assert(src && "Source type must not be null");
+    assert(dst && "Target type must not be null");
+
+    if (src->size() == dst->size())
+        return true;
+
+    if (src->is_array() && dst->is_pointer())
+    {
+        Type *element_type = src->element_type();
+        Type *ptr_target_type = dst->element_type();
+        return element_type == ptr_target_type;
+    }
+
+    std::cerr << "Unsupported bitcast operation: " << Type::id_to_str(src->type_id())
+              << " to " << Type::id_to_str(dst->type_id()) << std::endl;
+
+    // FIXME: other cases such as struct to pointer / pointer length extension casts are not supported yet.
+    return false;
+}
+
+// BitCast Instruction
+BitCastInst *IRBuilder::create_bitcast(Value *val, Type *target_type,
+                                       const std::string &name)
+{
+    assert(is_legal_bitcast(val->type(), target_type) &&
+           "Bitcast types must have same size");
+    auto *inst = BitCastInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+PtrToIntInst *IRBuilder::create_ptrtoint(Value *ptr, Type *target_type,
+                                         const std::string &name)
+{
+    assert(ptr->type()->type_id() == Type::PtrTy && "PtrToInt operand must be pointer");
+    assert(target_type->type_id() == Type::IntTy && "PtrToInt target must be integer");
+    auto *inst = PtrToIntInst::create(ptr, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
 // Sign Extension Instruction
 SExtInst *IRBuilder::create_sext(Value *val, Type *target_type,
                                  const std::string &name)
@@ -364,6 +425,108 @@ SExtInst *IRBuilder::create_sext(Value *val, Type *target_type,
     assert(target_type->size() > val->type()->size() &&
            "SExt must expand to larger type");
     auto *inst = SExtInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+// Zero Extension Instruction
+ZExtInst *IRBuilder::create_zext(Value *val, Type *target_type,
+                                 const std::string &name)
+{
+    assert(val->type()->type_id() == Type::IntTy && "ZExt source must be integer");
+    assert(target_type->type_id() == Type::IntTy &&
+           "ZExt target must be integer");
+    assert(target_type->size() > val->type()->size() &&
+           "ZExt must expand to larger type");
+    auto *inst = ZExtInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+// Floating-point Extension Instruction
+FPExtInst *IRBuilder::create_fpext(Value *val, Type *target_type,
+                                   const std::string &name)
+{
+    assert(val->type()->type_id() == Type::FpTy && "FPExt source must be float");
+    assert(target_type->type_id() == Type::FpTy &&
+           "FPExt target must be float");
+    assert(target_type->size() > val->type()->size() &&
+           "FPExt must expand to larger floating-point type");
+    auto *inst = FPExtInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+// Floating-point Truncation Instruction
+FPTruncInst *IRBuilder::create_fptrunc(Value *val, Type *target_type,
+                                       const std::string &name)
+{
+    assert(val->type()->type_id() == Type::FpTy && "FPTrunc source must be float");
+    assert(target_type->type_id() == Type::FpTy &&
+           "FPTrunc target must be float");
+    assert(target_type->size() < val->type()->size() &&
+           "FPTrunc must reduce to smaller floating-point type");
+    auto *inst = FPTruncInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+IntToPtrInst *IRBuilder::create_inttoptr(Value *val, Type *target_type,
+                                         const std::string &name)
+{
+    assert(val->type()->type_id() == Type::IntTy &&
+           "IntToPtr source must be integer");
+    assert(target_type->type_id() == Type::PtrTy &&
+           "IntToPtr target must be pointer");
+    auto *inst = IntToPtrInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+FPToSIInst *IRBuilder::create_fptosi(Value *val, Type *target_type,
+                                     const std::string &name)
+{
+    assert(val->type()->type_id() == Type::FpTy &&
+           "FPToSI source must be float");
+    assert(target_type->type_id() == Type::IntTy &&
+           "FPToSI target must be integer");
+    auto *inst = FPToSIInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+FPToUIInst *IRBuilder::create_fptoui(Value *val, Type *target_type,
+                                     const std::string &name)
+{
+    assert(val->type()->type_id() == Type::FpTy &&
+           "FPToUI source must be float");
+    assert(target_type->type_id() == Type::IntTy &&
+           "FPToUI target must be integer");
+    auto *inst = FPToUIInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+SIToFPInst *IRBuilder::create_sitofp(Value *val, Type *target_type,
+                                     const std::string &name)
+{
+    assert(val->type()->type_id() == Type::IntTy &&
+           "SIToFP source must be integer");
+    assert(target_type->type_id() == Type::FpTy &&
+           "SIToFP target must be float");
+    auto *inst = SIToFPInst::create(val, target_type, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+UIToFPInst *IRBuilder::create_uitofp(Value *val, Type *target_type,
+                                     const std::string &name)
+{
+    assert(val->type()->type_id() == Type::IntTy &&
+           "UIToFP source must be integer");
+    assert(target_type->type_id() == Type::FpTy &&
+           "UIToFP target must be float");
+    auto *inst = UIToFPInst::create(val, target_type, insert_block_, name);
     insert(inst);
     return inst;
 }
@@ -382,72 +545,141 @@ TruncInst *IRBuilder::create_trunc(Value *val, Type *target_type,
     insert(inst);
     return inst;
 }
-
-// General Cast Instruction (Example: FP<->Int conversions)
 Value *IRBuilder::create_cast(Value *src_val, Type *target_type,
-                              const std::string &name)
+                              const std::string &name,
+                              bool is_explicit /* = false */,
+                              bool strict_mode /* = false */)
 {
+    // Get the source type from the source value.
     Type *src_type = src_val->type();
+    // If the source and target types are the same, return the source value directly.
     if (src_type == target_type)
         return src_val;
 
     Instruction *inst = nullptr;
+    // Try to dynamically cast the source and target types to integer and float types.
+    const auto src_int = dynamic_cast<IntegerType *>(src_type);
+    const auto tgt_int = dynamic_cast<IntegerType *>(target_type);
+    const auto src_fp = dynamic_cast<FloatType *>(src_type);
+    const auto tgt_fp = dynamic_cast<FloatType *>(target_type);
 
-    // Integer type conversions
-    if (src_type->is_integer() && target_type->is_integer())
+    /*-------------------- Special handling for boolean type --------------------*/
+    if (tgt_int && tgt_int->bits() == 1)
     {
-        auto src_bits = static_cast<IntegerType *>(src_type)->bits();
-        auto tgt_bits = static_cast<IntegerType *>(target_type)->bits();
+        // Any type conversion to boolean requires explicit comparison with zero.
+        Value *zero = nullptr;
+        if (src_int)
+        {
+            // Get the integer constant zero for the source integer type.
+            zero = module_->get_constant_int(src_int, 0);
+            // Create an ICmp instruction to compare the source value with zero for inequality.
+            inst = create_icmp(ICmpInst::NE, src_val, zero, name);
+        }
+        else if (src_fp)
+        {
+            // Get the floating-point constant zero for the source floating-point type.
+            zero = module_->get_constant_fp(src_fp, 0.0);
+            // Create an FCmp instruction to compare the source value with zero for un-ordered or not-equal.
+            inst = create_fcmp(FCmpInst::ONE, src_val, zero, name);
+        }
+        if (inst)
+        {
+            // Insert the instruction into the current basic block.
+            insert(inst);
+            // Return the created instruction.
+            return inst;
+        }
+    }
+
+    /*-------------------- Integer type conversion --------------------*/
+    if (src_int && tgt_int)
+    {
+        // Get the bit widths of the source and target integer types.
+        const unsigned src_bits = src_int->bits();
+        const unsigned tgt_bits = tgt_int->bits();
 
         if (src_bits < tgt_bits)
         {
-            inst = SExtInst::create(src_val, target_type, insert_block_, name);
+            // If the source bit width is less than the target bit width, perform either sign extension or zero extension.
+            // The decision depends on whether the source integer type is signed or unsigned.
+            inst = src_int->is_signed() ? static_cast<Instruction *>(create_sext(src_val, target_type, name)) : static_cast<Instruction *>(create_zext(src_val, target_type, name));
+        }
+        else if (src_bits > tgt_bits)
+        {
+            // If the source bit width is greater than the target bit width, perform truncation.
+            inst = create_trunc(src_val, target_type, name);
         }
         else
         {
-            inst = TruncInst::create(src_val, target_type, insert_block_, name);
+            // If the bit widths are the same but the signs are different, use bitcast.
+            inst = create_bitcast(src_val, target_type, name);
         }
     }
-    // Integer to floating-point
-    else if (src_type->is_integer() && target_type->is_float())
-    {
-        inst = SIToFPInst::create(src_val, target_type, insert_block_, name);
-    }
-    // Floating-point to integer
-    else if (src_type->is_float() && target_type->is_integer())
-    {
-        inst = FPToSIInst::create(src_val, target_type, insert_block_, name);
-    }
-    // Floating-point type conversions
-    else if (src_type->is_float() && target_type->is_float())
-    {
-        auto src_bits = static_cast<FloatType *>(src_type)->bits();
-        auto tgt_bits = static_cast<FloatType *>(target_type)->bits();
 
-        if (src_bits < tgt_bits)
+    /*-------------------- Floating-point and integer interconversion --------------------*/
+    else if (src_fp && tgt_int)
+    {
+        // If converting from floating-point to integer, issue a warning if strict mode is enabled and the conversion is implicit.
+        if (strict_mode && !is_explicit)
         {
-            inst = FPExtInst::create(src_val, target_type, insert_block_, name);
+            std::cerr << "Warning: implicit float to integer conversion\n";
+        }
+        // Perform either floating-point to signed integer conversion or floating-point to unsigned integer conversion.
+        // The decision depends on whether the target integer type is signed or unsigned.
+        inst = tgt_int->is_signed() ? static_cast<Instruction *>(create_fptosi(src_val, target_type, name)) : static_cast<Instruction *>(create_fptoui(src_val, target_type, name));
+    }
+    else if (src_int && tgt_fp)
+    {
+        // Perform either signed integer to floating-point conversion or unsigned integer to floating-point conversion.
+        // The decision depends on whether the source integer type is signed or unsigned.
+        inst = src_int->is_signed() ? static_cast<Instruction *>(create_sitofp(src_val, target_type, name)) : static_cast<Instruction *>(create_uitofp(src_val, target_type, name));
+    }
+
+    /*-------------------- Floating-point precision adjustment --------------------*/
+    else if (src_fp && tgt_fp)
+    {
+        // If converting between floating-point types, adjust the precision.
+        if (src_fp->bits() < tgt_fp->bits())
+        {
+            // If the source floating-point type has lower precision than the target, perform floating-point extension.
+            inst = create_fpext(src_val, target_type, name);
         }
         else
         {
-            inst = FPTruncInst::create(src_val, target_type, insert_block_, name);
+            // Otherwise, perform floating-point truncation.
+            inst = create_fptrunc(src_val, target_type, name);
         }
     }
-    // Pointer type conversion
-    else if (src_type->is_pointer() && target_type->is_pointer())
+
+    /*-------------------- Pointer-related conversions --------------------*/
+    else if (src_type->is_pointer())
     {
-        inst = BitCastInst::create(src_val, target_type, insert_block_, name);
+        // If the source type is a pointer.
+        if (target_type->is_pointer())
+        {
+            // If the target type is also a pointer, perform bitcast.
+            inst = create_bitcast(src_val, target_type, name);
+        }
+        else if (target_type->is_integer())
+        {
+            // If the target type is an integer, perform pointer to integer conversion.
+            assert(src_type->size() == target_type->size() && "PtrToInt size mismatch");
+            inst = create_ptrtoint(src_val, target_type, name);
+        }
     }
-    // Pointer and integer interconversion
-    else if ((src_type->is_pointer() && target_type->is_integer()) ||
-             (src_type->is_integer() && target_type->is_pointer()))
+    else if (target_type->is_pointer())
     {
-        assert(src_type->size() == target_type->size() &&
-               "Pointer-int cast requires same size");
-        inst = BitCastInst::create(src_val, target_type, insert_block_, name);
+        // If the target type is a pointer and the source type is not a pointer.
+        assert(src_type->is_integer() && "IntToPtr requires integer source");
+        assert(src_type->size() == target_type->size() && "IntToPtr size mismatch");
+        // Perform integer to pointer conversion.
+        inst = create_inttoptr(src_val, target_type, name);
     }
 
-    assert(inst && "Unsupported cast operation");
+    // Assert that the instruction was created.  If not, the cast is unsupported.
+    assert(inst && ("Unsupported cast: " + src_type->name() + " -> " + target_type->name()).c_str());
+    // Insert the instruction into the current basic block.
     insert(inst);
+    // Return the created instruction.
     return inst;
 }

@@ -57,6 +57,7 @@ public:
 
     //--- Memory Instructions ---//
     AllocaInst *create_alloca(Type *type, const std::string &name = "");
+    AllocaInst *create_entry_alloca(Type *type, const std::string &name = "");
     LoadInst *create_load(Value *ptr, const std::string &name = "");
     StoreInst *create_store(Value *value, Value *ptr);
     GetElementPtrInst *create_gep(Value *ptr, std::vector<Value *> indices,
@@ -66,16 +67,39 @@ public:
 
     //--- Other Instructions ---//
     PhiInst *create_phi(Type *type, const std::string &name = "");
-    BitCastInst *create_bitcast(Value *val, Type *target_type,
-                                const std::string &name);
     CallInst *create_call(Function *callee, const std::vector<Value *> &args,
                           const std::string &name);
     CallInst *create_indirect_call(Value *callee, const std::vector<Value *> &args,
                                    const std::string &name);
+
+    // --- Cast Instructions --- //
+    BitCastInst *create_bitcast(Value *val, Type *target_type,
+                                const std::string &name);
+    PtrToIntInst *create_ptrtoint(Value *ptr, Type *target_type,
+                                  const std::string &name);
+    IntToPtrInst *create_inttoptr(Value *val, Type *target_type,
+                                  const std::string &name);
     SExtInst *create_sext(Value *val, Type *target_type, const std::string &name);
+    ZExtInst *create_zext(Value *val, Type *target_type,
+                          const std::string &name);
+    FPExtInst *create_fpext(Value *val, Type *target_type,
+                            const std::string &name);
+    FPTruncInst *create_fptrunc(Value *val, Type *target_type,
+                                const std::string &name);
     TruncInst *create_trunc(Value *val, Type *target_type,
                             const std::string &name);
-    Value *create_cast(Value *src_val, Type *target_type, const std::string &name);
+    FPToSIInst *create_fptosi(Value *val, Type *target_type,
+                              const std::string &name);
+    FPToUIInst *create_fptoui(Value *val, Type *target_type,
+                              const std::string &name);
+    SIToFPInst *create_sitofp(Value *val, Type *target_type,
+                              const std::string &name);
+    UIToFPInst *create_uitofp(Value *val, Type *target_type,
+                              const std::string &name);
+    Value *create_cast(Value *src_val, Type *target_type,
+                       const std::string &name,
+                       bool is_explicit = false,
+                       bool strict_mode = false);
 
     //===--------------------------------------------------------------------===//
     //                               Types
