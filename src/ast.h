@@ -253,9 +253,6 @@ namespace ast
         explicit TupleExpr(std::vector<ExprPtr> elements) : elements(std::move(elements)) {}
     };
 
-    inline TupleExpr::TupleExpr(std::vector<ExprPtr> elements)
-        : elements(std::move(elements)) {}
-
     struct AddressOfExpr : Expr
     {
         ExprPtr operand;
