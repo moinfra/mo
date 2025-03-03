@@ -52,9 +52,9 @@ namespace ast
         return std::make_unique<BoolType>();
     }
 
-    TypePtr Type::create_int(uint8_t bit_width)
+    TypePtr Type::create_int(uint8_t bit_width, bool unsigned_)
     {
-        return std::make_unique<IntType>(bit_width);
+        return std::make_unique<IntegerType>(bit_width, unsigned_);
     }
 
     TypePtr Type::create_float(uint8_t precision_bits)
@@ -87,6 +87,11 @@ namespace ast
     TypePtr Type::create_array(TypePtr element, int size)
     {
         return std::make_unique<ArrayType>(std::move(element), size);
+    }
+
+    TypePtr Type::create_tuple(std::vector<TypePtr> elem_types)
+    {
+        return std::make_unique<TupleType>(std::move(elem_types));
     }
 
     TypePtr Type::create_function(TypePtr return_type, std::vector<TypePtr> params)

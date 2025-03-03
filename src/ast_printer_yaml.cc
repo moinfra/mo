@@ -138,7 +138,7 @@ std::string ASTPrinter::print_type(const Type &type)
         break;
     case Type::Kind::Int:
     {
-        auto &int_type = static_cast<const IntType &>(type);
+        auto &int_type = static_cast<const IntegerType &>(type);
         oss << "Int\n";
         oss << indent() << "bit_width: " << int_type.bit_width();
         break;
@@ -190,6 +190,21 @@ std::string ASTPrinter::print_type(const Type &type)
         oss << print_type(array_type.element_type()) << "\n";
         leave_scope();
         oss << indent() << "size: " << array_type.size();
+        break;
+    }
+    case Type::Kind::Tuple:
+    {
+        auto &tuple_type = static_cast<const TupleType &>(type);
+        oss << "Tuple\n";
+        oss << indent() << "element_types:\n";
+        enter_scope();
+        for (const auto &t : tuple_type.element_types())
+        {
+            oss << indent() << "- \n";
+            enter_scope();
+            oss << print_type(*t);
+            leave_scope();
+        }
         break;
     }
     case Type::Kind::Function:

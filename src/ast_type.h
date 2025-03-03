@@ -20,12 +20,13 @@ namespace ast
 
     class Type;
     class ScalarType;
-    class IntType;
+    class IntegerType;
     class FloatType;
     class BoolType;
     class StringType;
     class PointerType;
     class ArrayType;
+    class TupleType;
     class FunctionType;
     class StructType;
     class AliasType;
@@ -81,6 +82,7 @@ namespace ast
             String,
             Pointer,
             Array,
+            Tuple,
             Function,
             Struct,
             Alias,
@@ -95,8 +97,8 @@ namespace ast
         virtual bool equals(const Type *other) const noexcept = 0;
 
         // Type conversion methods
-        virtual IntType *as_int() noexcept { return nullptr; }
-        virtual const IntType *as_int() const noexcept { return nullptr; }
+        virtual IntegerType *as_int() noexcept { return nullptr; }
+        virtual const IntegerType *as_int() const noexcept { return nullptr; }
         virtual FloatType *as_float() noexcept { return nullptr; }
         virtual const FloatType *as_float() const noexcept { return nullptr; }
         virtual BoolType *as_bool() noexcept { return nullptr; }
@@ -107,6 +109,8 @@ namespace ast
         virtual const PointerType *as_pointer() const noexcept { return nullptr; }
         virtual ArrayType *as_array() noexcept { return nullptr; }
         virtual const ArrayType *as_array() const noexcept { return nullptr; }
+        virtual TupleType *as_tuple() noexcept { return nullptr; }
+        virtual const TupleType *as_tuple() const noexcept { return nullptr; }
         virtual FunctionType *as_function() noexcept { return nullptr; }
         virtual const FunctionType *as_function() const noexcept { return nullptr; }
         virtual StructType *as_struct() noexcept { return nullptr; }
@@ -121,21 +125,22 @@ namespace ast
         bool is_aggregate() const noexcept
         {
             const auto k = kind();
-            return k == Kind::Struct || k == Kind::Array;
+            return k == Kind::Struct || k == Kind::Array || k == Kind::Tuple;
         }
 
         // Factory methods
         static TypePtr create_placeholder();
         static TypePtr create_void();
         static TypePtr create_bool();
-        static TypePtr create_int(uint8_t bit_width = MO_DEFAULT_INT_BITWIDTH);
+        static TypePtr create_int(uint8_t bit_width = MO_DEFAULT_INT_BITWIDTH, bool unsigned_ = false);
         static TypePtr create_float(uint8_t precision_bits = MO_DEFAULT_FLOAT_PRECISION);
         static TypePtr create_string();
         static TypePtr create_pointer(TypePtr pointee);
         static TypePtr create_array(TypePtr element, int size);
+        static TypePtr create_tuple(std::vector<TypePtr> element_types);
         static TypePtr create_function(TypePtr return_type, std::vector<TypePtr> params);
         static TypePtr create_struct(std::string name, std::vector<TypedField> members);
-        static TypePtr create_alias(std::string name, TypePtr target);
+        static TypePtr create_alias(std::string name, TypePtr target = nullptr);
         static TypePtr create_qualified(Qualifier q, TypePtr base);
     };
 
@@ -166,36 +171,37 @@ namespace ast
     //===----------------------------------------------------------------------===//
     //                             Integer Type
     //===----------------------------------------------------------------------===//
-    class IntType : public ScalarType
+    class IntegerType : public ScalarType
     {
     public:
-        explicit IntType(int bit_width)
-            : bit_width_(bit_width)
+        explicit IntegerType(int bit_width, bool is_unsigned)
+            : bit_width_(bit_width), unsigned_(is_unsigned)
         {
             assert(bit_width > 0 && "Invalid bit width");
         }
 
         // Type conversion
-        IntType *as_int() noexcept override { return this; }
-        const IntType *as_int() const noexcept override { return this; }
+        IntegerType *as_int() noexcept override { return this; }
+        const IntegerType *as_int() const noexcept override { return this; }
 
         Kind kind() const noexcept override { return Kind::Int; }
         size_t bit_width() const noexcept { return bit_width_; }
 
         TypePtr clone() const override
         {
-            return std::make_unique<IntType>(bit_width_);
+            return std::make_unique<IntegerType>(bit_width_, unsigned_);
         }
 
         bool equals(const Type *other) const noexcept override
         {
             if (other->kind() != Kind::Int)
                 return false;
-            return bit_width_ == static_cast<const IntType *>(other)->bit_width_;
+            return bit_width_ == static_cast<const IntegerType *>(other)->bit_width_;
         }
 
     private:
         size_t bit_width_;
+        bool unsigned_;
     };
 
     //===----------------------------------------------------------------------===//
@@ -204,7 +210,7 @@ namespace ast
     class FloatType : public ScalarType
     {
     public:
-        enum class Precision: uint8_t
+        enum class Precision : uint8_t
         {
             Half = 1 << 4,   // 16-bit
             Single = 1 << 5, // 32-bit
@@ -358,6 +364,83 @@ namespace ast
     private:
         TypePtr element_;
         int size_;
+    };
+
+    //===----------------------------------------------------------------------===//
+    //                             Tuple Type
+    //===----------------------------------------------------------------------===//
+    class TupleType : public Type
+    {
+    public:
+        explicit TupleType(std::vector<TypePtr> element_types)
+            : elements_(std::move(element_types))
+        {
+            validate_elements();
+        }
+
+        Kind kind() const noexcept override { return Kind::Tuple; }
+        TupleType *as_tuple() noexcept override { return this; }
+        const TupleType *as_tuple() const noexcept override { return this; }
+
+        size_t element_count() const noexcept { return elements_.size(); }
+        const Type &element_type(size_t index) const
+        {
+            return *elements_.at(index);
+        }
+
+        const std::vector<TypePtr> &element_types() const noexcept
+        {
+            return elements_;
+        }
+
+        TypePtr clone() const override
+        {
+            std::vector<TypePtr> cloned_elements;
+            cloned_elements.reserve(elements_.size());
+            for (const auto &elem : elements_)
+            {
+                cloned_elements.push_back(elem->clone());
+            }
+            return std::make_unique<TupleType>(std::move(cloned_elements));
+        }
+
+        // 类型比较
+        bool equals(const Type *other) const noexcept override
+        {
+            if (other->kind() != Kind::Tuple)
+                return false;
+            const auto *o = static_cast<const TupleType *>(other);
+
+            if (elements_.size() != o->elements_.size())
+                return false;
+
+            for (size_t i = 0; i < elements_.size(); ++i)
+            {
+                if (!elements_[i]->equals(o->elements_[i].get()))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+    private:
+        void validate_elements() const
+        {
+            if (elements_.empty())
+            {
+                throw std::invalid_argument("Tuple must have at least one element");
+            }
+            for (const auto &elem : elements_)
+            {
+                if (!elem)
+                {
+                    throw std::invalid_argument("Tuple element type cannot be null");
+                }
+            }
+        }
+
+        std::vector<TypePtr> elements_; // 有序元素类型
     };
 
     //===----------------------------------------------------------------------===//

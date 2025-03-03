@@ -144,14 +144,14 @@ FunctionDecl FunctionDecl::create_main_function()
 {
     FunctionDecl main_function;
     main_function.name = "main";
-    main_function.add_param("argc", Type::create_int()->clone());
+    main_function.add_param("argc", Type::create_int());
 
     // auto char_type = Type::get_char_type();
     auto char_type = Type::create_int(8);
     auto argv_type = Type::create_pointer(Type::create_pointer(std::move(char_type)));
     main_function.add_param("argv", std::move(argv_type));
 
-    main_function.return_type = Type::create_int()->clone();
+    main_function.return_type = Type::create_int();
 
     return main_function;
 }
