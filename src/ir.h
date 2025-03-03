@@ -12,39 +12,66 @@
 #include <unordered_map>
 #include <algorithm>
 
-// Forward declarations
+//===----------------------------------------------------------------------===//
+//                             Forward Declarations
+//===----------------------------------------------------------------------===//
+
 class Type;
+class IntegerType;
+class FloatType;
+class VoidType;
+class PointerType;
+class FunctionType;
+class ArrayType;
+class StructType;
+class VectorType;
+class QualifiedType;
 class Value;
 class User;
-class Function;
-class GlobalVariable;
-class BasicBlock;
+enum class Opcode;
 class Instruction;
-class Constant;
+class BasicBlock;
+class Function;
+class Argument;
 class Module;
+class Constant;
+class ConstantInt;
+class ConstantFP;
+class ConstantArray;
+class ConstantString;
+class ConstantStruct;
+class GlobalVariable;
+class ConstantPointerNull;
+class ConstantAggregateZero;
 class BranchInst;
+class ReturnInst;
 class PhiInst;
 class ICmpInst;
+class FCmpInst;
 class AllocaInst;
 class LoadInst;
 class StoreInst;
 class GetElementPtrInst;
-class IRBuilder;
-class ConstantInt;
-class ConstantFP;
-class IntegerType;
-class VoidType;
-class PointerType;
-class ArrayType;
-class StructType;
-class ConstantString;
-class ConstantPointerNull;
-class ConstantAggregateZero;
-class ConstantStruct;
-class ConstantArray;
+class BinaryInst;
+class ConversionInst;
+class CastInst;
+class BitCastInst;
+class CallInst;
+class RawCallInst;
+class SExtInst;
+class TruncInst;
+class SIToFPInst;
+class FPToSIInst;
+class FPExtInst;
+class FPTruncInst;
+
+struct Member;
+struct StructLayout;
+
+StructLayout calculate_aligned_layout(const std::vector<Type *> &members);
 
 //===----------------------------------------------------------------------===//
-//                              Hash function specialization
+//                              Utility Classes
 //===----------------------------------------------------------------------===//
 namespace std
 {
@@ -58,6 +85,22 @@ namespace std
     };
 }
 
+enum class Qualifier : uint8_t
+{
+    Const = 1,
+    Volatile = 1 << 1,
+    Restrict = 1 << 2
+};
+
+constexpr Qualifier operator|(Qualifier a, Qualifier b) noexcept
+{
+    return static_cast<Qualifier>(static_cast<uint8_t>(a) | static_cast<uint8_t>(b));
+}
+
+constexpr Qualifier operator&(Qualifier a, Qualifier b) noexcept
+{
+    return static_cast<Qualifier>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
+}
 //===----------------------------------------------------------------------===//
 //                               Type System
 //===----------------------------------------------------------------------===//
@@ -76,6 +119,7 @@ public:
         ArrayTy,
         StructTy,
         VecTy,
+        QualifierTy,
     };
     static const char *id_to_str(TypeID id)
     {
@@ -84,19 +128,21 @@ public:
         case VoidTy:
             return "void";
         case IntTy:
-            return "i";
+            return "integer";
         case FpTy:
-            return "f";
+            return "float";
         case PtrTy:
-            return "ptr";
+            return "pointer";
         case FuncTy:
-            return "func";
+            return "function";
         case ArrayTy:
             return "array";
         case StructTy:
             return "struct";
         case VecTy:
-            return "vec";
+            return "vector";
+        case QualifierTy:
+            return "qualifier";
         default:
             return "unknown";
         }
@@ -115,6 +161,7 @@ public:
 
     static Type *get_void_type(Module *m);
 
+    bool is_void() const { return tid_ == VoidTy; }
     bool is_float() const { return tid_ == FpTy; }
     bool is_integer() const { return tid_ == IntTy; }
     bool is_pointer() const { return tid_ == PtrTy; }
@@ -122,15 +169,52 @@ public:
     bool is_array() const { return tid_ == ArrayTy; }
     bool is_struct() const { return tid_ == StructTy; }
     bool is_vector() const { return tid_ == VecTy; }
+    bool is_qualified() const { return tid_ == QualifierTy; }
 
-    bool is_const() const { return is_const_; }
+    // Type conversion methods
+    virtual IntegerType *as_int() noexcept { return nullptr; }
+    virtual const IntegerType *as_int() const noexcept { return nullptr; }
+    virtual FloatType *as_float() noexcept { return nullptr; }
+    virtual const FloatType *as_float() const noexcept { return nullptr; }
+    virtual PointerType *as_pointer() noexcept { return nullptr; }
+    virtual const PointerType *as_pointer() const noexcept { return nullptr; }
+    virtual ArrayType *as_array() noexcept { return nullptr; }
+    virtual const ArrayType *as_array() const noexcept { return nullptr; }
+    virtual VectorType *as_vector() noexcept { return nullptr; }
+    virtual const VectorType *as_vector() const noexcept { return nullptr; }
+    virtual FunctionType *as_function() noexcept { return nullptr; }
+    virtual const FunctionType *as_function() const noexcept { return nullptr; }
+    virtual StructType *as_struct() noexcept { return nullptr; }
+    virtual const StructType *as_struct() const noexcept { return nullptr; }
+    virtual QualifiedType *as_qualified() noexcept { return nullptr; }
+    virtual const QualifiedType *as_qualified() const noexcept { return nullptr; }
 
     Type *element_type() const;
+
+    // Equality comparison
+    bool operator==(const Type &other) const
+    {
+        if (this == &other)
+            return true;
+        if (type_id() != other.type_id())
+            return false;
+
+        return is_equal(other);
+    }
+
+    bool operator!=(const Type &other) const { return !(*this == other); }
+
+protected:
+    virtual bool is_equal(const Type &other) const
+    {
+        // Base class comparison only compares TypeID, subclasses should override
+        assert(false && "is_equal not implemented for this type");
+        return false;
+    }
 
 protected:
     TypeID tid_;
     Module *module_;
-    bool is_const_ = false;
 };
 
 class IntegerType : public Type
@@ -139,12 +223,27 @@ public:
     size_t size() const override { return (bits_ + 7) / 8; }
     std::string name() const override { return "i" + std::to_string(bits_); }
     unsigned bits() const override { return bits_; }
+    bool is_signed() const { return !unsigned_; }
+
+    IntegerType *as_int() noexcept override { return this; }
+    const IntegerType *as_int() const noexcept override { return this; }
 
 private:
-    explicit IntegerType(Module *m, unsigned bits);
+    explicit IntegerType(Module *m, unsigned bits, bool unsigned_ = false);
     unsigned bits_;
+    bool unsigned_ = false;
 
     friend Module;
+
+protected:
+    bool is_equal(const Type &other) const override
+    {
+        if (const IntegerType *other_int = dynamic_cast<const IntegerType *>(&other))
+        {
+            return bits_ == other_int->bits_;
+        }
+        return false;
+    }
 };
 
 class FloatType : public Type
@@ -163,12 +262,25 @@ public:
     size_t size() const override { return (bits_ + 7) / 8; }
     std::string name() const override { return "f" + std::to_string(bits_); }
 
+    FloatType *as_float() noexcept override { return this; }
+    const FloatType *as_float() const noexcept override { return this; }
+
 private:
     explicit FloatType(Module *m, Precision precision);
     unsigned bits_;
 
     Precision precision_;
     friend class Module;
+
+protected:
+    bool is_equal(const Type &other) const override
+    {
+        if (const FloatType *other_float = dynamic_cast<const FloatType *>(&other))
+        {
+            return precision_ == other_float->precision_;
+        }
+        return false;
+    }
 };
 
 class VoidType : public Type
@@ -184,6 +296,12 @@ private:
     Module *module_;
 
     friend Module;
+
+protected:
+    bool is_equal(const Type &other) const override
+    {
+        return dynamic_cast<const VoidType *>(&other) != nullptr;
+    }
 };
 
 class PointerType : public Type
@@ -196,6 +314,9 @@ public:
     std::string name() const override { return element_type_->name() + "*"; }
     unsigned bits() const override { return sizeof(void *) * 8; }
 
+    PointerType *as_pointer() noexcept override { return this; }
+    const PointerType *as_pointer() const noexcept override { return this; }
+
 private:
     PointerType(Module *m, Type *element_type);
 
@@ -203,6 +324,16 @@ private:
     Module *module_;
 
     friend Module;
+
+protected:
+    bool is_equal(const Type &other) const override
+    {
+        if (const PointerType *other_ptr = dynamic_cast<const PointerType *>(&other))
+        {
+            return *element_type_ == *other_ptr->element_type_;
+        }
+        return false;
+    }
 };
 
 class FunctionType : public Type
@@ -241,6 +372,9 @@ public:
 
     unsigned bits() const override { return 0; }
 
+    FunctionType *as_function() noexcept override { return this; }
+    const FunctionType *as_function() const noexcept override { return this; }
+
 private:
     FunctionType(Module *m, Type *return_type, const ParamList &params)
         : Type(FuncTy, m), return_type_(return_type), params_(params.begin(), params.end())
@@ -258,6 +392,31 @@ private:
     ParamList params_;
 
     friend class Module;
+
+protected:
+    bool is_equal(const Type &other) const override
+    {
+        if (const FunctionType *other_func = dynamic_cast<const FunctionType *>(&other))
+        {
+            if (*return_type_ != *other_func->return_type_)
+            {
+                return false;
+            }
+            if (params_.size() != other_func->params_.size())
+            {
+                return false;
+            }
+            for (size_t i = 0; i < params_.size(); ++i)
+            {
+                if (*params_[i].second != *other_func->params_[i].second)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
 };
 
 class ArrayType : public Type
@@ -273,6 +432,9 @@ public:
 
     unsigned bits() const override { return size() * 8; }
 
+    ArrayType *as_array() noexcept override { return this; }
+    const ArrayType *as_array() const noexcept override { return this; }
+
 private:
     ArrayType(Module *m, Type *element_type, uint64_t num_elements);
 
@@ -281,6 +443,16 @@ private:
     Module *module_;
 
     friend Module;
+
+protected:
+    bool is_equal(const Type &other) const override
+    {
+        if (const ArrayType *other_array = dynamic_cast<const ArrayType *>(&other))
+        {
+            return (num_elements_ == other_array->num_elements_) && (*element_type_ == *other_array->element_type_);
+        }
+        return false;
+    }
 };
 
 class StructType : public Type
@@ -324,6 +496,9 @@ public:
     bool is_opaque() const { return is_opaque_; }
     const std::vector<Type *> &members() const { return members_; }
 
+    StructType *as_struct() noexcept override { return this; }
+    const StructType *as_struct() const noexcept override { return this; }
+
 private:
     StructType(Module *m, const std::string &name, std::vector<Type *> members);
     StructType(Module *m, std::vector<Type *> members);
@@ -336,6 +511,31 @@ private:
     size_t size_;
 
     friend Module;
+
+protected:
+    bool is_equal(const Type &other) const override
+    {
+        if (const StructType *other_struct = dynamic_cast<const StructType *>(&other))
+        {
+            if (is_opaque_ != other_struct->is_opaque_)
+            {
+                return false;
+            }
+            if (members_.size() != other_struct->members_.size())
+            {
+                return false;
+            }
+            for (size_t i = 0; i < members_.size(); ++i)
+            {
+                if (*members_[i] != *other_struct->members_[i])
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
 };
 
 class VectorType : public Type
@@ -346,6 +546,7 @@ public:
 
     size_t size() const override
     {
+        assert(element_type_ && "Invalid element type");
         return element_type_->size() * num_elements_;
     }
 
@@ -359,6 +560,9 @@ public:
         return element_type_->bits() * num_elements_;
     }
 
+    VectorType *as_vector() noexcept override { return this; }
+    const VectorType *as_vector() const noexcept override { return this; }
+
 private:
     VectorType(Module *m, Type *element_type, uint64_t num_elements)
         : Type(VecTy, m), element_type_(element_type), num_elements_(num_elements) {}
@@ -367,6 +571,50 @@ private:
     uint64_t num_elements_;
 
     friend class Module;
+
+protected:
+    bool is_equal(const Type &other) const override
+    {
+        if (const VectorType *other_vec = dynamic_cast<const VectorType *>(&other))
+        {
+            return (num_elements_ == other_vec->num_elements_) && (*element_type_ == *other_vec->element_type_);
+        }
+        return false;
+    }
+};
+
+class QualifiedType : public Type
+{
+public:
+    QualifiedType(Qualifier q, Type *base)
+        : Type(TypeID::QualifierTy, base->module()), qualifiers_(q), base_(std::move(base)) {}
+
+    // Type characteristics
+    Qualifier qualifiers() const noexcept { return qualifiers_; }
+    const Type &base_type() const noexcept { return *base_; }
+    Type &base_type() noexcept { return *base_; }
+
+    // Type properties
+    size_t size() const override { return base_->size(); }
+    std::string name() const override { return base_->name(); }
+    unsigned bits() const override { return base_->bits(); }
+
+    QualifiedType *as_qualified() noexcept override { return this; }
+    const QualifiedType *as_qualified() const noexcept override { return this; }
+
+private:
+    Qualifier qualifiers_;
+    Type *base_;
+
+protected:
+    bool is_equal(const Type &other) const override
+    {
+        if (const QualifiedType *other_qualified = dynamic_cast<const QualifiedType *>(&other))
+        {
+            return (qualifiers_ == other_qualified->qualifiers_) && (*base_ == *other_qualified->base_);
+        }
+        return false;
+    }
 };
 
 //===----------------------------------------------------------------------===//
@@ -418,33 +666,50 @@ protected:
 //===----------------------------------------------------------------------===//
 enum class Opcode
 {
-    Add,
-    Sub,
-    Mul,
-    UDiv,
-    SDiv,
-    Alloca,
-    Load,
-    Store,
-    GetElementPtr,
-    ICmp,
-    FCmp,
-    Br,
-    CondBr,
-    Ret,
-    Phi,
-    Call,
-    ZExt,
-    SExt,
-    Trunc,
-    SIToFP,
-    FPToSI,
-    FPExt,
-    FPTrunc,
-    BitCast,
-    BitAnd,
-    BitOr,
-    BitXor
+    // Math Operations
+    Add,  // Addition
+    Sub,  // Subtraction
+    Mul,  // Multiplication
+    UDiv, // Unsigned Division
+    SDiv, // Signed Division
+
+    // Memory Operations
+    Alloca,        // Allocate memory
+    Load,          // Load from memory
+    Store,         // Store to memory
+    GetElementPtr, // Get element pointer
+
+    // Comparison Operations
+    ICmp, // Integer comparison
+    FCmp, // Floating-point comparison
+
+    // Control Flow
+    Br,     // Unconditional Branch
+    CondBr, // Conditional Branch
+    Ret,    // Return
+    Phi,    // Phi node
+
+    // Function Call
+    Call, // Function Call
+
+    // Type Conversions
+    ZExt,     // Zero Extend
+    SExt,     // Sign Extend
+    Trunc,    // Truncate
+    SIToFP,   // Signed Integer to Floating-Point
+    FPToSI,   // Floating-Point to Signed Integer
+    FPExt,    // Floating-Point Extend
+    FPTrunc,  // Floating-Point Truncate
+    BitCast,  // Bit Cast
+    PtrToInt, // Pointer to Integer
+    IntToPtr, // Integer to Pointer
+    FPToUI,   // Floating-Point to Unsigned Integer
+    UIToFP,   // Unsigned Integer to Floating-Point
+
+    // Bitwise Operations
+    BitAnd, // Bitwise AND
+    BitOr,  // Bitwise OR
+    BitXor, // Bitwise XOR
 };
 
 class Instruction : public User
@@ -485,6 +750,8 @@ public:
 
     Instruction *first_instruction() const { return head_; }
     Instruction *last_instruction() const { return tail_; }
+    Instruction *first_non_phi() const;
+    Instruction *last_non_phi() const;
     Instruction *get_terminator() const;
     void insert_before(Instruction *pos, std::unique_ptr<Instruction> inst);
     void insert_after(Instruction *pos, std::unique_ptr<Instruction> inst);
@@ -605,6 +872,7 @@ public:
     }
     auto begin() { return basic_blocks_.begin(); }
     auto end() { return basic_blocks_.end(); }
+    auto entry_block() const { return basic_blocks_.front().get(); }
 
     const std::vector<BasicBlock *> &basic_blocks() const { return basic_block_ptrs_; }
 
@@ -699,7 +967,7 @@ public:
     GlobalVariable *create_global_variable(Type *type, bool is_constant, Constant *initializer, const std::string &name = "");
 
     Type *get_void_type();
-    IntegerType *get_integer_type(unsigned bits);
+    IntegerType *get_integer_type(unsigned bits, bool unsigned_ = false);
     FloatType *get_float_type(FloatType::Precision precision);
 
     PointerType *get_pointer_type(Type *element_type);
@@ -726,7 +994,8 @@ public:
         return result;
     }
 
-    Function* get_function(const std::string &name) const {
+    Function *get_function(const std::string &name) const
+    {
         for (auto &f : functions_)
         {
             if (f->name() == name)
@@ -742,7 +1011,7 @@ public:
         std::vector<GlobalVariable *> result;
         result.reserve(global_variables_.size());
         for (auto &gv : global_variables_)
-            result.push_back(gv.second.get());
+            result.push_back(gv.get());
         return result;
     }
 
@@ -772,7 +1041,7 @@ private:
         constant_fps_;
 
     std::vector<std::unique_ptr<Function>> functions_;
-    std::unordered_map<std::string, std::unique_ptr<GlobalVariable>> global_variables_;
+    std::vector<std::unique_ptr<GlobalVariable>> global_variables_;
     std::vector<std::unique_ptr<ConstantStruct>> constant_structs_;
     std::vector<std::unique_ptr<ConstantArray>> constant_arrays_;
     std::vector<std::unique_ptr<ConstantString>> constant_strings_;
@@ -945,6 +1214,21 @@ private:
     friend class Module;
 };
 
+class ConstantAggregate : public Constant
+{
+public:
+    const std::vector<Constant *> &elements() const { return elements_; }
+
+    std::string as_string() const override;
+
+private:
+    ConstantAggregate(Type *type, const std::vector<Constant *> &elements)
+        : Constant(type), elements_(elements) {}
+
+    std::vector<Constant *> elements_;
+    friend class Module;
+};
+
 //===----------------------------------------------------------------------===//
 //                           Instruction Subclasses
 //===----------------------------------------------------------------------===//
@@ -1029,6 +1313,12 @@ public:
     {
         EQ,
         NE,
+        LT,
+        LE,
+        GT,
+        GE,
+        ONE,
+        OEQ,
         OLT,
         OLE,
         OGT,
@@ -1153,6 +1443,18 @@ private:
     BitCastInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
 };
 
+class PtrToIntInst : public CastInst
+{
+public:
+    static PtrToIntInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    PtrToIntInst(BasicBlock *parent, Value *ptr, Type *target_type, const std::string &name) : CastInst(Opcode::PtrToInt, target_type, parent, {ptr}, name) {}
+};
+
 class CallInst : public Instruction
 {
 public:
@@ -1192,6 +1494,19 @@ public:
 private:
     SExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
 };
+
+class ZExtInst : public CastInst
+{
+public:
+    static ZExtInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    ZExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
 
 class TruncInst : public CastInst
 {
@@ -1252,6 +1567,44 @@ public:
 private:
     FPTruncInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
 };
+
+class IntToPtrInst : public CastInst
+{
+public:
+    static IntToPtrInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    IntToPtrInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
+class FPToUIInst : public CastInst
+{
+public:
+    static FPToUIInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    FPToUIInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
+class UIToFPInst : public CastInst
+{
+public:
+    static UIToFPInst *create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name);
+
+    Value *source_value() const { return operand(0); }
+    Type *target_type() const { return type(); }
+
+private:
+    UIToFPInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
+};
+
+
 
 //===----------------------------------------------------------------------===//
 //      Structure Layout

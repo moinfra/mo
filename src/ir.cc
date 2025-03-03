@@ -22,15 +22,19 @@ Type *Type::element_type() const
     {
         return dynamic_cast<const VectorType *>(this)->element_type();
     }
+    else if (is_pointer())
+    {
+        return dynamic_cast<const PointerType *>(this)->element_type();
+    }
     else
     {
-        std::cerr << "Type::element_type() called on non-aggregate type" << std::endl;
+        std::cerr << "Type::element_type() called on non-aggregate type: " << Type::id_to_str(tid_) << std::endl;
         return nullptr;
     }
 }
 
-IntegerType::IntegerType(Module *m, unsigned bits)
-    : Type(IntTy, m), bits_(bits) {}
+IntegerType::IntegerType(Module *m, unsigned bits, bool unsigned_)
+    : Type(IntTy, m), bits_(bits), unsigned_(unsigned_) {}
 
 FloatType::FloatType(Module *m, FloatType::Precision precision)
     : Type(FpTy, m), precision_(precision)
@@ -66,6 +70,7 @@ ArrayType::ArrayType(Module *m, Type *element_type, uint64_t num_elements)
 
 size_t ArrayType::size() const
 {
+    assert(element_type_ && "Invalid element type");
     return element_type_->size() * num_elements_;
 }
 
@@ -354,6 +359,26 @@ void BasicBlock::insert_after(Instruction *pos, std::unique_ptr<Instruction> ins
     }
 }
 
+Instruction *BasicBlock::first_non_phi() const
+{
+    Instruction *inst = head_;
+    while (inst && inst->opcode() == Opcode::Phi)
+    {
+        inst = inst->next();
+    }
+    return inst;
+}
+
+Instruction *BasicBlock::last_non_phi() const
+{
+    Instruction *inst = tail_;
+    while (inst && inst->opcode() == Opcode::Phi)
+    {
+        inst = inst->prev();
+    }
+    return inst;
+}
+
 void BasicBlock::add_successor(BasicBlock *bb)
 {
     if (std::find(successors_.begin(), successors_.end(), bb) == successors_.end())
@@ -462,15 +487,16 @@ GlobalVariable *Module::create_global_variable(Type *type, bool is_constant, Con
 {
     auto *gv_ptr = new GlobalVariable(type, is_constant, initializer, name);
     auto gv = std::unique_ptr<GlobalVariable>(gv_ptr);
+    global_variables_.push_back(std::move(gv));
     return gv_ptr;
 }
 
-IntegerType *Module::get_integer_type(unsigned bits)
+IntegerType *Module::get_integer_type(unsigned bits, bool unsigned_)
 {
     auto &type = integer_types_[bits];
     if (!type)
     {
-        type = std::unique_ptr<IntegerType>(new IntegerType(this, bits));
+        type = std::unique_ptr<IntegerType>(new IntegerType(this, bits, unsigned_));
     }
     return type.get();
 }
@@ -713,7 +739,6 @@ ConstantArray *Module::get_constant_array(ArrayType *type, const std::vector<Con
     return constant.get();
 }
 
-
 //===----------------------------------------------------------------------===//
 //                            ConstantInt Implementation
 //===----------------------------------------------------------------------===//
@@ -743,7 +768,9 @@ std::string ConstantInt::as_string() const
     return std::to_string(value_);
 }
 
-// ---------- ConstantFP ----------
+//===----------------------------------------------------------------------===//
+//                            ConstantFP Implementation
+//===----------------------------------------------------------------------===//
 std::string ConstantFP::as_string() const
 {
     std::stringstream ss;
@@ -754,8 +781,9 @@ std::string ConstantFP::as_string() const
 ConstantFP::ConstantFP(FloatType *type, double value)
     : Constant(type, ""), value_(value) {}
 
-// ---------- ConstantArray ----------
-
+//===----------------------------------------------------------------------===//
+//                            ConstantArray Implementation
+//===----------------------------------------------------------------------===//
 std::string ConstantArray::as_string() const
 {
     std::stringstream ss;
@@ -770,7 +798,9 @@ std::string ConstantArray::as_string() const
     return ss.str();
 }
 
-// ---------- ConstantString ----------
+//===----------------------------------------------------------------------===//
+//                            ConstantString Implementation
+//===----------------------------------------------------------------------===//
 ConstantString::ConstantString(ArrayType *type, const std::string &value)
     : Constant(type), value_(value) {}
 
@@ -781,7 +811,7 @@ const std::string &ConstantString::value() const
 
 std::string ConstantString::as_string() const
 {
-    return "c\"" + escape_string(value_) + "\"";
+    return "c\"" + escape_string(value_) + "\\00\"";
 }
 
 std::string ConstantString::escape_string(const std::string &input)
@@ -812,7 +842,9 @@ std::string ConstantString::escape_string(const std::string &input)
     return ss.str();
 }
 
-// ---------- ConstantStruct ----------
+//===----------------------------------------------------------------------===//
+//                            ConstantStruct Implementation
+//===----------------------------------------------------------------------===//
 std::string ConstantStruct::as_string() const
 {
     std::stringstream ss;
@@ -827,29 +859,55 @@ std::string ConstantStruct::as_string() const
     return ss.str();
 }
 
-// ---------- GlobalVariable ----------
+//===----------------------------------------------------------------------===//
+//                            GlobalVariable Implementation
+//===----------------------------------------------------------------------===//
 std::string GlobalVariable::as_string() const
 {
-    return "@" + name() + " = " +
-           (is_constant_ ? "constant " : "global ") +
-           initializer_->as_string();
+    return "@" + name();
+    //  + " = " + (is_constant_ ? "constant " : "global ") + initializer_->as_string();
 }
 
-// ---------- ConstantPointerNull ----------
+//===----------------------------------------------------------------------===//
+//                            ConstantPointerNull Implementation
+//===----------------------------------------------------------------------===//
 std::string ConstantPointerNull::as_string() const
 {
     return type()->name() + " null";
 }
 
-// ---------- ConstantAggregateZero ----------
+//===----------------------------------------------------------------------===//
+//                            ConstantAggregateZero Implementation
+//===----------------------------------------------------------------------===//
 std::string ConstantAggregateZero::as_string() const
 {
     return type()->name() + " zeroinitializer";
 }
 
 //===----------------------------------------------------------------------===//
+//                            ConstantAggregate Implementation
+//===----------------------------------------------------------------------===//
+std::string ConstantAggregate::as_string() const
+{
+    std::stringstream ss;
+    ss << type()->name() << " {";
+    for (size_t i = 0; i < elements_.size(); ++i)
+    {
+        if (i > 0)
+            ss << ", ";
+        ss << elements_[i]->as_string();
+    }
+    ss << "}";
+    return ss.str();
+}
+
+//===----------------------------------------------------------------------===//
 //                           Instruction Subclass Implementations
 //===----------------------------------------------------------------------===//
+
+//____________________________________________________________________________
+//                           BranchInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 BranchInst::BranchInst(BasicBlock *target, BasicBlock *parent,
                        std::vector<Value *> ops)
     : Instruction(Opcode::Br, Type::get_void_type(parent->parent_function()->parent_module()),
@@ -886,6 +944,9 @@ BasicBlock *BranchInst::get_false_successor() const
     return false_bb_;
 }
 
+//____________________________________________________________________________
+//                           ReturnInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 ReturnInst::ReturnInst(Value *value, BasicBlock *parent)
     : Instruction(Opcode::Ret, Type::get_void_type(parent->parent_function()->parent_module()),
                   parent, {value}) {}
@@ -895,6 +956,9 @@ ReturnInst *ReturnInst::create(Value *value, BasicBlock *parent)
     return new ReturnInst(value, parent);
 }
 
+//____________________________________________________________________________
+//                           PhiInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 PhiInst::PhiInst(Type *type, BasicBlock *parent)
     : Instruction(Opcode::Phi, type, parent, {}) {}
 
@@ -915,6 +979,9 @@ BasicBlock *PhiInst::get_incoming_block(unsigned i) const
     return static_cast<BasicBlock *>(operands_[2 * i + 1]);
 }
 
+//____________________________________________________________________________
+//                           ICmpInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 ICmpInst::ICmpInst(BasicBlock *parent, std::vector<Value *> ops)
     : Instruction(Opcode::ICmp, parent->parent_function()->parent_module()->get_integer_type(1),
                   parent, ops),
@@ -929,6 +996,9 @@ ICmpInst *ICmpInst::create(Predicate pred, Value *lhs, Value *rhs,
     return inst;
 }
 
+//____________________________________________________________________________
+//                           FCmpInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 FCmpInst::FCmpInst(Predicate pred, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
     : Instruction(Opcode::FCmp, type, parent, operands, name), pred_(pred) {}
 
@@ -937,6 +1007,9 @@ FCmpInst *FCmpInst::create(Predicate pred, Value *lhs, Value *rhs, BasicBlock *p
     return new FCmpInst(pred, lhs->type(), parent, {lhs, rhs}, name);
 }
 
+//____________________________________________________________________________
+//                           AllocaInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 AllocaInst::AllocaInst(Type *allocated_type, Type *ptr_type, BasicBlock *parent)
     : Instruction(Opcode::Alloca, ptr_type, parent, {}),
       allocated_type_(allocated_type) {}
@@ -950,6 +1023,9 @@ AllocaInst *AllocaInst::create(Type *allocated_type, BasicBlock *parent,
     return inst;
 }
 
+//____________________________________________________________________________
+//                           LoadInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 LoadInst::LoadInst(Type *loaded_type, BasicBlock *parent, Value *ptr)
     : Instruction(Opcode::Load, loaded_type, parent, {ptr}) {}
 
@@ -962,6 +1038,9 @@ LoadInst *LoadInst::create(Value *ptr, BasicBlock *parent,
     return inst;
 }
 
+//____________________________________________________________________________
+//                           StoreInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 StoreInst::StoreInst(BasicBlock *parent, Value *value, Value *ptr)
     : Instruction(Opcode::Store, Type::get_void_type(parent->parent_function()->parent_module()),
                   parent, {value, ptr}) {}
@@ -972,6 +1051,9 @@ StoreInst *StoreInst::create(Value *value, Value *ptr, BasicBlock *parent)
     return inst;
 }
 
+//____________________________________________________________________________
+//                           GetElementPtrInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 GetElementPtrInst::GetElementPtrInst(Type *result_type, BasicBlock *parent,
                                      Value *ptr, std::vector<Value *> indices)
     : Instruction(Opcode::GetElementPtr, result_type, parent, {ptr})
@@ -1047,6 +1129,9 @@ GetElementPtrInst *GetElementPtrInst::create(Value *ptr, std::vector<Value *> in
     return inst;
 }
 
+//____________________________________________________________________________
+//                           BinaryInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 BinaryInst::BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
     : Instruction(op, type, parent, operands, name) {}
 
@@ -1062,6 +1147,9 @@ BinaryInst *BinaryInst::create(Opcode op, Value *lhs, Value *rhs, BasicBlock *pa
     return new BinaryInst(op, lhs->type(), parent, {lhs, rhs}, name);
 }
 
+//____________________________________________________________________________
+//                           ConversionInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 ConversionInst::ConversionInst(Opcode op, Type *dest_type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
     : Instruction(op, dest_type, parent, operands, name) {}
 
@@ -1076,11 +1164,17 @@ ConversionInst *ConversionInst::create(Opcode op, Value *val, Type *dest_type, B
     return new ConversionInst(op, dest_type, parent, {val}, name);
 }
 
+//____________________________________________________________________________
+//                           CastInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 CastInst::CastInst(Opcode op, Type *target_type, BasicBlock *parent,
                    std::initializer_list<Value *> operands,
                    const std::string &name)
     : Instruction(op, target_type, parent, operands, name) {}
 
+//____________________________________________________________________________
+//                           BitCastInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 BitCastInst::BitCastInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
     // : Instruction(Opcode::BitCast, target_type, parent, {val}, name) {}
     : CastInst(Opcode::BitCast, target_type, parent, {val}, name)
@@ -1092,6 +1186,19 @@ BitCastInst *BitCastInst::create(Value *val, Type *target_type, BasicBlock *pare
     return new BitCastInst(parent, val, target_type, name);
 }
 
+//____________________________________________________________________________
+//                           PtrToIntInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+PtrToIntInst *PtrToIntInst::create(Value *ptr, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    assert(ptr->type()->is_pointer() && "Source value must be a pointer type");
+    assert(target_type->is_integer() && "Target type must be an integer type");
+    return new PtrToIntInst(parent, ptr, target_type, name);
+}
+
+//____________________________________________________________________________
+//                           CallInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 CallInst::CallInst(BasicBlock *parent, Value *callee, Type *return_type, const std::vector<Value *> &args, const std::string &name)
     : Instruction(Opcode::Call, return_type, parent, create_operand_list(callee, args), name) {}
 
@@ -1124,8 +1231,10 @@ std::vector<Value *> CallInst::arguments() const
     return args;
 }
 
+//____________________________________________________________________________
+//                           SExtInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 SExtInst::SExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
-    // : Instruction(Opcode::SExt, target_type, parent, {val}, name) {}
     : CastInst(Opcode::SExt, target_type, parent, {val}, name)
 {
 }
@@ -1135,6 +1244,22 @@ SExtInst *SExtInst::create(Value *val, Type *target_type, BasicBlock *parent, co
     return new SExtInst(parent, val, target_type, name);
 }
 
+//____________________________________________________________________________
+//                           ZExtInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+ZExtInst::ZExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    : CastInst(Opcode::ZExt, target_type, parent, {val}, name)
+{
+}
+
+ZExtInst *ZExtInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new ZExtInst(parent, val, target_type, name);
+}
+
+//____________________________________________________________________________
+//                           TruncInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 TruncInst::TruncInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
     // : Instruction(Opcode::Trunc, target_type, parent, {val}, name) {}
     : CastInst(Opcode::Trunc, target_type, parent, {val}, name)
@@ -1146,6 +1271,9 @@ TruncInst *TruncInst::create(Value *val, Type *target_type, BasicBlock *parent, 
     return new TruncInst(parent, val, target_type, name);
 }
 
+//____________________________________________________________________________
+//                           SIToFPInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 SIToFPInst::SIToFPInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
     : CastInst(Opcode::SIToFP, target_type, parent, {val}, name) {}
 
@@ -1154,6 +1282,9 @@ SIToFPInst *SIToFPInst::create(Value *val, Type *target_type, BasicBlock *parent
     return new SIToFPInst(parent, val, target_type, name);
 }
 
+//____________________________________________________________________________
+//                           FPToSIInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 FPToSIInst::FPToSIInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
     : CastInst(Opcode::FPToSI, target_type, parent, {val}, name) {}
 
@@ -1162,6 +1293,9 @@ FPToSIInst *FPToSIInst::create(Value *val, Type *target_type, BasicBlock *parent
     return new FPToSIInst(parent, val, target_type, name);
 }
 
+//____________________________________________________________________________
+//                           FPExtInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 FPExtInst::FPExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
     : CastInst(Opcode::FPExt, target_type, parent, {val}, name) {}
 
@@ -1170,10 +1304,58 @@ FPExtInst *FPExtInst::create(Value *val, Type *target_type, BasicBlock *parent, 
     return new FPExtInst(parent, val, target_type, name);
 }
 
+//____________________________________________________________________________
+//                           FPTruncInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 FPTruncInst::FPTruncInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
     : CastInst(Opcode::FPTrunc, target_type, parent, {val}, name) {}
 
 FPTruncInst *FPTruncInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
 {
     return new FPTruncInst(parent, val, target_type, name);
+}
+
+//____________________________________________________________________________
+//                           IntToPtrInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+IntToPtrInst::IntToPtrInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    : CastInst(Opcode::IntToPtr, target_type, parent, {val}, name)
+{
+    assert(val->type()->is_integer() && "Source value must be an integer type");
+    assert(target_type->is_pointer() && "Target type must be a pointer type");
+}
+
+IntToPtrInst *IntToPtrInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new IntToPtrInst(parent, val, target_type, name);
+}
+
+//____________________________________________________________________________
+//                           FPToUIInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+FPToUIInst::FPToUIInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    : CastInst(Opcode::FPToUI, target_type, parent, {val}, name)
+{
+    assert(val->type()->is_float() && "Source value must be a floating point type");
+    assert(target_type->is_integer() && "Target type must be an integer type");
+}
+
+FPToUIInst *FPToUIInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new FPToUIInst(parent, val, target_type, name);
+}
+
+//____________________________________________________________________________
+//                           UIToFPInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+UIToFPInst::UIToFPInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name)
+    : CastInst(Opcode::UIToFP, target_type, parent, {val}, name)
+{
+    assert(val->type()->is_integer() && "Source value must be an integer type");
+    assert(target_type->is_float() && "Target type must be a floating point type");
+}
+
+UIToFPInst *UIToFPInst::create(Value *val, Type *target_type, BasicBlock *parent, const std::string &name)
+{
+    return new UIToFPInst(parent, val, target_type, name);
 }
