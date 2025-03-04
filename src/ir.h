@@ -12,6 +12,8 @@
 #include <unordered_map>
 #include <algorithm>
 
+#include "utils.h"
+
 //===----------------------------------------------------------------------===//
 //                             Forward Declarations
 //===----------------------------------------------------------------------===//
@@ -87,6 +89,7 @@ namespace std
 
 enum class Qualifier : uint8_t
 {
+    None = 0,
     Const = 1,
     Volatile = 1 << 1,
     Restrict = 1 << 2
@@ -101,6 +104,7 @@ constexpr Qualifier operator&(Qualifier a, Qualifier b) noexcept
 {
     return static_cast<Qualifier>(static_cast<uint8_t>(a) & static_cast<uint8_t>(b));
 }
+
 //===----------------------------------------------------------------------===//
 //                               Type System
 //===----------------------------------------------------------------------===//
@@ -149,13 +153,17 @@ public:
     }
 
     Type(TypeID tid, Module *m) : tid_(tid), module_(m) {}
-    virtual ~Type() = default;
+    virtual ~Type() {};
 
     TypeID type_id() const { return tid_; }
     virtual size_t size() const = 0;
     virtual std::string name() const = 0;
     virtual unsigned bits() const = 0;
-    virtual size_t alignment() const { return size(); } // TODO: for different architectures
+    // TODO: for different architectures
+    virtual size_t alignment() const
+    {
+        return (bits() + 7) / 8;
+    }
 
     Module *module() const { return module_; }
 
@@ -168,12 +176,17 @@ public:
     bool is_function() const { return tid_ == FuncTy; }
     bool is_array() const { return tid_ == ArrayTy; }
     bool is_struct() const { return tid_ == StructTy; }
+    bool is_tuple() const;
     bool is_vector() const { return tid_ == VecTy; }
     bool is_qualified() const { return tid_ == QualifierTy; }
 
+    bool is_aggregate() const noexcept
+    {
+        return is_struct() || is_array() || is_tuple();
+    }
     // Type conversion methods
-    virtual IntegerType *as_int() noexcept { return nullptr; }
-    virtual const IntegerType *as_int() const noexcept { return nullptr; }
+    virtual IntegerType *as_integer() noexcept { return nullptr; }
+    virtual const IntegerType *as_integer() const noexcept { return nullptr; }
     virtual FloatType *as_float() noexcept { return nullptr; }
     virtual const FloatType *as_float() const noexcept { return nullptr; }
     virtual PointerType *as_pointer() noexcept { return nullptr; }
@@ -204,10 +217,14 @@ public:
 
     bool operator!=(const Type &other) const { return !(*this == other); }
 
+    virtual std::string to_string() const
+    {
+        return name();
+    }
+
 protected:
     virtual bool is_equal(const Type &other) const
     {
-        // Base class comparison only compares TypeID, subclasses should override
         assert(false && "is_equal not implemented for this type");
         return false;
     }
@@ -225,8 +242,13 @@ public:
     unsigned bits() const override { return bits_; }
     bool is_signed() const { return !unsigned_; }
 
-    IntegerType *as_int() noexcept override { return this; }
-    const IntegerType *as_int() const noexcept override { return this; }
+    IntegerType *as_integer() noexcept override { return this; }
+    const IntegerType *as_integer() const noexcept override { return this; }
+
+    std::string to_string() const override
+    {
+        return name();
+    }
 
 private:
     explicit IntegerType(Module *m, unsigned bits, bool unsigned_ = false);
@@ -265,6 +287,11 @@ public:
     FloatType *as_float() noexcept override { return this; }
     const FloatType *as_float() const noexcept override { return this; }
 
+    std::string to_string() const override
+    {
+        return name();
+    }
+
 private:
     explicit FloatType(Module *m, Precision precision);
     unsigned bits_;
@@ -289,6 +316,11 @@ public:
     size_t size() const override { return 0; }
     std::string name() const override { return "void"; }
     unsigned bits() const override { return 0; }
+
+    std::string to_string() const override
+    {
+        return name();
+    }
 
 private:
     explicit VoidType(Module *m) : Type(VoidTy, m) {}
@@ -316,6 +348,11 @@ public:
 
     PointerType *as_pointer() noexcept override { return this; }
     const PointerType *as_pointer() const noexcept override { return this; }
+
+    std::string to_string() const override
+    {
+        return element_type_->to_string() + "*";
+    }
 
 private:
     PointerType(Module *m, Type *element_type);
@@ -374,6 +411,20 @@ public:
 
     FunctionType *as_function() noexcept override { return this; }
     const FunctionType *as_function() const noexcept override { return this; }
+
+    std::string to_string() const override
+    {
+        printf("return_type_ ptr addr: %p\n", return_type_);
+        std::string result = return_type_->to_string() + " (";
+        for (size_t i = 0; i < params_.size(); ++i)
+        {
+            if (i != 0)
+                result += ", ";
+            result += params_[i].second->to_string();
+        }
+        result += ")";
+        return result;
+    }
 
 private:
     FunctionType(Module *m, Type *return_type, const ParamList &params)
@@ -435,6 +486,11 @@ public:
     ArrayType *as_array() noexcept override { return this; }
     const ArrayType *as_array() const noexcept override { return this; }
 
+    std::string to_string() const override
+    {
+        return "[" + std::to_string(num_elements_) + " x " + element_type_->to_string() + "]";
+    }
+
 private:
     ArrayType(Module *m, Type *element_type, uint64_t num_elements);
 
@@ -455,12 +511,29 @@ protected:
     }
 };
 
+struct MemberInfo
+{
+    std::string name;
+    Type *type;
+    MemberInfo(const std::string &name, Type *type) : name(name), type(type) {}
+
+    bool operator==(const MemberInfo &other) const
+    {
+        return name == other.name && type == other.type;
+    }
+
+    bool operator!=(const MemberInfo &other) const
+    {
+        return !(*this == other);
+    }
+};
+
 class StructType : public Type
 {
 public:
     friend class Module;
     // For named structs, identifier is the name
-    // For anonymous structs, identifier is all members
+    // For anonymous structs, identifier is all members' types
 
     void set_name(const std::string &name) { name_ = name; }
     std::string name() const override
@@ -472,15 +545,15 @@ public:
         {
             if (i != 0)
                 result += ", ";
-            result += members_[i]->name();
+            result += members_[i].type->name(); // 使用成员类型的名称
         }
         result += " }";
         return result;
     }
     unsigned bits() const override { return size() * 8; }
 
-    // Completes the struct definition
-    void set_body(std::vector<Type *> members);
+    // Completes the struct definition with member names and types
+    void set_body(const std::vector<MemberInfo> &members);
 
     // Gets a member by index
     Type *get_member_type(unsigned index) const;
@@ -494,19 +567,36 @@ public:
     size_t size() const override;
 
     bool is_opaque() const { return is_opaque_; }
-    const std::vector<Type *> &members() const { return members_; }
+    bool is_tuple() const { return is_tuple_; }
+    const std::vector<MemberInfo> &members() const { return members_; }
 
     StructType *as_struct() noexcept override { return this; }
     const StructType *as_struct() const noexcept override { return this; }
 
+    std::string to_string() const override
+    {
+        if (is_opaque_)
+            return "opaque";
+        std::string result = "{ ";
+        for (size_t i = 0; i < members_.size(); ++i)
+        {
+            if (i != 0)
+                result += ", ";
+            result += members_[i].type->to_string();
+        }
+        result += " }";
+        return result;
+    }
+
 private:
-    StructType(Module *m, const std::string &name, std::vector<Type *> members);
-    StructType(Module *m, std::vector<Type *> members);
+    StructType(Module *m, const std::string &name, const std::vector<MemberInfo> &members);
+    StructType(Module *m, const std::vector<MemberInfo> &members);
 
     std::string name_;
     Module *module_;
     bool is_opaque_; // true if forward declaration
-    std::vector<Type *> members_;
+    bool is_tuple_ = false;
+    std::vector<MemberInfo> members_;
     std::vector<size_t> offsets_;
     size_t size_;
 
@@ -521,13 +611,16 @@ protected:
             {
                 return false;
             }
+
             if (members_.size() != other_struct->members_.size())
             {
                 return false;
             }
+
             for (size_t i = 0; i < members_.size(); ++i)
             {
-                if (*members_[i] != *other_struct->members_[i])
+                // NOTE: name is not checked here
+                if (*members_[i].type != *other_struct->members_[i].type)
                 {
                     return false;
                 }
@@ -562,6 +655,11 @@ public:
 
     VectorType *as_vector() noexcept override { return this; }
     const VectorType *as_vector() const noexcept override { return this; }
+
+    std::string to_string() const override
+    {
+        return "<" + std::to_string(num_elements_) + " x " + element_type_->to_string() + ">";
+    }
 
 private:
     VectorType(Module *m, Type *element_type, uint64_t num_elements)
@@ -602,6 +700,21 @@ public:
     QualifiedType *as_qualified() noexcept override { return this; }
     const QualifiedType *as_qualified() const noexcept override { return this; }
 
+    std::string to_string() const override
+    {
+        //  这里需要根据 Qualifier 的值来决定如何输出，例如：
+        std::string qual_str;
+        if ((qualifiers_ & Qualifier::Const) != Qualifier::None)
+        {
+            qual_str += "const ";
+        }
+        if ((qualifiers_ & Qualifier::Volatile) != Qualifier::None)
+        {
+            qual_str += "volatile ";
+        }
+        return qual_str + base_->to_string();
+    }
+
 private:
     Qualifier qualifiers_;
     Type *base_;
@@ -616,7 +729,6 @@ protected:
         return false;
     }
 };
-
 //===----------------------------------------------------------------------===//
 //                              Value Base Class
 //===----------------------------------------------------------------------===//
@@ -710,6 +822,11 @@ enum class Opcode
     BitAnd, // Bitwise AND
     BitOr,  // Bitwise OR
     BitXor, // Bitwise XOR
+
+    Shl,
+    LShr,
+    AShr,
+
 };
 
 class Instruction : public User
@@ -873,6 +990,15 @@ public:
     auto begin() { return basic_blocks_.begin(); }
     auto end() { return basic_blocks_.end(); }
     auto entry_block() const { return basic_blocks_.front().get(); }
+    bool remove_basic_block(BasicBlock *bb);
+
+    bool has_hidden_retval() const { return has_hidden_retval_; }
+    Type *hidden_retval_type() const { return hidden_retval_type_; }
+    void set_hidden_retval(Type *retval_type)
+    {
+        has_hidden_retval_ = retval_type != nullptr;
+        hidden_retval_type_ = retval_type;
+    }
 
     const std::vector<BasicBlock *> &basic_blocks() const { return basic_block_ptrs_; }
 
@@ -884,6 +1010,9 @@ private:
     std::vector<std::unique_ptr<BasicBlock>> basic_blocks_;
     std::vector<BasicBlock *> basic_block_ptrs_;
     bool is_instance_method_ = false;
+
+    bool has_hidden_retval_ = false;
+    Type *hidden_retval_type_ = nullptr;
 };
 
 //===----------------------------------------------------------------------===//
@@ -974,13 +1103,14 @@ public:
     FunctionType *get_function_type(Type *return_type, const std::vector<Type *> &param_types);
 
     ConstantInt *get_constant_int(IntegerType *type, uint64_t value);
-    ConstantInt *get_constant_int(unsigned bits, uint64_t value);
+    ConstantInt *get_constant_int(unsigned bits, uint64_t value, bool unsigned_ = false);
 
     ConstantFP *get_constant_fp(FloatType *type, double value);
     ConstantFP *get_constant_fp(FloatType::Precision precision, double value);
 
     ConstantString *get_constant_string(std::string value);
     ConstantPointerNull *get_constant_pointer_null(PointerType *type);
+    Constant *get_constant_zero(Type *type);
     ConstantAggregateZero *get_constant_aggregate_zero(Type *type);
     ConstantStruct *get_constant_struct(StructType *type, const std::vector<Constant *> &members);
     ConstantArray *get_constant_array(ArrayType *type, const std::vector<Constant *> &elements);
@@ -1015,10 +1145,10 @@ public:
         return result;
     }
 
-    StructType *get_struct_type_anonymous(const std::vector<Type *> &members);
+    StructType *get_struct_type_anonymous(const std::vector<MemberInfo> &members);
     StructType *try_get_struct_type(const std::string &name);
     ArrayType *get_array_type(Type *element_type, uint64_t num_elements);
-    StructType *get_struct_type(const std::string &name, const std::vector<Type *> &members);
+    StructType *get_struct_type(const std::string &name, const std::vector<MemberInfo> &members);
     VectorType *get_vector_type(Type *element_type, uint64_t num_elements);
 
 private:
@@ -1329,7 +1459,7 @@ public:
     Predicate predicate() const { return pred_; }
 
 private:
-    FCmpInst(Predicate pred, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
+    FCmpInst(Predicate pred, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
     Predicate pred_;
 };
 
@@ -1507,7 +1637,6 @@ private:
     ZExtInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
 };
 
-
 class TruncInst : public CastInst
 {
 public:
@@ -1603,8 +1732,6 @@ public:
 private:
     UIToFPInst(BasicBlock *parent, Value *val, Type *target_type, const std::string &name);
 };
-
-
 
 //===----------------------------------------------------------------------===//
 //      Structure Layout

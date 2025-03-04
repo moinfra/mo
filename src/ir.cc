@@ -4,6 +4,8 @@
 #include <iomanip>
 #include <limits>
 
+#include "utils.h"
+
 //===----------------------------------------------------------------------===//
 //                              Type Implementation
 //===----------------------------------------------------------------------===//
@@ -11,6 +13,8 @@ Type *Type::get_void_type(Module *m)
 {
     return m->get_void_type();
 }
+
+bool Type::is_tuple() const { return tid_ == StructTy && as_struct()->is_tuple(); }
 
 Type *Type::element_type() const
 {
@@ -111,9 +115,8 @@ StructLayout calculate_aligned_layout(const std::vector<Type *> &members)
 
     return layout;
 }
-
-StructType::StructType(Module *m, const std::string &name, std::vector<Type *> members)
-    : Type(StructTy, m), name_(name), is_opaque_(false), size_(0)
+StructType::StructType(Module *m, const std::string &name, const std::vector<MemberInfo> &members)
+    : Type(StructTy, m), name_(name), module_(m), is_opaque_(false), size_(0)
 {
     if (!members.empty())
     {
@@ -121,7 +124,8 @@ StructType::StructType(Module *m, const std::string &name, std::vector<Type *> m
     }
 }
 
-StructType::StructType(Module *m, std::vector<Type *> members) : Type(StructTy, m), name_(""), is_opaque_(members.empty()), size_(0)
+StructType::StructType(Module *m, const std::vector<MemberInfo> &members)
+    : Type(StructTy, m), name_(""), module_(m), is_opaque_(members.empty()), size_(0)
 {
     if (!members.empty())
     {
@@ -129,25 +133,33 @@ StructType::StructType(Module *m, std::vector<Type *> members) : Type(StructTy, 
     }
 }
 
-void StructType::set_body(std::vector<Type *> members)
+void StructType::set_body(const std::vector<MemberInfo> &members)
 {
     assert(members_.empty() && "Struct already has body");
-    members_ = std::move(members);
+    members_ = members;
     is_opaque_ = false;
 
-    // Calculate offsets (simple compact layout)
-    StructLayout layout = calculate_aligned_layout(members_);
-    size_ = layout.size;
-    for (auto &member : layout.members)
+    // 提取成员类型以计算布局
+    std::vector<Type *> member_types;
+    for (const auto &member : members)
     {
-        offsets_.push_back(member.offset);
+        member_types.push_back(member.type);
+    }
+
+    // 计算对齐布局
+    StructLayout layout = calculate_aligned_layout(member_types);
+    size_ = layout.size;
+    offsets_.clear();
+    for (const auto &offset_entry : layout.members)
+    { // 假设 layout.members 包含偏移信息
+        offsets_.push_back(offset_entry.offset);
     }
 }
 
-Type *StructType::get_member_type(unsigned i) const
+Type *StructType::get_member_type(unsigned index) const
 {
-    assert(i < members_.size() && "Invalid member index");
-    return members_[i];
+    assert(index < members_.size() && "Invalid member index");
+    return members_[index].type;
 }
 
 size_t StructType::get_member_offset(unsigned index) const
@@ -158,24 +170,24 @@ size_t StructType::get_member_offset(unsigned index) const
 
 size_t StructType::get_member_index(const std::string &name) const
 {
-    for (size_t i = 0, e = members_.size(); i != e; ++i)
+    for (size_t i = 0; i < members_.size(); ++i)
     {
-        if (members_[i]->name() == name)
+        MO_DEBUG("StructType::get_member_index: %s, %s", members_[i].name.c_str(), name.c_str());
+        if (members_[i].name == name)
         {
             return i;
         }
     }
 
-    // TODO: better error handling
-    // assert(0 && "Invalid member name");
+    MO_ASSERT(false, "Invalid struct member name %s", name.c_str());
     return std::numeric_limits<size_t>::max();
 }
 
 bool StructType::has_member(const std::string &name) const
 {
-    for (auto *ty : members_)
+    for (const auto &member : members_)
     {
-        if (ty->name() == name)
+        if (member.name == name)
         {
             return true;
         }
@@ -443,6 +455,18 @@ Function::Function(const std::string &name, Module *parent, Type *return_type,
     }
 }
 
+bool Function::remove_basic_block(BasicBlock *bb)
+{
+    auto it = std::find(basic_block_ptrs_.begin(), basic_block_ptrs_.end(), bb);
+    if (it != basic_block_ptrs_.end())
+    {
+        basic_block_ptrs_.erase(it);
+        return true;
+    }
+
+    return false;
+}
+
 Function::~Function() = default;
 
 BasicBlock *Function::create_basic_block(const std::string &name)
@@ -553,13 +577,21 @@ Type *Module::get_void_type()
 
 ArrayType *Module::get_array_type(Type *element_type, uint64_t num_elements)
 {
+    const auto key = std::make_pair(element_type, num_elements);
+    auto it = array_types_.find(key);
+
+    if (it != array_types_.end())
+    {
+        return it->second.get();
+    }
+
     auto ty = new ArrayType(this, element_type, num_elements);
-    array_types_[{element_type, num_elements}] = std::unique_ptr<ArrayType>(ty);
+    array_types_.emplace(key, std::unique_ptr<ArrayType>(ty));
     return ty;
 }
 
 // FIXME: should not get by members
-StructType *Module::get_struct_type_anonymous(const std::vector<Type *> &members)
+StructType *Module::get_struct_type_anonymous(const std::vector<MemberInfo> &members)
 {
     // Find existing struct
     for (auto &st : struct_types_)
@@ -596,7 +628,7 @@ StructType *Module::try_get_struct_type(const std::string &name)
     return nullptr;
 }
 
-StructType *Module::get_struct_type(const std::string &name, const std::vector<Type *> &members)
+StructType *Module::get_struct_type(const std::string &name, const std::vector<MemberInfo> &members)
 {
     // Check existing struct types
     if (auto st = try_get_struct_type(name); st)
@@ -630,21 +662,52 @@ VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements)
     return result;
 }
 
+static bool is_supported_bits(unsigned bits)
+{
+    return bits == 1 || bits == 8 || bits == 16 || bits == 32 || bits == 64;
+}
+
+static uint64_t truncate_value(uint64_t value, unsigned bits, bool is_signed)
+{
+    const unsigned mask = (bits == 64) ? 0xFFFFFFFFFFFFFFFF : (1ULL << bits) - 1;
+    value &= mask; // truncate high bits
+
+    if (is_signed && bits > 1)
+    {
+        // sign ext: if the most significant bit is 1 and signed, convert it to supplement form
+        const uint64_t sign_bit = 1ULL << (bits - 1);
+        if (value & sign_bit)
+        {
+            value |= ~mask; // prevent shift overflow for 64-bit values
+        }
+    }
+    return value;
+}
+
 ConstantInt *Module::get_constant_int(IntegerType *type, uint64_t value)
 {
-    if (auto it = constant_ints_.find({type, value}); it != constant_ints_.end())
+    MO_ASSERT(type != nullptr, "Invalid integer type");
+
+    const bool is_signed = type->is_signed();
+    const uint64_t processed_value = truncate_value(value, type->bits(), is_signed);
+
+    const auto key = std::make_pair(type, processed_value);
+    if (auto it = constant_ints_.find(key); it != constant_ints_.end())
     {
         return it->second.get();
     }
 
-    auto &constant = constant_ints_[{type, value}];
-    constant = std::unique_ptr<ConstantInt>(new ConstantInt(type, value));
-    return constant.get();
+    auto result = constant_ints_.emplace(
+        key,
+        std::unique_ptr<ConstantInt>(new ConstantInt(type, processed_value)));
+
+    return result.first->second.get();
 }
 
-ConstantInt *Module::get_constant_int(unsigned bits, uint64_t value)
+ConstantInt *Module::get_constant_int(unsigned bits, uint64_t value, bool unsigned_)
 {
-    return get_constant_int(get_integer_type(bits), value);
+    MO_ASSERT(is_supported_bits(bits), "Bits must be 1/8/16/32/64");
+    return get_constant_int(get_integer_type(bits, unsigned_), value);
 }
 
 ConstantFP *Module::get_constant_fp(FloatType *type, double value)
@@ -679,11 +742,34 @@ ConstantString *Module::get_constant_string(std::string value)
     return constant.get();
 }
 
+Constant *Module::get_constant_zero(Type *type)
+{
+    if (type->is_pointer())
+    {
+        // return ConstantPointerNull::get(cast<PointerType>(type));
+        return get_constant_pointer_null(type->as_pointer());
+    }
+    else if (type->is_aggregate() || type->is_vector())
+    {
+        return get_constant_aggregate_zero(type);
+    }
+    else if (type->is_integer())
+    {
+        return get_constant_int(type->as_integer(), 0);
+    }
+    else if (type->is_float())
+    {
+        return get_constant_fp(type->as_float(), 0.0);
+    }
+
+    MO_UNREACHABLE();
+}
+
 ConstantAggregateZero *Module::get_constant_aggregate_zero(Type *type)
 {
     for (auto &constant : constant_aggregate_zeros_)
     {
-        if (constant->type() == type)
+        if (*constant->type() == *type)
         {
             return constant.get();
         }
@@ -698,7 +784,7 @@ ConstantPointerNull *Module::get_constant_pointer_null(PointerType *type)
 {
     for (auto &constant : constant_pointer_nulls_)
     {
-        if (constant->type() == type)
+        if (*constant->type() == *type)
         {
             return constant.get();
         }
@@ -713,7 +799,7 @@ ConstantStruct *Module::get_constant_struct(StructType *type, const std::vector<
 {
     for (auto &constant : constant_structs_)
     {
-        if (constant->type() == type && constant->members() == members)
+        if (*constant->type() == *type && constant->members() == members)
         {
             return constant.get();
         }
@@ -728,7 +814,7 @@ ConstantArray *Module::get_constant_array(ArrayType *type, const std::vector<Con
 {
     for (auto &constant : constant_arrays_)
     {
-        if (constant->type() == type && constant->elements() == elements)
+        if (*constant->type() == *type && constant->elements() == elements)
         {
             return constant.get();
         }
@@ -999,12 +1085,12 @@ ICmpInst *ICmpInst::create(Predicate pred, Value *lhs, Value *rhs,
 //____________________________________________________________________________
 //                           FCmpInst Implementations
 // ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
-FCmpInst::FCmpInst(Predicate pred, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
-    : Instruction(Opcode::FCmp, type, parent, operands, name), pred_(pred) {}
+FCmpInst::FCmpInst(Predicate pred, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
+    : Instruction(Opcode::FCmp, parent->parent_function()->parent_module()->get_integer_type(1), parent, operands, name), pred_(pred) {}
 
 FCmpInst *FCmpInst::create(Predicate pred, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
 {
-    return new FCmpInst(pred, lhs->type(), parent, {lhs, rhs}, name);
+    return new FCmpInst(pred, parent, {lhs, rhs}, name);
 }
 
 //____________________________________________________________________________
@@ -1100,7 +1186,7 @@ Type *GetElementPtrInst::get_result_type(Type *base_type,
             auto *index_val = dynamic_cast<ConstantInt *>(indices[i]);
             assert(index_val && "Struct indices must be constants");
             unsigned idx = index_val->value();
-            assert(idx < struct_ty->members().size() && "Struct index out of bounds");
+            MO_ASSERT(idx < struct_ty->members().size(), "Struct index %u out of bounds %zu", idx, struct_ty->members().size());
             current_type = struct_ty->get_member_type(idx);
             continue;
         }
@@ -1138,7 +1224,10 @@ BinaryInst::BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Va
 bool BinaryInst::isBinaryOp(Opcode op)
 {
     return op == Opcode::Add || op == Opcode::Sub || op == Opcode::Mul ||
-           op == Opcode::UDiv || op == Opcode::SDiv;
+           op == Opcode::UDiv || op == Opcode::SDiv ||
+           op == Opcode::BitAnd || op == Opcode::BitOr || op == Opcode::BitXor ||
+           op == Opcode::Shl || op == Opcode::LShr || op == Opcode::AShr;
+    op == Opcode::ICmp || op == Opcode::FCmp;
 }
 
 BinaryInst *BinaryInst::create(Opcode op, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
