@@ -530,6 +530,11 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
 
 Type *IRGenerator::dominant_type(Type *t1, Type *t2)
 {
+    if (t1->is_pointer())
+        return t1;
+    if (t2->is_pointer())
+        return t2;
+
     if (t1->is_integer() && t2->is_integer())
     {
         return t1->bits() > t2->bits() ? t1 : t2;
@@ -591,6 +596,18 @@ void IRGenerator::generate_stmt(const ast::Statement &stmt)
     else if (auto return_stmt = dynamic_cast<const ast::ReturnStmt *>(&stmt))
     {
         handle_return(*return_stmt);
+    }
+    else if (auto break_stmt = dynamic_cast<const ast::BreakStmt *>(&stmt))
+    {
+        handle_break(*break_stmt);
+    }
+    else if (auto continue_stmt = dynamic_cast<const ast::ContinueStmt *>(&stmt))
+    {
+        handle_continue(*continue_stmt);
+    }
+    else if (auto expr_stmt = dynamic_cast<const ast::ExprStmt *>(&stmt))
+    {
+        generate_expr(*expr_stmt->expr);
     }
     else
     {
@@ -995,8 +1012,17 @@ void IRGenerator::generate_array_init(AllocaInst *array_ptr, const ast::Expr &in
     }
 }
 
+bool is_assignment_op(TokenType op)
+{
+    return op >= TokenType::Assign && op <= TokenType::RSAssign;
+}
+
 Value *IRGenerator::handle_binary(const ast::BinaryExpr &bin)
 {
+    if (is_assignment_op(bin.op))
+    {
+        return handle_compound_assign(bin);
+    }
     // Short-cuit special cases
     if (bin.op == TokenType::And)
         return handle_logical_and(bin);
@@ -1054,11 +1080,81 @@ Value *IRGenerator::handle_binary(const ast::BinaryExpr &bin)
         return builder_.create_bitor(lhs, rhs, "or");
     case TokenType::Caret:
         return builder_.create_bitxor(lhs, rhs, "xor");
+    case TokenType::Modulo:
+        if (lhs_type->is_integer())
+        {
+            return lhs_type->is_signed() ? builder_.create_srem(lhs, rhs, "srem") : builder_.create_urem(lhs, rhs, "urem");
+        }
+        assert(false && "Modulo on non-integer type");
+        break;
+
+    case TokenType::LShift:
+        return builder_.create_shl(lhs, rhs, "shl");
+
+    case TokenType::RShift:
+        if (lhs_type->is_signed())
+        {
+            return builder_.create_ashr(lhs, rhs, "ashr");
+        }
+        else
+        {
+            return builder_.create_lshr(lhs, rhs, "lshr");
+        }
     default:
-        assert(false && "Unexpected binary operator");
+        MO_ASSERT(false, "Unexpected binary operator");
         return nullptr;
     }
     return nullptr;
+}
+
+Value *IRGenerator::handle_compound_assign(const ast::BinaryExpr &bin)
+{
+    Value *addr = generate_lvalue(*bin.left);
+    Value *loaded_val = builder_.create_load(addr, "load_val");
+
+    Value *rhs = generate_expr(*bin.right);
+    rhs = handle_conversion(rhs, loaded_val->type());
+
+    Value *result = nullptr;
+    switch (bin.op)
+    {
+    case TokenType::AddAssign:
+        result = builder_.create_add(loaded_val, rhs, "add_tmp");
+        break;
+    case TokenType::SubAssign:
+        result = builder_.create_sub(loaded_val, rhs, "sub_tmp");
+        break;
+    case TokenType::MulAssign:
+        result = builder_.create_mul(loaded_val, rhs, "mul_tmp");
+        break;
+    case TokenType::DivAssign:
+        result = loaded_val->type()->is_signed() ? builder_.create_sdiv(loaded_val, rhs, "sdiv_tmp") : builder_.create_udiv(loaded_val, rhs, "udiv_tmp");
+        break;
+    case TokenType::ModAssign:
+        result = loaded_val->type()->is_signed() ? builder_.create_srem(loaded_val, rhs, "srem_tmp") : builder_.create_urem(loaded_val, rhs, "urem_tmp");
+        break;
+    case TokenType::LSAssign:
+        result = builder_.create_shl(loaded_val, rhs, "shl_tmp");
+        break;
+    case TokenType::RSAssign:
+        result = loaded_val->type()->is_signed() ? builder_.create_ashr(loaded_val, rhs, "ashr_tmp") : builder_.create_lshr(loaded_val, rhs, "lshr_tmp");
+        break;
+    case TokenType::AndAssign:
+        result = builder_.create_bitand(loaded_val, rhs, "and_tmp");
+        break;
+    case TokenType::OrAssign:
+        result = builder_.create_bitor(loaded_val, rhs, "or_tmp");
+        break;
+    case TokenType::XorAssign:
+        result = builder_.create_bitxor(loaded_val, rhs, "xor_tmp");
+        break;
+    default:
+        MO_ASSERT(false, "Unsupported compound assignment %s", token_type_to_string(bin.op).c_str());
+        return nullptr;
+    }
+
+    builder_.create_store(result, addr);
+    return result;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1326,106 +1422,104 @@ Value *IRGenerator::handle_struct_literal(const ast::StructLiteralExpr &expr)
 }
 
 //===----------------------------------------------------------------------===//
-// Function Handling
+// Function Declaration (Forward Declaration)
 //===----------------------------------------------------------------------===//
-void IRGenerator::generate_function(const ast::FunctionDecl &func)
+void IRGenerator::declare_function(const ast::FunctionDecl &func)
 {
-    // 1. Convert the original return type
+    // 1. Convert return type and check struct return ABI requirements
     Type *orig_return_type = convert_type(*func.return_type);
-    bool is_struct_return = orig_return_type->is_struct();
-    bool need_hidden_ptr = false;
+    bool need_hidden_ptr = orig_return_type->is_struct() &&
+                           (orig_return_type->size() > 16); // x86-64 SysV ABI
 
-    // 2. Determine if a hidden pointer is needed based on the ABI
-    if (is_struct_return)
-    {
-        const size_t max_register_bytes = 16; // x86-64 SysV ABI threshold
-        need_hidden_ptr = (orig_return_type->size() > max_register_bytes);
-    }
-    MO_DEBUG("need_hidden_ptr: %d", need_hidden_ptr);
-
-    // 3. Adjust the actual return type
-    Type *actual_return_type = need_hidden_ptr ? module_->get_void_type() : orig_return_type;
-    MO_DEBUG("actual_return_type ptr addr %p", actual_return_type); // 0x55555563a4b0
-    actual_return_type->name();                                     // 没有报错
-    // 4. Build the parameter type list
+    // 2. Create parameter types list
     std::vector<Type *> param_types;
 
-    // 4.1 Add the hidden pointer parameter (if needed)
+    // 2a. Add hidden struct return pointer if needed
     if (need_hidden_ptr)
     {
         param_types.push_back(module_->get_pointer_type(orig_return_type));
     }
 
-    // 4.2 Convert regular parameter types
+    // 2b. Convert regular parameters
     for (const auto &param : func.params)
     {
         param_types.push_back(convert_type(*param.type));
     }
 
-    // 5. Create the function type
-    FunctionType *func_type = module_->get_function_type(
-        actual_return_type,
-        param_types);
+    // 3. Create function type
+    Type *actual_return_type = need_hidden_ptr ? module_->get_void_type()
+                                               : orig_return_type;
+    FunctionType *func_type = module_->get_function_type(actual_return_type, param_types);
 
-    // 6. Create the function and set ABI attributes
-    current_func_ = module_->create_function(func.name, func_type);
-    MO_DEBUG("Current function set to: %s", func_type->to_string().c_str());
+    // 4. Create function object with proper linkage
+    Function *func_ir = module_->create_function(func.name, func_type);
+
+    // 5. Set ABI attributes
     if (need_hidden_ptr)
     {
-        current_func_->set_hidden_retval(orig_return_type);
+        func_ir->set_hidden_retval(orig_return_type);
     }
 
-    // 7. Create the entry basic block
-    auto entry_bb = current_func_->create_basic_block("entry");
+    // 6. Register in current scope (supports nested functions)
+    declare_symbol(func.name, func_ir);
+}
+
+//===----------------------------------------------------------------------===//
+// Function Body Generation
+//===----------------------------------------------------------------------===//
+void IRGenerator::generate_function_body(const ast::FunctionDecl &func)
+{
+    // 1. Lookup the pre-declared function
+    Value *func_val = lookup_symbol(func.name);
+    assert(func_val && "Function not declared. Call declare_function first!");
+
+    current_func_ = dynamic_cast<Function *>(func_val);
+    assert(current_func_ && "Symbol is not a function");
+
+    // 2. Create entry basic block
+    BasicBlock *entry_bb = current_func_->create_basic_block("entry");
     builder_.set_insert_point(entry_bb);
 
-    // 8. Handle parameter allocation
+    // 3. Parameter handling
     size_t arg_idx = 0;
 
-    // 8.1 Handle the hidden pointer parameter (if it exists)
-    if (need_hidden_ptr)
+    // 3a. Handle hidden return pointer
+    if (current_func_->has_hidden_retval())
     {
         Value *hidden_arg = current_func_->arg(arg_idx++);
         hidden_arg->set_name(".sret");
-        // No need to store in the symbol table, handled internally by the compiler
+        // Not stored in symbol table (internal use only)
     }
 
-    // 8.2 Handle the 'this' parameter for instance methods
-    bool is_instance_method = false;
-    if (!func.params.empty() && (func.params[0].name == "this" || func.params[0].name == "self"))
+    // 3b. Handle 'this' parameter for methods
+    bool is_method = false;
+    if (!func.params.empty() &&
+        (func.params[0].name == "this" || func.params[0].name == "self"))
     {
-        is_instance_method = true;
-
-        // Get the actual position of the 'this' parameter (considering the hidden pointer offset)
+        is_method = true;
         Value *this_arg = current_func_->arg(arg_idx++);
         this_arg->set_name("this");
 
-        // Create alloca and store
         AllocaInst *this_alloca = builder_.create_alloca(
-            this_arg->type(),
-            "this.addr");
+            this_arg->type(), "this.addr");
         builder_.create_store(this_arg, this_alloca);
         declare_symbol(func.params[0].name, this_alloca);
     }
 
-    // 8.3 Handle regular parameters
-    for (size_t i = is_instance_method ? 1 : 0; i < func.params.size(); ++i)
+    // 3c. Handle regular parameters
+    for (size_t i = is_method ? 1 : 0; i < func.params.size(); ++i)
     {
         const auto &param = func.params[i];
-
-        // Calculate the parameter's position in the IR (considering hidden pointer and 'this' parameter offsets)
         Value *arg = current_func_->arg(arg_idx++);
         arg->set_name(param.name);
 
         AllocaInst *alloca = builder_.create_alloca(
-            param_types[arg_idx - 1], // Consider hidden pointer offset
-            param.name + ".addr");
-
+            arg->type(), param.name + ".addr");
         builder_.create_store(arg, alloca);
         declare_symbol(param.name, alloca);
     }
 
-    // 9. Generate the function body
+    // 4. Generate function body
     push_scope();
     for (const auto &stmt : func.body)
     {
@@ -1433,24 +1527,21 @@ void IRGenerator::generate_function(const ast::FunctionDecl &func)
     }
     pop_scope();
 
-    // 10. Handle implicit returns
+    // 5. Add implicit return if needed
     if (current_block() && !current_block()->get_terminator())
     {
-        if (actual_return_type->is_void())
+        if (current_func_->return_type()->is_void())
         {
             builder_.create_ret_void();
         }
         else
         {
-            std::cerr << "Error: Non-void function '" << func.name
-                      << "' missing return statement\n";
-            assert(false && "Missing return in non-void function");
+            MO_ASSERT(false, "Non-void function '{}' missing return statement %s", func.name.c_str());
         }
     }
 
-    // 11. Clean up the context
+    // 6. Cleanup
     current_func_ = nullptr;
-    MO_DEBUG("Current function cleared");
 }
 
 //===----------------------------------------------------------------------===//
@@ -1460,7 +1551,7 @@ void IRGenerator::generate_impl_block(const ast::ImplBlock &impl)
 {
     for (const auto &method : impl.methods)
     {
-        generate_function(*method);
+        generate_function_body(*method);
     }
 }
 
@@ -1510,7 +1601,7 @@ Value *IRGenerator::handle_call(const ast::CallExpr &call)
 Value *IRGenerator::handle_variable(const ast::VariableExpr &var)
 {
     Value *alloca = lookup_symbol(var.identifier);
-    assert(alloca && "Undefined symbol");
+    MO_ASSERT(alloca != nullptr, "Undefined variable: %s", var.identifier.c_str());
 
     return builder_.create_load(alloca, "load.global");
 }
@@ -1700,13 +1791,24 @@ void IRGenerator::generate(const ast::Program &program)
         convert_type(*struct_decl->type()); // Force struct type creation
     }
 
-    // Process functions
+    // Stage 1. Declare all functions
     for (const auto &func : program.functions)
     {
-        generate_function(*func);
+        declare_function(*func);
+    }
+    for (const auto &impl : program.impl_blocks)
+    {
+        for (const auto &method : impl->methods)
+        {
+            declare_function(*method);
+        }
     }
 
-    // Process implementation blocks
+    // Stage 2. Generate function bodies
+    for (const auto &func : program.functions)
+    {
+        generate_function_body(*func);
+    }
     for (const auto &impl : program.impl_blocks)
     {
         generate_impl_block(*impl);

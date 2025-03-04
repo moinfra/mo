@@ -57,12 +57,14 @@ protected:
     void pop_loop();
 
     // AST dispatch
-    void generate_function(const ast::FunctionDecl &func);
+    void declare_function(const ast::FunctionDecl &func);
+    void generate_function_body(const ast::FunctionDecl &func);
     void generate_impl_block(const ast::ImplBlock &impl);
     void generate_stmt(const ast::Statement &stmt);
+    void generate_array_init(AllocaInst *array_ptr, const ast::Expr &init_expr);
     Value *generate_expr(const ast::Expr &expr);
     Value *generate_lvalue(const ast::Expr &expr);
-    void generate_array_init(AllocaInst *array_ptr, const ast::Expr &init_expr);
+    Value *handle_compound_assign(const ast::BinaryExpr &bin);
 
     // Statement handlers
     void handle_block(const ast::BlockStmt &block);
