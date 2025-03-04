@@ -44,7 +44,8 @@ TEST(TypeSystem, StructType)
 {
     Module m;
     IntegerType *i32 = m.get_integer_type(32);
-    StructType *structType = m.get_struct_type("MyStruct", {i32, i32});
+    std::vector<MemberInfo> member_infos = {{"a", i32}, {"b", i32}};
+    StructType *structType = m.get_struct_type("MyStruct", member_infos);
     EXPECT_EQ(structType->get_member_type(0), i32);
     EXPECT_EQ(structType->get_member_offset(0), 0);
     EXPECT_EQ(structType->get_member_offset(1), 4);

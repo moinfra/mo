@@ -160,7 +160,11 @@ TEST(IRPrinterTest, GEPAndStruct)
   IRBuilder builder(&module);
 
   // Create a struct type
-  auto *struct_type = module.get_struct_type("MyStruct", {module.get_integer_type(32), module.get_float_type(FloatType::Single)});
+  std::vector<MemberInfo> member_infos = {
+      {"a", module.get_integer_type(32)},
+      {"b", module.get_float_type(FloatType::Single)},
+  };
+  auto *struct_type = module.get_struct_type("MyStruct", member_infos);
 
   // Create a function with a single basic block
   auto *func = module.create_function("struct_ops", module.get_void_type(), {});
