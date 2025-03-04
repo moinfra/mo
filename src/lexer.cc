@@ -6,6 +6,8 @@
 #include <string>
 #include <unordered_map>
 
+#include "utils.h"
+
 //===----------------------------------------------------------------------===//
 //                             Utility Functions
 //===----------------------------------------------------------------------===//
@@ -123,6 +125,7 @@ std::string token_type_to_string(TokenType type)
     case TokenType::Eof:
         return "<eof>";
     default:
+        MO_ASSERT(false, "Unknown token type %d", (int)type);
         return "<unknown>"; // 添加 default 情况
     }
 }

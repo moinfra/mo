@@ -134,6 +134,13 @@ BranchInst *IRBuilder::create_cond_br(Value *cond, BasicBlock *true_bb,
     return inst;
 }
 
+UnreachableInst *IRBuilder::create_unreachable()
+{
+    auto *inst = UnreachableInst::create(insert_block_);
+    insert(inst);
+    return inst;
+}
+
 ReturnInst *IRBuilder::create_ret(Value *value)
 {
     // Get the current function

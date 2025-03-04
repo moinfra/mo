@@ -651,7 +651,8 @@ namespace ast
         {
             for (const auto &p : params_)
             {
-                assert(p && "Function parameter type cannot be null");
+                MO_NOP(p);
+                MO_ASSERT(p, "Function parameter type cannot be null");
             }
         }
 

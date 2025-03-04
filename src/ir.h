@@ -796,10 +796,11 @@ enum class Opcode
     FCmp, // Floating-point comparison
 
     // Control Flow
-    Br,     // Unconditional Branch
-    CondBr, // Conditional Branch
-    Ret,    // Return
-    Phi,    // Phi node
+    Br,          // Unconditional Branch
+    CondBr,      // Conditional Branch
+    Ret,         // Return
+    Unreachable, // Placeholder for unreachable merge block
+    Phi,         // Phi node
 
     // Function Call
     Call, // Function Call
@@ -1391,6 +1392,15 @@ public:
 
 private:
     ReturnInst(Value *value, BasicBlock *parent);
+};
+
+class UnreachableInst : public Instruction
+{
+public:
+    static UnreachableInst *create(BasicBlock *parent);
+
+private:
+    UnreachableInst(BasicBlock *parent);
 };
 
 class PhiInst : public Instruction
