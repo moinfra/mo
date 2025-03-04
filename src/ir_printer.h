@@ -302,6 +302,12 @@ public:
             return "or";
         case Opcode::BitXor:
             return "xor";
+        case Opcode::Shl:
+            return "shl";
+        case Opcode::LShr:
+            return "lshr";
+        case Opcode::AShr:
+            return "ashr";
         case Opcode::PtrToInt:
             return "ptrtoint";
         case Opcode::Alloca:
@@ -320,6 +326,8 @@ public:
             return "br";
         case Opcode::CondBr:
             return "br";
+        case Opcode::Unreachable:
+            return "unreachable";
         case Opcode::Ret:
             return "ret";
         case Opcode::Phi:

@@ -266,6 +266,7 @@ Instruction::Instruction(Opcode opcode, Type *type, BasicBlock *parent,
     : User(type, name), opcode_(opcode), parent_(parent),
       prev_(nullptr), next_(nullptr)
 {
+    MO_ASSERT(parent != nullptr, "Parent block is null");
     operands_ = std::move(operands);
     for (auto *op : operands_)
     {
@@ -419,20 +420,23 @@ void BasicBlock::append(Instruction *inst)
 Instruction *BasicBlock::get_terminator() const
 {
     if (!tail_)
+    {
         return nullptr;
-
-    auto *inst = tail_;
-    while (inst->opcode() == Opcode::Br || inst->opcode() == Opcode::CondBr)
-    {
-        inst = inst->prev();
     }
 
-    if (inst->opcode() == Opcode::Ret)
+    // 检查最后一条指令的类型
+    switch (tail_->opcode())
     {
-        return inst;
+    case Opcode::Ret:
+    case Opcode::Br:
+    case Opcode::CondBr:
+    case Opcode::Unreachable:
+    {
+        return tail_;
     }
-
-    return nullptr;
+    default:
+        return nullptr;
+    }
 }
 
 //===----------------------------------------------------------------------===//
@@ -1004,6 +1008,8 @@ BranchInst::BranchInst(BasicBlock *target, BasicBlock *parent,
 BranchInst *BranchInst::create(BasicBlock *target, BasicBlock *parent)
 {
     std::vector<Value *> ops;
+    MO_ASSERT(target != nullptr, "Invalid target block");
+    MO_ASSERT(parent != nullptr, "Invalid parent block");
     auto *inst = new BranchInst(target, parent, ops);
     parent->add_successor(target);
     return inst;
@@ -1040,6 +1046,18 @@ ReturnInst::ReturnInst(Value *value, BasicBlock *parent)
 ReturnInst *ReturnInst::create(Value *value, BasicBlock *parent)
 {
     return new ReturnInst(value, parent);
+}
+
+//____________________________________________________________________________
+//                           UnreachableInst  Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+UnreachableInst::UnreachableInst(BasicBlock *parent)
+    : Instruction(Opcode::Unreachable, Type::get_void_type(parent->parent_function()->parent_module()),
+                  parent, {}) {}
+
+UnreachableInst *UnreachableInst::create(BasicBlock *parent)
+{
+    return new UnreachableInst(parent);
 }
 
 //____________________________________________________________________________
@@ -1133,6 +1151,7 @@ StoreInst::StoreInst(BasicBlock *parent, Value *value, Value *ptr)
 
 StoreInst *StoreInst::create(Value *value, Value *ptr, BasicBlock *parent)
 {
+
     auto *inst = new StoreInst(parent, value, ptr);
     return inst;
 }
@@ -1226,8 +1245,8 @@ bool BinaryInst::isBinaryOp(Opcode op)
     return op == Opcode::Add || op == Opcode::Sub || op == Opcode::Mul ||
            op == Opcode::UDiv || op == Opcode::SDiv ||
            op == Opcode::BitAnd || op == Opcode::BitOr || op == Opcode::BitXor ||
-           op == Opcode::Shl || op == Opcode::LShr || op == Opcode::AShr;
-    op == Opcode::ICmp || op == Opcode::FCmp;
+           op == Opcode::Shl || op == Opcode::LShr || op == Opcode::AShr ||
+           op == Opcode::ICmp || op == Opcode::FCmp;
 }
 
 BinaryInst *BinaryInst::create(Opcode op, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)

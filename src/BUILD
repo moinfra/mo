@@ -1,7 +1,15 @@
 cc_library(
+    name = "utils",
+    srcs = ["utils.cc"],
+    hdrs = ["utils.h"],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "lexer",
     srcs = ["lexer.cc"],
     hdrs = ["lexer.h"],
+    deps = [":utils"],
     visibility = ["//visibility:public"],
 )
 
@@ -47,6 +55,7 @@ cc_library(
     name = "ir",
     srcs = ["ir.cc"],
     hdrs = ["ir.h"],
+    deps = [":utils"],
     visibility = ["//visibility:public"],
 )
 

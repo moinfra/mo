@@ -55,6 +55,7 @@ public:
                                BasicBlock *false_bb);
     ReturnInst *create_ret(Value *value);
     ReturnInst *create_ret_void();
+    UnreachableInst *create_unreachable();
 
     //--- Memory Instructions ---//
     AllocaInst *create_alloca(Type *type, const std::string &name = "");

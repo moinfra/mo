@@ -3,6 +3,7 @@
 #include "ast.h"
 #include <vector>
 #include <memory>
+#include <sstream>
 #include <unordered_map>
 #include <string>
 
@@ -42,7 +43,12 @@ protected:
 
     void push_scope();
     void pop_scope();
-    void add_error(const std::string &message);
+    template<typename... Args>
+    void add_error(const Args&... args) {
+        std::stringstream ss;
+        (ss << ... << args); // Fold expression to handle multiple arguments
+        errors_.push_back(ss.str());
+    }
 
     // Type system helpers
     bool types_equal(const ast::Type &t1, const ast::Type &t2) const;
@@ -51,6 +57,7 @@ protected:
     ast::TypePtr resolve_alias(const std::string &name) const;
     ast::StructDecl *find_struct(const std::string &name) const;
     bool is_valid_lvalue(ast::Expr &expr);
+    bool is_valid_cond_type(const ast::Type &type);
 
     // AST visitors
     void check_expr(ast::Expr &expr);
