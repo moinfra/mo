@@ -40,7 +40,7 @@ TEST(IRBuilder, ComplexTypeSupport)
 {
     Module m;
     IntegerType *i32 = m.get_integer_type(32);
-    std::vector<Type *> members = {i32, i32};
+    std::vector<MemberInfo> members = {MemberInfo("a", i32), MemberInfo("b", i32)};
     StructType *structType = m.get_struct_type("MyStruct", members);
 
     Function *f = m.create_function("func", i32, {});

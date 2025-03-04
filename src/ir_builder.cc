@@ -1,4 +1,5 @@
 #include "ir_builder.h"
+#include "utils.h"
 
 IRBuilder::IRBuilder(Module *module)
     : module_(module), insert_block_(nullptr), insert_pos_(nullptr)
@@ -17,34 +18,20 @@ void IRBuilder::set_insert_point(Instruction *inst)
     insert_pos_ = inst;
 }
 
+void IRBuilder::clear_insert_point()
+{
+    insert_block_ = nullptr;
+    insert_pos_ = nullptr;
+}
+
 BinaryInst *IRBuilder::create_binary(Opcode opc, Value *lhs, Value *rhs,
                                      const std::string &name)
 {
     // Enhanced type checking
-    assert(lhs->type() == rhs->type() && "Operand type mismatch");
+    assert(*lhs->type() == *rhs->type() && "Operand type mismatch");
     assert((lhs->type()->type_id() == Type::IntTy ||
             lhs->type()->type_id() == Type::FpTy) &&
            "Binary operation requires integer or float operands");
-
-    // Specific operation type checking
-    switch (opc)
-    {
-    case Opcode::Add:
-    case Opcode::Sub:
-    case Opcode::Mul:
-        break; // Allowed for integer and floating-point types
-    case Opcode::UDiv:
-    case Opcode::SDiv:
-        assert(lhs->type()->type_id() == Type::IntTy &&
-               "Division requires integer types");
-        break;
-    case Opcode::FCmp:
-        assert(lhs->type()->type_id() == Type::FpTy &&
-               "FCmp requires float types");
-        break;
-    default:
-        assert(false && "Unsupported binary operation");
-    }
 
     auto *inst = BinaryInst::create(opc, lhs, rhs, insert_block_, name);
     insert(inst);
@@ -106,7 +93,7 @@ ICmpInst *IRBuilder::create_icmp(ICmpInst::Predicate pred, Value *lhs,
     assert(lhs->type()->type_id() == Type::IntTy &&
            rhs->type()->type_id() == Type::IntTy &&
            "ICmp requires integer operands");
-    assert(lhs->type() == rhs->type() && "Operand type mismatch");
+    assert(*lhs->type() == *rhs->type() && "Operand type mismatch");
 
     auto *inst = ICmpInst::create(pred, lhs, rhs, insert_block_);
     inst->set_name(name);
@@ -121,7 +108,7 @@ FCmpInst *IRBuilder::create_fcmp(FCmpInst::Predicate pred, Value *lhs,
     assert(lhs->type()->type_id() == Type::FpTy &&
            rhs->type()->type_id() == Type::FpTy &&
            "FCmp requires float operands");
-    assert(lhs->type() == rhs->type() && "Operand type mismatch");
+    assert(*lhs->type() == *rhs->type() && "Operand type mismatch");
 
     auto *inst = FCmpInst::create(pred, lhs, rhs, insert_block_, name);
     insert(inst);
@@ -139,7 +126,7 @@ BranchInst *IRBuilder::create_cond_br(Value *cond, BasicBlock *true_bb,
                                       BasicBlock *false_bb)
 {
     // Condition must be i1 type
-    assert(cond->type() == module_->get_integer_type(1) &&
+    assert(*cond->type() == *module_->get_integer_type(1) &&
            "Condition must be i1 type");
 
     auto *inst = BranchInst::create_cond(cond, true_bb, false_bb, insert_block_);
@@ -150,18 +137,21 @@ BranchInst *IRBuilder::create_cond_br(Value *cond, BasicBlock *true_bb,
 ReturnInst *IRBuilder::create_ret(Value *value)
 {
     // Get the current function
+    assert(insert_block_);
     Function *cur_func = insert_block_->parent_function();
     assert(cur_func);
     assert(cur_func->return_type());
 
     if (value)
     {
-        assert(cur_func->return_type() == value->type() && "Return type mismatch");
+        MO_ASSERT(*cur_func->return_type() == *value->type(), "Return type mismatch, expect `%s`, got `%s`",
+                  cur_func->return_type()->to_string().c_str(),
+                  value->type()->to_string().c_str());
     }
     else
     {
-        assert(cur_func->return_type()->type_id() == Type::VoidTy &&
-               "Void function cannot return value");
+        MO_ASSERT(cur_func->return_type()->type_id() == Type::VoidTy,
+                  "Void function cannot return value");
     }
 
     auto *inst = ReturnInst::create(value, insert_block_);
@@ -258,13 +248,12 @@ LoadInst *IRBuilder::create_load(Value *ptr, const std::string &name)
 
 StoreInst *IRBuilder::create_store(Value *value, Value *ptr)
 {
-    std::cout << "create_store target to "
-              << Type::id_to_str(ptr->type()->type_id()) << std::endl;
+    MO_DEBUG("Store value: %s to ptr: %s", value->type()->to_string().c_str(), ptr->type()->to_string().c_str());
     assert(ptr->type()->type_id() == Type::PtrTy &&
            "Store operand must be pointer");
     auto *ptr_type = static_cast<PointerType *>(ptr->type());
-    assert(value->type() == ptr_type->element_type() &&
-           "Stored value type mismatch");
+    MO_ASSERT(*value->type() == *ptr_type->element_type(),
+              "Stored value type mismatch, expect `%s`, got `%s`", ptr_type->element_type()->to_string().c_str(), value->type()->to_string().c_str());
 
     auto *inst = StoreInst::create(value, ptr, insert_block_);
     insert(inst);
@@ -300,7 +289,7 @@ Value *IRBuilder::create_struct_gep(Value *struct_ptr, unsigned idx,
 
     // Member index verification
     auto *struct_type = static_cast<StructType *>(ptr_type->element_type());
-    assert(idx < struct_type->members().size() && "Struct index out of bounds");
+    MO_ASSERT(idx < struct_type->members().size(), "Struct index %u out of range which is %zu", idx, struct_type->members().size());
 
     // auto *index_type = module_->get_integer_type(32);
     auto *zero = module_->get_constant_int(32, 0);
@@ -308,12 +297,62 @@ Value *IRBuilder::create_struct_gep(Value *struct_ptr, unsigned idx,
     return create_gep(struct_ptr, {zero, idx_val}, name);
 }
 
+Value *IRBuilder::create_extract_value(Value *agg_val,
+                                       const std::vector<size_t> &indices,
+                                       const std::string &name)
+{
+    // Verify aggregate type
+    assert(agg_val->type()->is_aggregate() &&
+           "extractvalue operand must be aggregate type");
+
+    Type *cur_type = agg_val->type();
+    Value *result = agg_val;
+
+    // Traverse through each index
+    for (unsigned idx : indices)
+    {
+        if (cur_type->type_id() == Type::StructTy)
+        {
+            auto *struct_type = static_cast<StructType *>(cur_type);
+            MO_ASSERT(idx < struct_type->members().size(),
+                      "Struct index %u out of range which is %zu",
+                      idx, struct_type->members().size());
+            cur_type = struct_type->members()[idx].type;
+
+            // Create GEP for struct field access
+            auto *zero = module_->get_constant_int(32, 0);
+            auto *idx_val = module_->get_constant_int(32, idx);
+            result = create_gep(result, {zero, idx_val}, name);
+        }
+        else if (cur_type->type_id() == Type::ArrayTy)
+        {
+            auto *array_type = static_cast<ArrayType *>(cur_type);
+            MO_ASSERT(idx < array_type->num_elements(),
+                      "Array index %u out of range which is %zu",
+                      idx, array_type->num_elements());
+            cur_type = array_type->element_type();
+
+            // Create GEP for array element access
+            auto *zero = module_->get_constant_int(32, 0);
+            auto *idx_val = module_->get_constant_int(32, idx);
+            result = create_gep(result, {zero, idx_val}, name);
+        }
+        else
+        {
+            assert(false && "Invalid aggregate type for extractvalue");
+        }
+    }
+
+    // Load the final value
+    return create_load(result, name);
+}
+
 ArrayType *IRBuilder::get_array_type(Type *elem_ty, uint64_t num)
 {
     return module_->get_array_type(elem_ty, num);
 }
 
-StructType *IRBuilder::get_struct_type(const std::vector<Type *> &members)
+StructType *IRBuilder::get_struct_type(const std::vector<MemberInfo> &members)
 {
     return module_->get_struct_type_anonymous(members);
 }
@@ -338,9 +377,41 @@ CallInst *IRBuilder::create_call(Function *callee,
     assert(callee->num_args() == args.size() && "Argument count mismatch");
     for (size_t i = 0; i < args.size(); ++i)
     {
-        assert(args[i]->type() == callee->arg_type(i) && "Argument type mismatch");
+        assert(*args[i]->type() == *callee->arg_type(i) && "Argument type mismatch");
     }
     auto *inst = CallInst::create(callee, args, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+CallInst *IRBuilder::create_call(Value *callee, const std::vector<Value *> &args,
+                                 const std::string &name)
+{
+    // Handle direct function calls
+    if (auto *func = dynamic_cast<Function *>(callee))
+    {
+        return create_call(func, args, name);
+    }
+
+    // Handle indirect calls through function pointers
+    assert(callee->type()->type_id() == Type::PtrTy &&
+           "Callee must be a function pointer");
+    PointerType *ptr_type = static_cast<PointerType *>(callee->type());
+    assert(ptr_type->element_type()->type_id() == Type::FuncTy &&
+           "Callee must point to a function type");
+
+    FunctionType *func_type = static_cast<FunctionType *>(ptr_type->element_type());
+    assert(func_type->num_params() == args.size() &&
+           "Argument count mismatch");
+
+    for (size_t i = 0; i < args.size(); ++i)
+    {
+        assert(*args[i]->type() == *func_type->param_type(i) &&
+               "Argument type mismatch");
+    }
+
+    auto *inst = CallInst::create(callee, func_type->return_type(), args,
+                                  insert_block_, name);
     insert(inst);
     return inst;
 }
@@ -362,7 +433,7 @@ CallInst *IRBuilder::create_indirect_call(Value *callee,
     assert(func_type->num_params() == args.size() && "Argument count mismatch");
     for (size_t i = 0; i < args.size(); ++i)
     {
-        assert(args[i]->type() == func_type->param_type(i) &&
+        assert(*args[i]->type() == *func_type->param_type(i) &&
                "Argument type mismatch for indirect call");
     }
 
@@ -553,7 +624,7 @@ Value *IRBuilder::create_cast(Value *src_val, Type *target_type,
     // Get the source type from the source value.
     Type *src_type = src_val->type();
     // If the source and target types are the same, return the source value directly.
-    if (src_type == target_type)
+    if (*src_type == *target_type)
         return src_val;
 
     Instruction *inst = nullptr;

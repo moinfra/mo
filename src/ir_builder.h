@@ -16,6 +16,7 @@ public:
     //===--------------------------------------------------------------------===//
     void set_insert_point(BasicBlock *bb);
     void set_insert_point(Instruction *inst);
+    void clear_insert_point();
     BasicBlock *get_insert_block() const { return insert_block_; }
 
     //===--------------------------------------------------------------------===//
@@ -64,11 +65,17 @@ public:
                                   const std::string &name = "");
     Value *create_struct_gep(Value *struct_ptr, unsigned idx,
                              const std::string &name = "");
+    Value *create_extract_value(Value *agg_val,
+                                const std::vector<size_t> &indices,
+                                const std::string &name = "");
 
     //--- Other Instructions ---//
     PhiInst *create_phi(Type *type, const std::string &name = "");
     CallInst *create_call(Function *callee, const std::vector<Value *> &args,
                           const std::string &name);
+    CallInst *create_call(Value *callee, const std::vector<Value *> &args,
+                          const std::string &name);
+
     CallInst *create_indirect_call(Value *callee, const std::vector<Value *> &args,
                                    const std::string &name);
 
@@ -105,7 +112,7 @@ public:
     //                               Types
     //===--------------------------------------------------------------------===//
     ArrayType *get_array_type(Type *elem_ty, uint64_t num);
-    StructType *get_struct_type(const std::vector<Type *> &members);
+    StructType *get_struct_type(const std::vector<MemberInfo> &members);
 
 private:
     void insert(Instruction *inst);
