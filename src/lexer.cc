@@ -1,3 +1,4 @@
+//
 //===----------------------------------------------------------------------===//
 //                             Headers
 //===----------------------------------------------------------------------===//
@@ -190,16 +191,16 @@ Lexer::Lexer(Lexer &&other) noexcept : input(std::move(other.input)),
 {
 }
 
-Token Lexer::parse_assign_operators()
+Token Lexer::parse_complex_operators()
 {
     int start_line = current_line;
     int start_col = current_col;
     char c = input[pos];
-    advance(); // Skip the first character
+    advance(); // skip first char
 
     if (peek() == '=')
     {
-        advance(); // Skip '='
+        advance(); // skip '='
         switch (c)
         {
         case '+':
@@ -219,30 +220,35 @@ Token Lexer::parse_assign_operators()
         case '^':
             return Token(TokenType::XorAssign, start_line, start_col, current_line, current_col - 1, "^=");
         case '<':
-            if (peek() == '<')
-            {
-                advance();
-                return Token(TokenType::LSAssign, start_line, start_col, current_line, current_col - 1, "<<=");
-            }
-            break;
+            return Token(TokenType::Le, start_line, start_col, current_line, current_col - 1, "<=");
         case '>':
-            if (peek() == '>')
-            {
-                advance();
-                return Token(TokenType::RSAssign, start_line, start_col, current_line, current_col - 1, ">>=");
-            }
-            break;
+            return Token(TokenType::Ge, start_line, start_col, current_line, current_col - 1, ">=");
         default:
             break;
         }
     }
 
-    // If no match, return the single character token
+    // other cases
     switch (c)
     {
     case '+':
+        if (peek() == '+')
+        {
+            advance(); // skip second '+'
+            return Token(TokenType::Increment, start_line, start_col, current_line, current_col - 1, "++");
+        }
         return Token(TokenType::Plus, start_line, start_col, current_line, current_col - 1, "+");
     case '-':
+        if (peek() == '>')
+        {
+            advance(); // skip '>'
+            return Token(TokenType::Arrow, start_line, start_col, current_line, current_col - 1, "->");
+        }
+        if (peek() == '-')
+        {
+            advance(); // skip second '-'
+            return Token(TokenType::Decrement, start_line, start_col, current_line, current_col - 1, "--");
+        }
         return Token(TokenType::Minus, start_line, start_col, current_line, current_col - 1, "-");
     case '*':
         return Token(TokenType::Star, start_line, start_col, current_line, current_col - 1, "*");
@@ -251,20 +257,62 @@ Token Lexer::parse_assign_operators()
     case '%':
         return Token(TokenType::Modulo, start_line, start_col, current_line, current_col - 1, "%");
     case '&':
+        if (peek() == '&')
+        {
+            advance(); // skip second '&'
+            return Token(TokenType::And, start_line, start_col, current_line, current_col - 1, "&&");
+        }
         return Token(TokenType::Ampersand, start_line, start_col, current_line, current_col - 1, "&");
     case '|':
+        if (peek() == '|')
+        {
+            advance(); // skip second '|'
+            return Token(TokenType::Or, start_line, start_col, current_line, current_col - 1, "||");
+        }
         return Token(TokenType::Pipe, start_line, start_col, current_line, current_col - 1, "|");
     case '^':
         return Token(TokenType::Caret, start_line, start_col, current_line, current_col - 1, "^");
     case '<':
-        return Token(TokenType::Lt, start_line, start_col, current_line, current_col - 1, "<");
+        if (peek() == '<')
+        {
+            advance(); // skip second '<'
+            if (peek() == '=')
+            {
+                advance(); // skip '='
+                return Token(TokenType::LSAssign, start_line, start_col, current_line, current_col - 1, "<<=");
+            }
+            else
+            {
+                return Token(TokenType::LShift, start_line, start_col, current_line, current_col - 1, "<<");
+            }
+        }
+        else
+        {
+            return Token(TokenType::Lt, start_line, start_col, current_line, current_col - 1, "<");
+        }
     case '>':
-        return Token(TokenType::Gt, start_line, start_col, current_line, current_col - 1, ">");
+        if (peek() == '>')
+        {
+            advance(); // skip second '>'
+            if (peek() == '=')
+            {
+                advance(); // skip '='
+                return Token(TokenType::RSAssign, start_line, start_col, current_line, current_col - 1, ">>=");
+            }
+            else
+            {
+                return Token(TokenType::RShift, start_line, start_col, current_line, current_col - 1, ">>");
+            }
+        }
+        else
+        {
+            return Token(TokenType::Gt, start_line, start_col, current_line, current_col - 1, ">");
+        }
     default:
-        throw LexerError("Unexpected character: " + std::string(1, c));
+        errors.push_back({"Unexpected character: " + std::string(1, c), current_line, current_col});
+        return Token(TokenType::Invalid, start_line, start_col, current_line, current_col - 1, std::string(1, c));
     }
 }
-
 Token Lexer::parse_double_char_operators()
 {
     int start_line = current_line;
@@ -306,7 +354,8 @@ Token Lexer::parse_double_char_operators()
     case '.':
         return Token(TokenType::Dot, start_line, start_col, current_line, current_col - 1, ".");
     default:
-        throw LexerError("Unexpected character: " + std::string(1, c));
+        errors.push_back({"Unexpected character: " + std::string(1, c), current_line, current_col});
+        return Token(TokenType::Invalid, start_line, start_col, current_line, current_col - 1, std::string(1, c));
     }
 }
 
@@ -345,7 +394,7 @@ Token Lexer::next_token()
     case '^':
     case '<':
     case '>':
-        return parse_assign_operators();
+        return parse_complex_operators();
     case '=':
         return parse_equal_or_eq();
     case '!':
@@ -373,9 +422,59 @@ Token Lexer::next_token()
     case '~':
         return parse_single_char(TokenType::Tilde, "~");
     default:
-        throw LexerError("Unexpected character: " + std::string(1, c));
+        errors.push_back({"Unexpected character: " + std::string(1, c), current_line, current_col});
+        advance();
+        return Token(TokenType::Invalid, current_line, current_col - 1, current_line, current_col - 1, std::string(1, c));
     }
 }
+
+#if defined(MO_UNICODE)
+
+std::pair<char32_t, int> Lexer::decode_utf8()
+{
+    if (pos >= input.size())
+    {
+        return {U_SENTINEL, 0};
+    }
+    unsigned char c = input[pos];
+    if (c <= 0x7F)
+    {
+        return {c, 1};
+    }
+    else if ((c & 0xE0) == 0xC0)
+    {
+        if (pos + 1 >= input.size())
+            return {U_SENTINEL, 0};
+        char32_t cp = (c & 0x1F) << 6;
+        cp |= (input[pos + 1] & 0x3F);
+        return {cp, 2};
+    }
+    else if ((c & 0xF0) == 0xE0)
+    {
+        if (pos + 2 >= input.size())
+            return {U_SENTINEL, 0};
+        char32_t cp = (c & 0x0F) << 12;
+        cp |= (input[pos + 1] & 0x3F) << 6;
+        cp |= (input[pos + 2] & 0x3F);
+        return {cp, 3};
+    }
+    else if ((c & 0xF8) == 0xF0)
+    {
+        if (pos + 3 >= input.size())
+            return {U_SENTINEL, 0};
+        char32_t cp = (c & 0x07) << 18;
+        cp |= (input[pos + 1] & 0x3F) << 12;
+        cp |= (input[pos + 2] & 0x3F) << 6;
+        cp |= (input[pos + 3] & 0x3F);
+        return {cp, 4};
+    }
+    else
+    {
+        return {U_SENTINEL, 0};
+    }
+}
+
+#endif // MO_UNICODE
 
 void Lexer::advance()
 {
@@ -443,6 +542,8 @@ void Lexer::skip_line_comment()
 
 void Lexer::skip_block_comment()
 {
+    int start_line = current_line;
+    int start_col = current_col;
     advance(); // Skip '/'
     advance(); // Skip '*'
     while (pos < input.size())
@@ -455,7 +556,7 @@ void Lexer::skip_block_comment()
         }
         advance();
     }
-    throw LexerError("Unclosed block comment");
+    errors.push_back({"Unclosed block comment", start_line, start_col});
 }
 
 Token Lexer::parse_number()
@@ -465,70 +566,110 @@ Token Lexer::parse_number()
     std::string numStr;
     bool isFloat = false;
 
-    // Parse the integer part
-    while (pos < input.size() && isdigit(input[pos]))
+    if (peek() == '0' && (peek(1) == 'x' || peek(1) == 'b'))
     {
+        int start_line = current_line;
+        int start_col = current_col;
+
         numStr += input[pos];
         advance();
-    }
-
-    // Parse the fractional part (if any)
-    if (pos < input.size() && input[pos] == '.')
-    {
-        isFloat = true;
-        numStr += input[pos]; // Add the decimal point
+        numStr += input[pos];
         advance();
 
-        // Parse the digits after the decimal point
+        if (numStr.back() == 'x')
+        {
+            bool has_digits = false;
+            while (pos < input.size() && isxdigit(input[pos]))
+            {
+                has_digits = true;
+                numStr += input[pos];
+                advance();
+            }
+            if (!has_digits)
+            {
+                errors.push_back({"Invalid hexadecimal literal: no digits after 0x", start_line, start_col});
+                return Token(TokenType::Invalid, start_line, start_col, current_line, current_col - 1, numStr);
+            }
+        }
+        else if (numStr.back() == 'b')
+        {
+            bool has_digits = false;
+            while (pos < input.size() && (input[pos] == '0' || input[pos] == '1'))
+            {
+                has_digits = true;
+                numStr += input[pos];
+                advance();
+            }
+            if (!has_digits)
+            {
+                errors.push_back({"Invalid binary literal: no digits after 0b", start_line, start_col});
+                return Token(TokenType::Invalid, start_line, start_col, current_line, current_col - 1, numStr);
+            }
+        }
+    }
+    else
+    {
         while (pos < input.size() && isdigit(input[pos]))
         {
             numStr += input[pos];
             advance();
         }
 
-        // Ensure there is at least one digit after the decimal point
-        if (numStr.back() == '.')
+        if (pos < input.size() && input[pos] == '.')
         {
-            throw std::runtime_error("Invalid float literal: " + numStr + " (missing fractional part)");
-        }
-    }
-
-    // Parse the exponent part (if any, for scientific notation)
-    if (pos < input.size() && (input[pos] == 'e' || input[pos] == 'E'))
-    {
-        isFloat = true;
-        numStr += input[pos]; // Add 'e' or 'E'
-        advance();
-
-        // Parse the optional sign
-        if (pos < input.size() && (input[pos] == '+' || input[pos] == '-'))
-        {
+            isFloat = true;
             numStr += input[pos];
             advance();
-        }
-
-        // Parse the exponent digits
-        if (pos < input.size() && isdigit(input[pos]))
-        {
+            if (pos >= input.size() || !isdigit(input[pos]))
+            {
+                errors.push_back({"Invalid float literal: missing fractional part", start_line, start_col});
+                return Token(TokenType::Invalid, start_line, start_col, current_line, current_col - 1, numStr);
+            }
             while (pos < input.size() && isdigit(input[pos]))
             {
                 numStr += input[pos];
                 advance();
             }
         }
-        else
+
+        if (pos < input.size() && (input[pos] == 'e' || input[pos] == 'E'))
         {
-            throw std::runtime_error("Invalid exponent in float literal: " + numStr + " (missing exponent)");
+            isFloat = true;
+            numStr += input[pos];
+            advance();
+            if (pos < input.size() && (input[pos] == '+' || input[pos] == '-'))
+            {
+                numStr += input[pos];
+                advance();
+            }
+            if (pos >= input.size() || !isdigit(input[pos]))
+            {
+                errors.push_back({"Invalid exponent in float literal: missing exponent", start_line, start_col});
+                return Token(TokenType::Invalid, start_line, start_col, current_line, current_col - 1, numStr);
+            }
+            while (pos < input.size() && isdigit(input[pos]))
+            {
+                numStr += input[pos];
+                advance();
+            }
+        }
+
+        if (pos < input.size() && isalpha(input[pos])) {
+            errors.push_back({"Invalid decimal literal: invalid suffix", start_line, start_col});
+            while (pos < input.size() && isalpha(input[pos])) {
+                numStr += input[pos];
+                advance();
+            }
+            return Token(TokenType::Invalid, start_line, start_col, current_line, current_col - 1, numStr);
         }
     }
 
-    // Ensure the generated numStr is not empty
     if (numStr.empty())
     {
-        throw std::runtime_error("Empty number literal");
+        errors.push_back({"Empty number literal", start_line, start_col});
+        return Token(TokenType::Invalid, start_line, start_col, current_line, current_col - 1, "");
     }
 
-    // Determine the token type
     TokenType type = isFloat ? TokenType::FloatLiteral : TokenType::IntegerLiteral;
     return Token(type, start_line, start_col, current_line, current_col - 1, numStr);
 }
@@ -576,7 +717,7 @@ Token Lexer::parse_string()
         }
         else if (c == '"')
         {
-            advance(); // Skip closing "
+            advance(); // end "
             return Token(TokenType::StringLiteral, start_line, start_col, current_line, current_col - 1, str);
         }
         else
@@ -586,7 +727,8 @@ Token Lexer::parse_string()
         advance();
     }
 
-    throw LexerError("Unclosed string literal");
+    errors.push_back({"Unclosed string literal", start_line, start_col});
+    return Token(TokenType::Invalid, start_line, start_col, current_line, current_col - 1, str);
 }
 
 Token Lexer::parse_identifier_or_keyword()
@@ -595,57 +737,85 @@ Token Lexer::parse_identifier_or_keyword()
     int start_col = current_col;
     std::string ident;
 
-    while (pos < input.size() && (isalnum(input[pos]) || input[pos] == '_'))
+    if (pos >= input.size())
     {
-        ident += input[pos];
-        advance();
+        return Token(TokenType::Invalid, start_line, start_col, current_line, current_col, "");
     }
 
-    static const std::unordered_map<std::string, TokenType> keywords = {
-        {"let", TokenType::Let},
-        {"struct", TokenType::Struct},
-        {"impl", TokenType::Impl},
-        {"fn", TokenType::Fn},
-        {"this", TokenType::This},
-        {"type", TokenType::Type},
-        {"return", TokenType::Return},
-        {"int", TokenType::Int},
-        {"i8", TokenType::Int},
-        {"i16", TokenType::Int},
-        {"i32", TokenType::Int},
-        {"i64", TokenType::Int},
-        {"u8", TokenType::Int},
-        {"u16", TokenType::Int},
-        {"u32", TokenType::Int},
-        {"u64", TokenType::Int},
-        {"float", TokenType::Float},
-        {"f32", TokenType::Float},
-        {"f64", TokenType::Float},
-        {"const", TokenType::Const},
-        {"sizeof", TokenType::Sizeof},
-        {"cast", TokenType::Cast},
-        {"if", TokenType::If},
-        {"else", TokenType::Else},
-        {"while", TokenType::While},
-        {"for", TokenType::For},
-    };
+    // handle initial char
+    size_t initial_pos = pos;
+#if defined(MO_UNICODE)
+    auto [cp, bytes] = decode_utf8();
+    if (cp == U_SENTINEL)
+    {
+        errors.push_back({"Invalid UTF-8 sequence", current_line, current_col});
+        pos++;
+        current_col++;
+        return Token(TokenType::Invalid, start_line, start_col, current_line, current_col, "");
+    }
+#else
+    char32_t cp = input[pos];
+    int bytes = 1;
+#endif // MO_UNICODE
+
+    // Check if the first character is a valid start of an identifier (ID_Start or underscore/letter)
+#if defined(MO_UNICODE)
+    bool valid_start = (cp == '_') || (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z') || u_isIDStart(cp);
+#else
+    bool valid_start = (cp == '_') || (cp >= 'a' && cp <= 'z') || (cp >= 'A' && cp <= 'Z');
+#endif // MO_UNICODE
+    if (!valid_start)
+    {
+        pos = initial_pos;
+        return Token(TokenType::Invalid, start_line, start_col, current_line, current_col, "");
+    }
+
+    // add the first character to the identifier
+    ident += input.substr(initial_pos, bytes);
+    pos += bytes;
+    current_col++; // every unicode character takes 1 column
+
+    // handle following characters
+    while (pos < input.size())
+    {
+        size_t current_pos = pos;
+
+#if defined(MO_UNICODE)
+        auto [next_cp, next_bytes] = decode_utf8();
+        if (next_cp == U_SENTINEL)
+        {
+            errors.push_back({"Invalid UTF-8 sequence", current_line, current_col});
+            pos++;
+            current_col++;
+            break;
+        }
+
+        bool valid_continue = (next_cp >= '0' && next_cp <= '9') || (next_cp == '_') || u_isIDPart(next_cp);
+#else
+        char next_cp = input[pos];
+        int next_bytes = 1;
+        bool valid_continue = (next_cp >= '0' && next_cp <= '9') ||
+                              (next_cp == '_') ||
+                              (next_cp >= 'a' && next_cp <= 'z') ||
+                              (next_cp >= 'A' && next_cp <= 'Z');
+#endif // MO_UNICODE
+
+        if (valid_continue)
+        {
+            ident += input.substr(current_pos, next_bytes);
+            pos += next_bytes;
+            current_col++;
+        }
+        else
+        {
+            pos = current_pos;
+            break;
+        }
+    }
 
     auto it = keywords.find(ident);
     TokenType type = (it != keywords.end()) ? it->second : TokenType::Identifier;
     return Token(type, start_line, start_col, current_line, current_col - 1, ident);
-}
-
-Token Lexer::parse_arrow_or_minus()
-{
-    int start_line = current_line;
-    int start_col = current_col;
-    advance(); // Skip '-'
-    if (peek() == '>')
-    {
-        advance(); // Skip '>'
-        return Token(TokenType::Arrow, start_line, start_col, current_line, current_col - 1, "->");
-    }
-    return Token(TokenType::Minus, start_line, start_col, current_line, current_col - 1, "-");
 }
 
 Token Lexer::parse_double_colon_or_colon()
@@ -744,7 +914,7 @@ Token Lexer::parse_or()
         advance(); // Skip '|'
         return Token(TokenType::Or, start_line, start_col, current_line, current_col - 1, "||");
     }
-    throw LexerError("Unexpected '|'");
+    return Token(TokenType::Pipe, start_line, start_col, current_line, current_col - 1, "|");
 }
 
 Token Lexer::parse_single_char(TokenType type, const std::string &lexeme)

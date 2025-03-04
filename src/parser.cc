@@ -46,8 +46,8 @@ const static std::unordered_map<std::pair<TokenType, ASSOC>, int, TokenTypeAssoc
     {{TokenType::Gt, L_ASSOC}, 30},
     {{TokenType::Ge, L_ASSOC}, 30},
 
-    // {{TokenType::LShift, L_ASSOC}, 40},
-    // {{TokenType::Rshift, L_ASSOC}, 40},
+    {{TokenType::LShift, L_ASSOC}, 40},
+    {{TokenType::RShift, L_ASSOC}, 40},
 
     {{TokenType::Plus, L_ASSOC}, 50},
     {{TokenType::Minus, L_ASSOC}, 50},

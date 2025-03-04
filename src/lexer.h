@@ -8,6 +8,17 @@
 #include <cctype>
 #include <stdexcept>
 #include <cstdio>
+#if defined(MO_UNICODE)
+#include <unicode/uchar.h>
+#endif // MO_UNICODE
+
+
+struct LexerError
+{
+    std::string message;
+    int line;
+    int col;
+};
 
 enum class TokenType
 {
@@ -91,6 +102,35 @@ enum class TokenType
     Eof,
 };
 
+const std::unordered_map<std::string, TokenType> keywords = {
+    {"let", TokenType::Let},
+    {"struct", TokenType::Struct},
+    {"impl", TokenType::Impl},
+    {"fn", TokenType::Fn},
+    {"this", TokenType::This},
+    {"type", TokenType::Type},
+    {"return", TokenType::Return},
+    {"int", TokenType::Int},
+    {"i8", TokenType::Int},
+    {"i16", TokenType::Int},
+    {"i32", TokenType::Int},
+    {"i64", TokenType::Int},
+    {"u8", TokenType::Int},
+    {"u16", TokenType::Int},
+    {"u32", TokenType::Int},
+    {"u64", TokenType::Int},
+    {"float", TokenType::Float},
+    {"f32", TokenType::Float},
+    {"f64", TokenType::Float},
+    {"const", TokenType::Const},
+    {"sizeof", TokenType::Sizeof},
+    {"cast", TokenType::Cast},
+    {"if", TokenType::If},
+    {"else", TokenType::Else},
+    {"while", TokenType::While},
+    {"for", TokenType::For},
+};
+
 struct Token
 {
 
@@ -110,24 +150,29 @@ public:
     Lexer(const std::string &input);
     Lexer(Lexer &&other) noexcept;
     Token next_token();
+    const std::vector<LexerError>& get_errors() const { return errors; }
 
 private:
     std::string input;
     size_t pos;
     int current_line;
     int current_col;
+    std::vector<LexerError> errors;
 
+    #if defined(MO_UNICODE)
+    std::pair<char32_t, int> decode_utf8();
+    #endif // MO_UNICODE
+    
     void advance();
     char peek(size_t offset = 0) const;
     void skip_whitespace_and_comments();
     void skip_line_comment();
     void skip_block_comment();
-    Token parse_assign_operators();
+    Token parse_complex_operators();
     Token parse_double_char_operators();
     Token parse_number();
     Token parse_string();
     Token parse_identifier_or_keyword();
-    Token parse_arrow_or_minus();
     Token parse_double_colon_or_colon();
     Token parse_dot();
     Token parse_equal_or_eq();
@@ -137,21 +182,6 @@ private:
     Token parse_and();
     Token parse_or();
     Token parse_single_char(TokenType type, const std::string &lexeme);
-};
-
-class LexerError : public std::exception
-{
-public:
-    explicit LexerError(const std::string &message)
-        : message_(message) {}
-
-    virtual const char *what() const noexcept override
-    {
-        return message_.c_str();
-    }
-
-private:
-    std::string message_;
 };
 
 std::string token_to_string(const Token &token);
