@@ -128,11 +128,8 @@ namespace ast
 
         // Utility methods
         virtual bool is_scalar() const noexcept { return false; }
-        bool is_aggregate() const noexcept
-        {
-            const auto k = kind();
-            return k == Kind::Struct || k == Kind::Array || k == Kind::Tuple;
-        }
+        virtual bool is_numeric() const noexcept { return false; }
+        virtual bool is_aggregate() const noexcept { return false; }
 
         // Factory methods
         static TypePtr create_placeholder();
@@ -186,7 +183,6 @@ namespace ast
     class ScalarType : public Type
     {
     public:
-        // Public method
         bool is_scalar() const noexcept override { return true; }
 
     protected:
@@ -194,9 +190,33 @@ namespace ast
     };
 
     //===----------------------------------------------------------------------===//
+    //                             Abstract Base Class for Numeric Types
+    //===----------------------------------------------------------------------===//
+    class NumericType : public ScalarType
+    {
+    public:
+        bool is_numeric() const noexcept override { return true; }
+
+    protected:
+        ~NumericType() = default; // Prevent direct instantiation
+    };
+
+    //===----------------------------------------------------------------------===//
+    //                             Abstract Base Class for Aggregate Types
+    //===----------------------------------------------------------------------===//
+    class AggregateType : public ScalarType
+    {
+    public:
+        bool is_aggregate() const noexcept override { return true; }
+
+    protected:
+        ~AggregateType() = default; // Prevent direct instantiation
+    };
+
+    //===----------------------------------------------------------------------===//
     //                             Integer Type
     //===----------------------------------------------------------------------===//
-    class IntegerType : public ScalarType
+    class IntegerType : public NumericType
     {
     public:
         explicit IntegerType(int bit_width, bool is_unsigned)
@@ -239,7 +259,7 @@ namespace ast
     //===----------------------------------------------------------------------===//
     //                             Float Type
     //===----------------------------------------------------------------------===//
-    class FloatType : public ScalarType
+    class FloatType : public NumericType
     {
     public:
         enum class Precision : uint8_t
@@ -308,7 +328,7 @@ namespace ast
     //===----------------------------------------------------------------------===//
     //                             String Type
     //===----------------------------------------------------------------------===//
-    class StringType : public Type
+    class StringType : public ScalarType
     {
     public:
         // Type conversion
@@ -368,7 +388,7 @@ namespace ast
     //===----------------------------------------------------------------------===//
     //                             Array Type
     //===----------------------------------------------------------------------===//
-    class ArrayType : public Type
+    class ArrayType : public AggregateType
     {
     public:
         ArrayType(TypePtr element, int size)
@@ -411,7 +431,7 @@ namespace ast
     //===----------------------------------------------------------------------===//
     //                             Tuple Type
     //===----------------------------------------------------------------------===//
-    class TupleType : public Type
+    class TupleType : public AggregateType
     {
     public:
         explicit TupleType(std::vector<TypePtr> element_types)
@@ -490,7 +510,7 @@ namespace ast
     //===----------------------------------------------------------------------===//
     //                             Struct Type
     //===----------------------------------------------------------------------===//
-    class StructType : public Type
+    class StructType : public AggregateType
     {
     public:
         StructType(std::string name, std::vector<TypedField> members)

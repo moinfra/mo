@@ -29,49 +29,62 @@ struct TokenTypeAssocHash
     }
 };
 
-const static std::unordered_map<std::pair<TokenType, ASSOC>, int, TokenTypeAssocHash> precedence_map = {
-    {{TokenType::Assign, R_ASSOC}, 1}, // right assoc
+const static std::unordered_map<std::pair<TokenType, ASSOC>, int, TokenTypeAssocHash> precedence_map =
+    {
+        {{TokenType::Assign, R_ASSOC}, 1},    // right assoc
+        {{TokenType::AddAssign, R_ASSOC}, 1}, // right assoc
+        {{TokenType::SubAssign, R_ASSOC}, 1}, // right assoc
+        {{TokenType::MulAssign, R_ASSOC}, 1}, // right assoc
+        {{TokenType::DivAssign, R_ASSOC}, 1}, // right assoc
+        {{TokenType::ModAssign, R_ASSOC}, 1}, // right assoc
+        {{TokenType::AndAssign, R_ASSOC}, 1}, // right assoc
+        {{TokenType::OrAssign, R_ASSOC}, 1},  // right assoc
+        {{TokenType::XorAssign, R_ASSOC}, 1}, // right assoc
+        {{TokenType::LSAssign, R_ASSOC}, 1},  // right assoc
+        {{TokenType::RSAssign, R_ASSOC}, 1},  // right assoc
 
-    {{TokenType::Or, L_ASSOC}, 10},
-    {{TokenType::And, L_ASSOC}, 11},
-    {{TokenType::Pipe, L_ASSOC}, 12},
-    {{TokenType::Caret, L_ASSOC}, 12},
-    {{TokenType::Ampersand, L_ASSOC}, 13},
+        {{TokenType::Or, L_ASSOC}, 10},
+        {{TokenType::And, L_ASSOC}, 11},
+        {{TokenType::Pipe, L_ASSOC}, 12},
+        {{TokenType::Caret, L_ASSOC}, 12},
+        {{TokenType::Ampersand, L_ASSOC}, 13},
 
-    {{TokenType::Eq, L_ASSOC}, 20},
-    {{TokenType::Ne, L_ASSOC}, 20},
+        {{TokenType::Eq, L_ASSOC}, 20},
+        {{TokenType::Ne, L_ASSOC}, 20},
 
-    {{TokenType::Lt, L_ASSOC}, 30},
-    {{TokenType::Le, L_ASSOC}, 30},
-    {{TokenType::Gt, L_ASSOC}, 30},
-    {{TokenType::Ge, L_ASSOC}, 30},
+        {{TokenType::Lt, L_ASSOC}, 30},
+        {{TokenType::Le, L_ASSOC}, 30},
+        {{TokenType::Gt, L_ASSOC}, 30},
+        {{TokenType::Ge, L_ASSOC}, 30},
 
-    {{TokenType::LShift, L_ASSOC}, 40},
-    {{TokenType::RShift, L_ASSOC}, 40},
+        {{TokenType::LShift, L_ASSOC}, 40},
+        {{TokenType::RShift, L_ASSOC}, 40},
 
-    {{TokenType::Plus, L_ASSOC}, 50},
-    {{TokenType::Minus, L_ASSOC}, 50},
+        {{TokenType::Plus, L_ASSOC}, 50},
+        {{TokenType::Minus, L_ASSOC}, 50},
 
-    {{TokenType::Star, L_ASSOC}, 60},
-    {{TokenType::Slash, L_ASSOC}, 60},
-    {{TokenType::Modulo, L_ASSOC}, 60},
+        {{TokenType::Star, L_ASSOC}, 60},
+        {{TokenType::Slash, L_ASSOC}, 60},
+        {{TokenType::Modulo, L_ASSOC}, 60},
 
-    // {{TokenType::DotStar, L_ASSOC}, 70},
-    // {{TokenType::ArrowStar, L_ASSOC}, 70},
+        // {{TokenType::DotStar, L_ASSOC}, 70},
+        // {{TokenType::ArrowStar, L_ASSOC}, 70},
 
-    {{TokenType::Cast, R_ASSOC}, 80},
-    {{TokenType::Star, R_ASSOC}, 80}, // Deref
-    {{TokenType::Not, R_ASSOC}, 80},  // !
-    // {{TokenType::Complement, R_ASSOC}, 80}, // ~
-    {{TokenType::Sizeof, R_ASSOC}, 80},
+        {{TokenType::Cast, R_ASSOC}, 80},
+        {{TokenType::Star, R_ASSOC}, 80},      // Deref
+        {{TokenType::Ampersand, R_ASSOC}, 13}, // Address of
+        {{TokenType::Not, R_ASSOC}, 80},       // !
+        {{TokenType::Tilde, R_ASSOC}, 80},     // ~
+        {{TokenType::Sizeof, R_ASSOC}, 80},
 
-    {{TokenType::LParen, L_ASSOC}, 90},   // Call
-    {{TokenType::LBracket, L_ASSOC}, 90}, // Index
-    // {{TokenType::LBracket, L_ASSOC}, 90},   // Init list
-    {{TokenType::Dot, L_ASSOC}, 90},   // Member access
-    {{TokenType::Arrow, L_ASSOC}, 90}, // Member access
+        {{TokenType::Decrement, R_ASSOC}, 90},
+        {{TokenType::Increment, R_ASSOC}, 90},
+        {{TokenType::LParen, L_ASSOC}, 90},   // Call
+        {{TokenType::LBracket, L_ASSOC}, 90}, // Index
+        {{TokenType::Dot, L_ASSOC}, 90},      // Member access
+        {{TokenType::Arrow, L_ASSOC}, 90},    // Member access
 
-    {{TokenType::DoubleColon, L_ASSOC}, 100},
+        {{TokenType::DoubleColon, L_ASSOC}, 100},
 };
 
 int get_precedence(TokenType type, ASSOC assoc = L_ASSOC | R_ASSOC)
@@ -99,8 +112,8 @@ int get_precedence(TokenType type, ASSOC assoc = L_ASSOC | R_ASSOC)
     if (!found)
     {
         MO_DEBUG("parser: warning: no precedence for token '%s' with associativity %s, "
-              "falling back to 0",
-              token_type_to_string(type).c_str(), assoc ? "right" : "left");
+                 "falling back to 0",
+                 token_type_to_string(type).c_str(), assoc ? "right" : "left");
     }
     return precedence;
 };
@@ -135,6 +148,8 @@ void Parser::init_pratt_rules()
                     { return parse_unary(get_precedence(TokenType::Minus, R_ASSOC) - 1); });
     add_prefix_rule(TokenType::Not, [&]
                     { return parse_unary(get_precedence(TokenType::Not, R_ASSOC) - 1); });
+    add_prefix_rule(TokenType::Tilde, [&]
+                    { return parse_unary(get_precedence(TokenType::Tilde, R_ASSOC) - 1); });
     add_prefix_rule(TokenType::LParen, [&]
                     { return parse_tuple_or_grouped(); });
     add_prefix_rule(TokenType::Cast, [&]
@@ -147,9 +162,29 @@ void Parser::init_pratt_rules()
     // Infix/postfix rules
     add_infix_rule(TokenType::Assign, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::Assign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::AddAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::AddAssign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::SubAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::SubAssign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::MulAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::MulAssign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::DivAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::DivAssign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::ModAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::ModAssign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::AndAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::AndAssign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::OrAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::OrAssign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::XorAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::XorAssign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::LSAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::LSAssign, R_ASSOC) - 1);/* Right assoc*/ });
+    add_infix_rule(TokenType::RSAssign, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::RSAssign, R_ASSOC) - 1);/* Right assoc*/ });
+
     add_infix_rule(TokenType::Plus, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::Plus)); });
-
     add_infix_rule(TokenType::Minus, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::Minus)); });
     add_infix_rule(TokenType::Star, [&](ExprPtr l)
@@ -173,6 +208,11 @@ void Parser::init_pratt_rules()
                    { return parse_binary(std::move(l), get_precedence(TokenType::Gt)); });
     add_infix_rule(TokenType::Lt, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::Lt)); });
+
+    add_infix_rule(TokenType::LShift, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::LShift)); });
+    add_infix_rule(TokenType::RShift, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::RShift)); });
 
     add_infix_rule(TokenType::Dot, [&](ExprPtr l)
                    { return parse_member_access(std::move(l)); });
@@ -222,8 +262,8 @@ int get_type_precedence(TokenType token_type, ASSOC assoc = L_ASSOC | R_ASSOC)
     if (!found)
     {
         MO_DEBUG("parser: warning: no precedence for token '%s' with associativity %s, "
-              "falling back to 0",
-              token_type_to_string(token_type).c_str(), assoc ? "right" : "left");
+                 "falling back to 0",
+                 token_type_to_string(token_type).c_str(), assoc ? "right" : "left");
     }
     return precedence;
 };
@@ -411,7 +451,7 @@ ExprPtr Parser::parse_expr(int precedence)
     auto left = prefix_it->prefix();
 
     MO_DEBUG("parser: parsed %s prefix expression. new token is %s (precedence %d)",
-          token_type_to_string(token_type).c_str(), token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
+             token_type_to_string(token_type).c_str(), token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
 
     while (precedence < get_precedence(current_.type))
     {
@@ -434,7 +474,7 @@ ExprPtr Parser::parse_expr(int precedence)
 
         left = infix_rule_it->infix(std::move(left));
         MO_DEBUG("parser: parsed infix expression. new token is %s (precedence %d)",
-              token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
+                 token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
     }
 
     return left;

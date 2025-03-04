@@ -68,7 +68,7 @@ enum class TokenType
     RShift,      // >>
     Increment,   // ++
     Decrement,   // --
-    DoubleDot,   //..
+    DoubleDot,   // ..
     Colon,       // :
     Semicolon,   // ;
     Comma,       // ,
@@ -92,7 +92,7 @@ enum class TokenType
     Ge,          // >=
     And,         // &&
     Or,          // ||
-    Not,         //!
+    Not,         // !
     // Bitwise operators
     // Ampersand
     Pipe,  // |

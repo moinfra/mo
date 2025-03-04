@@ -547,6 +547,65 @@ void TypeChecker::visit(BinaryExpr &expr)
         expr.expr_category = Expr::Category::RValue;
         break;
     }
+    // Compound assignment operators
+    case TokenType::AddAssign:
+    case TokenType::SubAssign:
+    case TokenType::MulAssign:
+    case TokenType::DivAssign:
+    {
+        if (expr.left->expr_category != Expr::Category::LValue)
+        {
+            add_error("Left operand of compound assignment must be lvalue");
+        }
+        if (!expr.left->type->is_numeric() || !expr.right->type->is_numeric())
+        {
+            add_error("Operands for compound assignment must be numeric");
+        }
+        if (!is_convertible(*expr.right->type, *expr.left->type))
+        {
+            add_error("Type mismatch in compound assignment");
+        }
+        expr.type = expr.left->type->clone();
+        expr.expr_category = Expr::Category::RValue;
+        break;
+    }
+
+    case TokenType::ModAssign:
+    case TokenType::AndAssign:
+    case TokenType::OrAssign:
+    case TokenType::XorAssign:
+    case TokenType::LSAssign: // <<=
+    case TokenType::RSAssign: // >>=
+    {
+        if (expr.left->expr_category != Expr::Category::LValue)
+        {
+            add_error("Left operand of compound assignment must be lvalue");
+        }
+        // 需要整数类型
+        if (expr.left->type->kind() != Type::Kind::Int ||
+            expr.right->type->kind() != Type::Kind::Int)
+        {
+            add_error("Operands for bitwise compound assignment must be integers");
+        }
+        expr.type = expr.left->type->clone();
+        expr.expr_category = Expr::Category::RValue;
+        break;
+    }
+
+    // Shift operators
+    case TokenType::LShift:
+    case TokenType::RShift:
+    {
+        if (expr.left->type->kind() != Type::Kind::Int ||
+            expr.right->type->kind() != Type::Kind::Int)
+        {
+            add_error("Shift operators require integer operands");
+        }
+        expr.type = expr.left->type->clone();
+        expr.expr_category = Expr::Category::RValue;
+        break;
+    }
+
     // Arithemetic operators
     case TokenType::Plus:
     case TokenType::Minus:
@@ -612,7 +671,9 @@ void TypeChecker::visit(BinaryExpr &expr)
     // Bitwise operators
     case TokenType::Modulo:
     case TokenType::Ampersand:
-    // case TokenType::Pipe:
+    case TokenType::Pipe:
+    case TokenType::Caret:
+    case TokenType::Tilde:
     case TokenType::Not:
     {
         if (expr.left->type->kind() != Type::Kind::Int ||
