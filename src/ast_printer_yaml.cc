@@ -302,7 +302,7 @@ string ASTPrinter::print(const VariableExpr &expr)
     ostringstream oss;
     oss << indent() << "variable_expr:\n";
     enter_scope();
-    oss << indent() << "name: \"" << escape_string(expr.name) << "\"\n";
+    oss << indent() << "name: \"" << escape_string(expr.identifier) << "\"\n";
     leave_scope();
     return oss.str();
 }

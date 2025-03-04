@@ -57,35 +57,41 @@ namespace ast
         // -- Filled by the type checker --
         Category expr_category = Category::Unknown;
         TypePtr type = nullptr; // inferred type of the expression
+        virtual std::string name() const { return "Expr"; }
     };
 
     struct VariableExpr : Expr
     {
-        std::string name;
-        VariableExpr(std::string name) : name(std::move(name)) {}
+        std::string identifier;
+        explicit VariableExpr(std::string name) : identifier(std::move(name)) {}
+        std::string name() const override { return "VariableExpr"; }
     };
 
     struct LiteralExpr : Expr
     {
         virtual ~LiteralExpr() = default;
+        std::string name() const override { return "LiteralExpr"; }
     };
 
     struct IntegerLiteralExpr : LiteralExpr
     {
         int value;
         IntegerLiteralExpr(int value) : value(value) {}
+        std::string name() const override { return "IntegerLiteralExpr"; }
     };
 
     struct FloatLiteralExpr : LiteralExpr
     {
         float value;
         FloatLiteralExpr(float value) : value(value) {}
+        std::string name() const override { return "FloatLiteralExpr"; }
     };
 
     struct StringLiteralExpr : LiteralExpr
     {
         std::string value;
         StringLiteralExpr(std::string value) : value(std::move(value)) {}
+        std::string name() const override { return "StringLiteralExpr"; }
     };
 
     struct StructLiteralExpr : LiteralExpr
@@ -96,6 +102,17 @@ namespace ast
 
         void add_member(std::string name, ExprPtr expr);
         Expr *get_member(const std::string &name) const;
+
+        explicit StructLiteralExpr(std::string struct_name) : struct_name(std::move(struct_name)) {}
+        StructLiteralExpr(std::string struct_name, std::vector<std::pair<std::string, ExprPtr>> members)
+            : struct_name(std::move(struct_name)), members(std::move(members))
+        {
+            for (size_t i = 0; i < members.size(); ++i)
+            {
+                member_map[members[i].first] = i;
+            }
+        }
+        std::string name() const override { return "StructLiteralExpr"; }
     };
 
     struct BinaryExpr : Expr
@@ -106,6 +123,7 @@ namespace ast
 
         BinaryExpr(TokenType op, ExprPtr left, ExprPtr right)
             : op(op), left(std::move(left)), right(std::move(right)) {}
+        std::string name() const override { return "BinaryExpr"; }
     };
 
     struct UnaryExpr : Expr
@@ -115,6 +133,7 @@ namespace ast
 
         UnaryExpr(TokenType op, ExprPtr operand)
             : op(op), operand(std::move(operand)) {}
+        std::string name() const override { return "UnaryExpr"; }
     };
 
     struct CallExpr : Expr
@@ -127,6 +146,7 @@ namespace ast
             : callee(std::move(callee)), args(std::move(args)) {}
         CallExpr(std::string callee_name, std::vector<ExprPtr> args)
             : callee(std::make_unique<VariableExpr>(callee_name)), args(std::move(args)) {}
+        std::string name() const override { return "CallExpr"; }
     };
 
     struct MemberAccessExpr : Expr
@@ -145,6 +165,7 @@ namespace ast
         MemberAccessExpr() = default;
         MemberAccessExpr(ExprPtr object, std::string member, TokenType accessor)
             : object(std::move(object)), member(std::move(member)), accessor(accessor) {}
+        std::string name() const override { return "MemberAccessExpr"; }
     };
 
     struct ArrayAccessExpr : Expr
@@ -155,13 +176,19 @@ namespace ast
         ArrayAccessExpr() = default;
         ArrayAccessExpr(ExprPtr array, ExprPtr index)
             : array(std::move(array)), index(std::move(index)) {}
+        std::string name() const override { return "ArrayAccessExpr"; }
     };
 
     struct CastExpr : Expr
     {
         TypePtr target_type;
         ExprPtr expr;
+
+        CastExpr(TypePtr target_type, ExprPtr expr)
+            : target_type(std::move(target_type)), expr(std::move(expr)) {}
+        std::string name() const override { return "CastExpr"; }
     };
+
     struct SizeofExpr : Expr
     {
         enum class Kind
@@ -176,28 +203,24 @@ namespace ast
             ExprPtr target_expr;
         };
 
-        SizeofExpr(Kind k) : kind(k)
-        {
-            if (kind == Kind::Type)
-            {
-                new (&target_type) TypePtr();
-            }
-            else if (kind == Kind::Expr)
-            {
-                new (&target_expr) ExprPtr();
-            }
-        }
+        // Default constructor (deleted)
+        SizeofExpr() = delete;
 
-        SizeofExpr(TypePtr type) : kind(Kind::Type)
+        // Constructor for Kind::Type
+        explicit SizeofExpr(TypePtr type)
+            : kind(Kind::Type)
         {
             new (&target_type) TypePtr(std::move(type));
         }
 
-        SizeofExpr(ExprPtr expr) : kind(Kind::Expr)
+        // Constructor for Kind::Expr
+        explicit SizeofExpr(ExprPtr expr)
+            : kind(Kind::Expr)
         {
             new (&target_expr) ExprPtr(std::move(expr));
         }
 
+        // Destructor
         ~SizeofExpr()
         {
             if (kind == Kind::Type)
@@ -210,9 +233,13 @@ namespace ast
             }
         }
 
+        // Copy constructor (deleted)
         SizeofExpr(const SizeofExpr &) = delete;
+
+        // Copy assignment operator (deleted)
         SizeofExpr &operator=(const SizeofExpr &) = delete;
 
+        // Move constructor
         SizeofExpr(SizeofExpr &&other) noexcept
             : kind(other.kind)
         {
@@ -226,6 +253,7 @@ namespace ast
             }
         }
 
+        // Move assignment operator
         SizeofExpr &operator=(SizeofExpr &&other) noexcept
         {
             if (this != &other)
@@ -244,6 +272,7 @@ namespace ast
             }
             return *this;
         }
+        std::string name() const override { return "SizeofExpr"; }
     };
 
     struct TupleExpr : Expr
@@ -251,23 +280,29 @@ namespace ast
         std::vector<ExprPtr> elements;
 
         explicit TupleExpr(std::vector<ExprPtr> elements) : elements(std::move(elements)) {}
+        std::string name() const override { return "TupleExpr"; }
     };
 
     struct AddressOfExpr : Expr
     {
         ExprPtr operand;
-        AddressOfExpr(ExprPtr operand) : operand(std::move(operand)) {}
+        explicit AddressOfExpr(ExprPtr operand) : operand(std::move(operand)) {}
+        std::string name() const override { return "AddressOfExpr"; }
     };
 
     struct DerefExpr : Expr
     {
         ExprPtr operand;
-        DerefExpr(ExprPtr operand) : operand(std::move(operand)) {}
+        explicit DerefExpr(ExprPtr operand) : operand(std::move(operand)) {}
+        std::string name() const override { return "DerefExpr"; }
     };
 
     struct InitListExpr : Expr
     {
         std::vector<ExprPtr> members;
+
+        explicit InitListExpr(std::vector<ExprPtr> members) : members(std::move(members)) {}
+        std::string name() const override { return "InitListExpr"; }
     };
 
     struct FunctionPointerExpr : Expr
@@ -275,7 +310,10 @@ namespace ast
         std::vector<TypePtr> param_types;
         TypePtr return_type;
 
+        FunctionPointerExpr(std::vector<TypePtr> param_types, TypePtr return_type)
+            : param_types(std::move(param_types)), return_type(std::move(return_type)) {}
         FunctionPointerExpr() = default;
+        std::string name() const override { return "FunctionPointerExpr"; }
     };
     // Statements
     struct Statement
@@ -287,12 +325,15 @@ namespace ast
     {
         ExprPtr expr;
 
-        ExprStmt(ExprPtr expr) : expr(std::move(expr)) {}
+        explicit ExprStmt(ExprPtr expr) : expr(std::move(expr)) {}
     };
 
     struct BlockStmt : Statement
     {
         std::vector<StmtPtr> statements;
+
+        explicit BlockStmt() = default;
+        explicit BlockStmt(std::vector<StmtPtr> statements) : statements(std::move(statements)) {}
     };
 
     struct VarDeclStmt : Statement
@@ -303,6 +344,11 @@ namespace ast
         ExprPtr init_expr;
 
         VarDeclStmt() : is_const(false) {}
+        VarDeclStmt(bool is_const, std::string name, TypePtr type, ExprPtr init_expr)
+            : is_const(is_const),
+              name(std::move(name)),
+              type(std::move(type)),
+              init_expr(std::move(init_expr)) {}
 
         static void swap(VarDeclStmt &a, VarDeclStmt &b) noexcept;
         VarDeclStmt &operator=(VarDeclStmt other) noexcept;
@@ -313,7 +359,7 @@ namespace ast
     struct ReturnStmt : Statement
     {
         ExprPtr value;
-        ReturnStmt(ExprPtr value) : value(std::move(value)) {}
+        explicit ReturnStmt(ExprPtr value) : value(std::move(value)) {}
     };
 
     struct IfStmt : Statement
@@ -384,15 +430,30 @@ namespace ast
         std::vector<StmtPtr> body;
 
         // method
+        TypePtr receiver_type = nullptr;
         bool is_method = false;
         bool is_static = false;
-        TypePtr receiver_type = nullptr;
 
         void add_param(const std::string &name, TypePtr type);
         Type &get_param_type(const std::string &name);
         TypePtr type() const;
 
         static FunctionDecl create_main_function();
+
+        FunctionDecl() = default;
+        explicit FunctionDecl(std::string name, TypePtr return_type, std::vector<TypedField> params, std::vector<StmtPtr> body)
+            : name(std::move(name)),
+              return_type(std::move(return_type)),
+              params(std::move(params)),
+              body(std::move(body)) {}
+
+        explicit FunctionDecl(std::string name, TypePtr return_type, std::vector<TypedField> params, std::vector<StmtPtr> body, TypePtr receiver_type, bool is_static)
+            : name(std::move(name)),
+              return_type(std::move(return_type)),
+              params(std::move(params)),
+              body(std::move(body)),
+              receiver_type(std::move(receiver_type)),
+              is_static(is_static) {}
     };
 
     struct ImplBlock

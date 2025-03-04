@@ -9,6 +9,8 @@
 #include <cstdint>
 #include <stdexcept>
 
+#include "utils.h"
+
 #define MO_DEFAULT_INT_BITWIDTH (32)
 #define MO_DEFAULT_FLOAT_PRECISION (32)
 
@@ -31,6 +33,8 @@ namespace ast
     class StructType;
     class AliasType;
     class QualifiedType;
+    class VoidType;
+    class PlaceholderType;
 
     using TypePtr = std::unique_ptr<Type>;
 
@@ -39,6 +43,7 @@ namespace ast
     //===----------------------------------------------------------------------===//
     enum class Qualifier : uint8_t
     {
+        None = 0,
         Const = 1,
         Volatile = 1 << 1,
         Restrict = 1 << 2
@@ -95,10 +100,11 @@ namespace ast
         virtual Kind kind() const noexcept = 0;
         virtual TypePtr clone() const = 0;
         virtual bool equals(const Type *other) const noexcept = 0;
+        virtual std::string to_string() const = 0;
 
         // Type conversion methods
-        virtual IntegerType *as_int() noexcept { return nullptr; }
-        virtual const IntegerType *as_int() const noexcept { return nullptr; }
+        virtual IntegerType *as_integer() noexcept { return nullptr; }
+        virtual const IntegerType *as_integer() const noexcept { return nullptr; }
         virtual FloatType *as_float() noexcept { return nullptr; }
         virtual const FloatType *as_float() const noexcept { return nullptr; }
         virtual BoolType *as_bool() noexcept { return nullptr; }
@@ -145,7 +151,22 @@ namespace ast
     };
 
     //===----------------------------------------------------------------------===//
-    //                             Abstract Base Class for Scalar Types
+    //                             Void Type
+    //===----------------------------------------------------------------------===//
+    class VoidType : public Type
+    {
+    public:
+        Kind kind() const noexcept override { return Kind::Void; }
+        TypePtr clone() const override { return std::make_unique<VoidType>(); }
+        bool equals(const Type *other) const noexcept override
+        {
+            return other->kind() == Kind::Void;
+        }
+        std::string to_string() const override;
+    };
+
+    //===----------------------------------------------------------------------===//
+    //                             Placeholder Type
     //===----------------------------------------------------------------------===//
     class PlaceholderType : public Type
     {
@@ -156,8 +177,12 @@ namespace ast
         {
             return other->kind() == Kind::Placeholder;
         }
+        std::string to_string() const override;
     };
 
+    //===----------------------------------------------------------------------===//
+    //                             Abstract Base Class for Scalar Types
+    //===----------------------------------------------------------------------===//
     class ScalarType : public Type
     {
     public:
@@ -181,8 +206,8 @@ namespace ast
         }
 
         // Type conversion
-        IntegerType *as_int() noexcept override { return this; }
-        const IntegerType *as_int() const noexcept override { return this; }
+        IntegerType *as_integer() noexcept override { return this; }
+        const IntegerType *as_integer() const noexcept override { return this; }
 
         Kind kind() const noexcept override { return Kind::Int; }
         size_t bit_width() const noexcept { return bit_width_; }
@@ -199,13 +224,20 @@ namespace ast
             return bit_width_ == static_cast<const IntegerType *>(other)->bit_width_;
         }
 
+        bool is_signed()
+        {
+            return !unsigned_;
+        }
+
+        std::string to_string() const override;
+
     private:
         size_t bit_width_;
         bool unsigned_;
     };
 
     //===----------------------------------------------------------------------===//
-    //                             // FloatiPoint Type
+    //                             Float Type
     //===----------------------------------------------------------------------===//
     class FloatType : public ScalarType
     {
@@ -240,6 +272,8 @@ namespace ast
             return precision_ == static_cast<const FloatType *>(other)->precision_;
         }
 
+        std::string to_string() const override;
+
     private:
         Precision precision_;
     };
@@ -267,6 +301,8 @@ namespace ast
         {
             return other->kind() == Kind::Bool;
         }
+
+        std::string to_string() const override;
     };
 
     //===----------------------------------------------------------------------===//
@@ -290,6 +326,8 @@ namespace ast
         {
             return other->kind() == Kind::String;
         }
+
+        std::string to_string() const override;
     };
 
     //===----------------------------------------------------------------------===//
@@ -320,6 +358,8 @@ namespace ast
             const auto *o = static_cast<const PointerType *>(other);
             return pointee_->equals(o->pointee_.get());
         }
+
+        std::string to_string() const override;
 
     private:
         TypePtr pointee_;
@@ -360,6 +400,8 @@ namespace ast
             const auto *o = static_cast<const ArrayType *>(other);
             return size_ == o->size_ && element_->equals(o->element_.get());
         }
+
+        std::string to_string() const override;
 
     private:
         TypePtr element_;
@@ -424,6 +466,8 @@ namespace ast
             return true;
         }
 
+        std::string to_string() const override;
+
     private:
         void validate_elements() const
         {
@@ -452,6 +496,10 @@ namespace ast
         StructType(std::string name, std::vector<TypedField> members)
             : name_(std::move(name)), members_(std::move(members))
         {
+            if (members_.empty())
+            {
+                MO_DEBUG("warning: creating empty struct type");
+            }
             validate_members();
             build_index();
         }
@@ -503,6 +551,8 @@ namespace ast
             }
             return std::make_unique<StructType>(name_, std::move(cloned_members));
         }
+
+        std::string to_string() const override;
 
     private:
         void validate_members() const
@@ -594,6 +644,8 @@ namespace ast
             return true;
         }
 
+        std::string to_string() const override;
+
     private:
         void validate_parameters() const
         {
@@ -645,6 +697,8 @@ namespace ast
             return name_ == o->name_;
         }
 
+        std::string to_string() const override;
+
     private:
         std::string name_;
         TypePtr target_;
@@ -684,6 +738,8 @@ namespace ast
             return qualifiers_ == o->qualifiers_ &&
                    base_->equals(o->base_.get());
         }
+
+        std::string to_string() const override;
 
     private:
         Qualifier qualifiers_;

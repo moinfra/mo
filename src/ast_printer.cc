@@ -131,7 +131,7 @@ std::string ASTPrinter::print(const Type& type) {
         return a->name();
     }
 
-    if (const IntegerType* i = type.as_int()) {
+    if (const IntegerType* i = type.as_integer()) {
         auto bw = i->bit_width();
         return "i" + std::to_string(bw);
     }
@@ -232,7 +232,7 @@ string ASTPrinter::print(const GlobalDecl &global_decl)
 // Expressions
 string ASTPrinter::visit(const VariableExpr &expr)
 {
-    return expr.name;
+    return expr.identifier;
 }
 
 string ASTPrinter::visit(const IntegerLiteralExpr &expr)

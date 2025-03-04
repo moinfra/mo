@@ -43,6 +43,8 @@ namespace ast
             {
                 return other->kind() == Kind::Void;
             }
+
+            std::string to_string() const override { return "void"; }
         };
         return std::make_unique<VoidType>();
     }
@@ -116,6 +118,142 @@ namespace ast
     TypePtr Type::create_qualified(Qualifier q, TypePtr base)
     {
         return std::make_unique<QualifiedType>(q, std::move(base));
+    }
+
+    std::string VoidType::to_string() const
+    {
+        return "()";
+    }
+
+    std::string PlaceholderType::to_string() const
+    {
+        return "!";
+    }
+
+    std::string IntegerType::to_string() const
+    {
+        return (unsigned_ ? "u" : "i") + std::to_string(bit_width_);
+    }
+
+    std::string FloatType::to_string() const
+    {
+        switch (precision_)
+        {
+        case Precision::Half:
+            return "f16";
+        case Precision::Single:
+            return "f32";
+        case Precision::Double:
+            return "f64";
+        case Precision::Quad:
+            return "f128";
+        default:
+            return "f32"; // Default case, should not happen
+        }
+    }
+
+    std::string BoolType::to_string() const
+    {
+        return "bool";
+    }
+
+    std::string StringType::to_string() const
+    {
+        return "str";
+    }
+
+    std::string PointerType::to_string() const
+    {
+        const Type *pointee_type = pointee_.get();
+        if (const QualifiedType *q = pointee_type->as_qualified())
+        {
+            if (static_cast<uint8_t>(q->qualifiers() & Qualifier::Const))
+            {
+                return "*const " + q->base_type().to_string();
+            }
+            else
+            {
+                return "*mut " + q->base_type().to_string();
+            }
+        }
+        else
+        {
+            return "*mut " + pointee_type->to_string();
+        }
+    }
+
+    std::string ArrayType::to_string() const
+    {
+        if (size_ == -1)
+        {
+            return "[" + element_->to_string() + "]";
+        }
+        else
+        {
+            return "[" + element_->to_string() + "; " + std::to_string(size_) + "]";
+        }
+    }
+
+    std::string TupleType::to_string() const
+    {
+        std::string result = "(";
+        for (size_t i = 0; i < elements_.size(); ++i)
+        {
+            if (i > 0)
+            {
+                result += ", ";
+            }
+            result += elements_[i]->to_string();
+        }
+        if (elements_.size() == 1)
+        {
+            result += ",";
+        }
+        result += ")";
+        return result;
+    }
+
+    std::string StructType::to_string() const
+    {
+        return name_;
+    }
+
+    std::string FunctionType::to_string() const
+    {
+        std::string params_str;
+        for (size_t i = 0; i < params_.size(); ++i)
+        {
+            if (i > 0)
+                params_str += ", ";
+            params_str += params_[i]->to_string();
+        }
+        return "fn(" + params_str + ") -> " + return_type_->to_string();
+    }
+
+    std::string AliasType::to_string() const
+    {
+        return name_;
+    }
+
+    std::string QualifiedType::to_string() const
+    {
+        std::string qual_str;
+        if ((qualifiers_ & Qualifier::Const) != Qualifier{0})
+        {
+            qual_str += "const ";
+        }
+
+        if ((qualifiers_ & Qualifier::Volatile) != Qualifier{0})
+        {
+            qual_str += "volatile ";
+        }
+
+        if ((qualifiers_ & Qualifier::Restrict) != Qualifier{0})
+        {
+            qual_str += "restrict ";
+        }
+
+        return qual_str + base_->to_string();
     }
 
 }
