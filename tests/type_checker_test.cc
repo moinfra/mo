@@ -167,9 +167,9 @@ TEST_F(TypeCheckerTest, ValidNumericConversion)
 
 TEST_F(TypeCheckerTest, InvalidPointerConversion)
 {
-    auto cast_expr = std::make_unique<CastExpr>();
-    cast_expr->target_type = Type::create_int();
-    cast_expr->expr = std::make_unique<FloatLiteralExpr>(3.14f);
+    auto target_type = Type::create_int();
+    auto expr = std::make_unique<FloatLiteralExpr>(3.14f);
+    auto cast_expr = std::make_unique<CastExpr>(std::move(target_type), std::move(expr));
 
     program_->functions.push_back(std::make_unique<FunctionDecl>(
         FunctionDecl::create_main_function()));

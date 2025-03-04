@@ -1,6 +1,8 @@
 // type_checker.cc
 #include "type_checker.h"
 #include "lexer.h"
+#include "utils.h"
+
 #include <cassert>
 #include <algorithm>
 #include <unordered_set>
@@ -235,6 +237,7 @@ bool TypeChecker::is_valid_lvalue(Expr &expr)
 // Expression checking entry point
 void TypeChecker::check_expr(Expr &expr)
 {
+    MO_DEBUG("Checking %s", expr.name().c_str());
     // Dispatch to specific visitor
     if (auto v = dynamic_cast<VariableExpr *>(&expr))
         visit(*v);
@@ -289,7 +292,8 @@ void TypeChecker::check_expr(Expr &expr)
         break;
     }
 
-    // assert(expr.type && "Expression has no type");
+    MO_ASSERT(expr.type, "Expression has no type after checking");
+    MO_DEBUG("Type of %s: %s", expr.name().c_str(), expr.type->to_string().c_str());
 }
 
 // Cast expression
@@ -376,13 +380,14 @@ void TypeChecker::visit(VariableExpr &expr)
 {
     expr.expr_category = Expr::Category::LValue;
 
-    if (auto type = current_scope_->find(expr.name))
+    if (auto type = current_scope_->find(expr.identifier))
     {
         expr.type = type->clone();
     }
     else
     {
-        add_error("Undefined symbol '" + expr.name + "'");
+        add_error("Undefined symbol '" + expr.identifier + "'");
+        MO_DEBUG("Undefined symbol: %s", expr.identifier.c_str());
         expr.type = Type::create_placeholder();
     }
 }
@@ -542,11 +547,14 @@ void TypeChecker::visit(BinaryExpr &expr)
     {
         if (expr.left->type->kind() == Type::Kind::Int && expr.right->type->kind() == Type::Kind::Int)
         {
-            expr.type = Type::create_int();
+            auto ty = expr.left->type->as_integer();
+            expr.type = Type::create_int(ty->bit_width(), !ty->is_signed());
+            ;
         }
         else if (expr.left->type->kind() == Type::Kind::Float && expr.right->type->kind() == Type::Kind::Float)
         {
-            expr.type = Type::create_float();
+            auto ty = expr.left->type->as_float();
+            expr.type = Type::create_float(static_cast<uint8_t>(ty->precision()));
         }
         else
         {
@@ -616,8 +624,6 @@ void TypeChecker::visit(BinaryExpr &expr)
     }
     }
 }
-
-// type_checker.cpp 续
 void TypeChecker::visit(UnaryExpr &expr)
 {
     check_expr(*expr.operand);
@@ -626,6 +632,16 @@ void TypeChecker::visit(UnaryExpr &expr)
 
     switch (expr.op)
     {
+    case TokenType::Plus:
+        if (expr.operand->type->kind() != Type::Kind::Int &&
+            expr.operand->type->kind() != Type::Kind::Float)
+        {
+            add_error("Unary plus on non-numeric type");
+        }
+        expr.type = expr.operand->type->clone();
+        expr.expr_category = Expr::Category::RValue;
+        break;
+
     case TokenType::Minus:
         if (expr.operand->type->kind() != Type::Kind::Int &&
             expr.operand->type->kind() != Type::Kind::Float)
@@ -657,8 +673,23 @@ void TypeChecker::visit(UnaryExpr &expr)
         break;
     }
 
+    case TokenType::Not:
+        expr.type = Type::create_bool();
+        expr.expr_category = Expr::Category::RValue;
+        break;
+
+    case TokenType::Tilde:
+        if (expr.operand->type->kind() != Type::Kind::Int)
+        {
+            add_error("Bitwise complement on non-integer type");
+        }
+        expr.type = expr.operand->type->clone();
+        expr.expr_category = Expr::Category::RValue;
+        break;
+
     default:
         add_error("Unsupported unary operator");
+        MO_DEBUG("Unsupported unary operator: %s", token_type_to_string(expr.op).c_str());
     }
 }
 
@@ -827,6 +858,7 @@ void TypeChecker::visit(ReturnStmt &stmt)
     if (stmt.value)
     {
         check_expr(*stmt.value);
+        MO_ASSERT(stmt.value->type != nullptr, "Return value must have a type");
         if (!current_return_type_)
         {
             add_error("Return in non-function context");
@@ -916,8 +948,8 @@ void TypeChecker::visit(MemberAccessExpr &expr)
         auto method = struct_decl->get_method(expr.member);
         if (!method)
         {
-            debug("No method '%s' in struct '%s'", expr.member.c_str(), struct_type->name().c_str());
-            debug("Falling back to function pointer member access");
+            MO_DEBUG("No method '%s' in struct '%s'", expr.member.c_str(), struct_type->name().c_str());
+            MO_DEBUG("Falling back to function pointer member access");
         }
         else
         {
