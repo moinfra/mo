@@ -129,12 +129,6 @@ void TypeChecker::pop_scope()
     current_scope_ = current_scope_->parent;
 }
 
-// Error reporting
-void TypeChecker::add_error(const std::string &message)
-{
-    errors_.push_back(message);
-}
-
 // Type system implementation. NOTE: alias kind t1 will be resolved
 bool TypeChecker::types_equal(const Type &t1, const Type &t2) const
 {
@@ -232,6 +226,20 @@ bool TypeChecker::is_valid_lvalue(Expr &expr)
            dynamic_cast<MemberAccessExpr *>(&expr) ||
            dynamic_cast<ArrayAccessExpr *>(&expr) ||
            dynamic_cast<DerefExpr *>(&expr);
+}
+
+bool TypeChecker::is_valid_cond_type(const ast::Type &type)
+{
+    bool isInt = type.kind() == Type::Kind::Int;
+    bool isFloat = type.kind() == Type::Kind::Float;
+
+    if (!isInt && !isFloat)
+    {
+        add_error("Condition must be of numeric type (int or float), actually is ", type.to_string());
+        return false;
+    }
+
+    return true;
 }
 
 // Expression checking entry point
@@ -619,7 +627,7 @@ void TypeChecker::visit(BinaryExpr &expr)
 
     default:
     {
-        add_error("Unsupported binary operator");
+        MO_ASSERT(false, "Binary operator not covered by type checking: %s", token_type_to_string(expr.op).c_str());
         break;
     }
     }
@@ -1259,13 +1267,7 @@ void TypeChecker::visit(WhileStmt &stmt)
     // Ensure the condition is of a numeric type (int or float)
     if (stmt.condition->type)
     {
-        bool isInt = stmt.condition->type->kind() == Type::Kind::Int;
-        bool isFloat = stmt.condition->type->kind() == Type::Kind::Float;
-
-        if (!isInt && !isFloat)
-        {
-            add_error("Loop condition must be of numeric type (int or float)");
-        }
+        is_valid_cond_type(*stmt.condition->type);
     }
 }
 
@@ -1286,12 +1288,6 @@ void TypeChecker::visit(IfStmt &stmt)
     // Ensure the condition is of a numeric type (int or float)
     if (stmt.condition->type)
     {
-        bool isInt = stmt.condition->type->kind() == Type::Kind::Int;
-        bool isFloat = stmt.condition->type->kind() == Type::Kind::Float;
-
-        if (!isInt && !isFloat)
-        {
-            add_error("Condition must be of numeric type (int or float)");
-        }
+        is_valid_cond_type(*stmt.condition->type);
     }
 }
