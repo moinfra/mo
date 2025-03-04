@@ -86,6 +86,31 @@ BinaryInst *IRBuilder::create_bitxor(Value *lhs, Value *rhs,
     return create_binary(Opcode::BitXor, lhs, rhs, name);
 }
 
+BinaryInst *IRBuilder::create_srem(Value *lhs, Value *rhs, const std::string &name)
+{
+    return create_binary(Opcode::SRem, lhs, rhs, name);
+}
+
+BinaryInst *IRBuilder::create_urem(Value *lhs, Value *rhs, const std::string &name)
+{
+    return create_binary(Opcode::URem, lhs, rhs, name);
+}
+
+BinaryInst *IRBuilder::create_shl(Value *lhs, Value *rhs, const std::string &name)
+{
+    return create_binary(Opcode::Shl, lhs, rhs, name);
+}
+
+BinaryInst *IRBuilder::create_ashr(Value *lhs, Value *rhs, const std::string &name)
+{
+    return create_binary(Opcode::AShr, lhs, rhs, name);
+}
+
+BinaryInst *IRBuilder::create_lshr(Value *lhs, Value *rhs, const std::string &name)
+{
+    return create_binary(Opcode::LShr, lhs, rhs, name);
+}
+
 ICmpInst *IRBuilder::create_icmp(ICmpInst::Predicate pred, Value *lhs,
                                  Value *rhs, const std::string &name)
 {

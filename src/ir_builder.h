@@ -42,6 +42,11 @@ public:
     BinaryInst *create_bitand(Value *lhs, Value *rhs, const std::string &name = "");
     BinaryInst *create_bitor(Value *lhs, Value *rhs, const std::string &name = "");
     BinaryInst *create_bitxor(Value *lhs, Value *rhs, const std::string &name = "");
+    BinaryInst *create_srem(Value *lhs, Value *rhs, const std::string &name = "");
+    BinaryInst *create_urem(Value *lhs, Value *rhs, const std::string &name = "");
+    BinaryInst *create_shl(Value *lhs, Value *rhs, const std::string &name = "");
+    BinaryInst *create_ashr(Value *lhs, Value *rhs, const std::string &name = "");
+    BinaryInst *create_lshr(Value *lhs, Value *rhs, const std::string &name = "");
 
     //--- Comparison Instructions ---//
     ICmpInst *create_icmp(ICmpInst::Predicate pred, Value *lhs, Value *rhs,
