@@ -130,6 +130,7 @@ namespace ast
         virtual bool is_scalar() const noexcept { return false; }
         virtual bool is_numeric() const noexcept { return false; }
         virtual bool is_aggregate() const noexcept { return false; }
+        virtual bool is_signed() const noexcept { return false; }
 
         // Factory methods
         static TypePtr create_placeholder();
@@ -204,10 +205,14 @@ namespace ast
     //===----------------------------------------------------------------------===//
     //                             Abstract Base Class for Aggregate Types
     //===----------------------------------------------------------------------===//
-    class AggregateType : public ScalarType
+    class AggregateType : public Type
     {
     public:
         bool is_aggregate() const noexcept override { return true; }
+
+        bool is_signed() const noexcept override {
+            return false;
+        }
 
     protected:
         ~AggregateType() = default; // Prevent direct instantiation
@@ -244,7 +249,7 @@ namespace ast
             return bit_width_ == static_cast<const IntegerType *>(other)->bit_width_;
         }
 
-        bool is_signed()
+        bool is_signed() const noexcept override
         {
             return !unsigned_;
         }
@@ -292,6 +297,10 @@ namespace ast
             return precision_ == static_cast<const FloatType *>(other)->precision_;
         }
 
+        bool is_signed() const noexcept override {
+            return false;
+        }
+
         std::string to_string() const override;
 
     private:
@@ -322,6 +331,10 @@ namespace ast
             return other->kind() == Kind::Bool;
         }
 
+        bool is_signed() const noexcept override {
+            return false;
+        }
+
         std::string to_string() const override;
     };
 
@@ -345,6 +358,10 @@ namespace ast
         bool equals(const Type *other) const noexcept override
         {
             return other->kind() == Kind::String;
+        }
+
+        bool is_signed() const noexcept override {
+            return false;
         }
 
         std::string to_string() const override;
@@ -380,6 +397,11 @@ namespace ast
         }
 
         std::string to_string() const override;
+
+
+        bool is_signed() const noexcept override {
+            return false;
+        }
 
     private:
         TypePtr pointee_;

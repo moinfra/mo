@@ -180,10 +180,11 @@ public:
     bool is_vector() const { return tid_ == VecTy; }
     bool is_qualified() const { return tid_ == QualifierTy; }
 
-    bool is_aggregate() const noexcept
-    {
-        return is_struct() || is_array() || is_tuple();
-    }
+    virtual bool is_scalar() const noexcept { return false; }
+    virtual bool is_numeric() const noexcept { return false; }
+    virtual bool is_aggregate() const noexcept { return false; }
+    virtual bool is_signed() const noexcept { return false; }
+
     // Type conversion methods
     virtual IntegerType *as_integer() noexcept { return nullptr; }
     virtual const IntegerType *as_integer() const noexcept { return nullptr; }
@@ -234,13 +235,52 @@ protected:
     Module *module_;
 };
 
-class IntegerType : public Type
+//===----------------------------------------------------------------------===//
+//                             Abstract Base Class for Scalar Types
+//===----------------------------------------------------------------------===//
+class ScalarType : public Type
+{
+public:
+    bool is_scalar() const noexcept override { return true; }
+
+protected:
+    ~ScalarType() = default; // Prevent direct instantiation
+    ScalarType(TypeID tid, Module *m) : Type(tid, m) {}
+};
+
+//===----------------------------------------------------------------------===//
+//                             Abstract Base Class for Numeric Types
+//===----------------------------------------------------------------------===//
+class NumericType : public ScalarType
+{
+public:
+    bool is_numeric() const noexcept override { return true; }
+
+protected:
+    ~NumericType() = default; // Prevent direct instantiation
+    NumericType(TypeID tid, Module *m) : ScalarType(tid, m) {}
+};
+
+//===----------------------------------------------------------------------===//
+//                             Abstract Base Class for Aggregate Types
+//===----------------------------------------------------------------------===//
+class AggregateType : public Type
+{
+public:
+    bool is_aggregate() const noexcept override { return true; }
+
+protected:
+    ~AggregateType() = default; // Prevent direct instantiation
+    AggregateType(TypeID tid, Module *m) : Type(tid, m) {}
+};
+
+class IntegerType : public NumericType
 {
 public:
     size_t size() const override { return (bits_ + 7) / 8; }
     std::string name() const override { return "i" + std::to_string(bits_); }
     unsigned bits() const override { return bits_; }
-    bool is_signed() const { return !unsigned_; }
+    bool is_signed() const noexcept override { return !unsigned_; }
 
     IntegerType *as_integer() noexcept override { return this; }
     const IntegerType *as_integer() const noexcept override { return this; }
@@ -262,13 +302,13 @@ protected:
     {
         if (const IntegerType *other_int = dynamic_cast<const IntegerType *>(&other))
         {
-            return bits_ == other_int->bits_;
+            return bits_ == other_int->bits_ && unsigned_ == other_int->unsigned_;
         }
         return false;
     }
 };
 
-class FloatType : public Type
+class FloatType : public NumericType
 {
 public:
     enum Precision
@@ -470,7 +510,7 @@ protected:
     }
 };
 
-class ArrayType : public Type
+class ArrayType : public AggregateType
 {
 public:
     Type *element_type() const { return element_type_; }
@@ -528,7 +568,7 @@ struct MemberInfo
     }
 };
 
-class StructType : public Type
+class StructType : public AggregateType
 {
 public:
     friend class Module;
@@ -631,7 +671,7 @@ protected:
     }
 };
 
-class VectorType : public Type
+class VectorType : public AggregateType
 {
 public:
     Type *element_type() const { return element_type_; }
@@ -663,7 +703,7 @@ public:
 
 private:
     VectorType(Module *m, Type *element_type, uint64_t num_elements)
-        : Type(VecTy, m), element_type_(element_type), num_elements_(num_elements) {}
+        : AggregateType(VecTy, m), element_type_(element_type), num_elements_(num_elements) {}
 
     Type *element_type_;
     uint64_t num_elements_;
@@ -702,7 +742,6 @@ public:
 
     std::string to_string() const override
     {
-        //  这里需要根据 Qualifier 的值来决定如何输出，例如：
         std::string qual_str;
         if ((qualifiers_ & Qualifier::Const) != Qualifier::None)
         {
@@ -784,6 +823,8 @@ enum class Opcode
     Mul,  // Multiplication
     UDiv, // Unsigned Division
     SDiv, // Signed Division
+    URem, // Unsigned Remainder
+    SRem, // Signed Remainder
 
     // Memory Operations
     Alloca,        // Allocate memory

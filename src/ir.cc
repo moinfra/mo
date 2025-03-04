@@ -38,10 +38,10 @@ Type *Type::element_type() const
 }
 
 IntegerType::IntegerType(Module *m, unsigned bits, bool unsigned_)
-    : Type(IntTy, m), bits_(bits), unsigned_(unsigned_) {}
+    : NumericType(IntTy, m), bits_(bits), unsigned_(unsigned_) {}
 
 FloatType::FloatType(Module *m, FloatType::Precision precision)
-    : Type(FpTy, m), precision_(precision)
+    : NumericType(FpTy, m), precision_(precision)
 {
     switch (precision)
     {
@@ -66,7 +66,7 @@ PointerType::PointerType(Module *m, Type *element_type)
     : Type(PtrTy, m), element_type_(element_type) {}
 
 ArrayType::ArrayType(Module *m, Type *element_type, uint64_t num_elements)
-    : Type(ArrayTy, m), element_type_(element_type),
+    : AggregateType(ArrayTy, m), element_type_(element_type),
       num_elements_(num_elements)
 {
     assert(element_type && "Invalid element type");
@@ -116,7 +116,7 @@ StructLayout calculate_aligned_layout(const std::vector<Type *> &members)
     return layout;
 }
 StructType::StructType(Module *m, const std::string &name, const std::vector<MemberInfo> &members)
-    : Type(StructTy, m), name_(name), module_(m), is_opaque_(false), size_(0)
+    : AggregateType(StructTy, m), name_(name), module_(m), is_opaque_(false), size_(0)
 {
     if (!members.empty())
     {
@@ -125,7 +125,7 @@ StructType::StructType(Module *m, const std::string &name, const std::vector<Mem
 }
 
 StructType::StructType(Module *m, const std::vector<MemberInfo> &members)
-    : Type(StructTy, m), name_(""), module_(m), is_opaque_(members.empty()), size_(0)
+    : AggregateType(StructTy, m), name_(""), module_(m), is_opaque_(members.empty()), size_(0)
 {
     if (!members.empty())
     {
@@ -1242,11 +1242,27 @@ BinaryInst::BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Va
 
 bool BinaryInst::isBinaryOp(Opcode op)
 {
-    return op == Opcode::Add || op == Opcode::Sub || op == Opcode::Mul ||
-           op == Opcode::UDiv || op == Opcode::SDiv ||
-           op == Opcode::BitAnd || op == Opcode::BitOr || op == Opcode::BitXor ||
-           op == Opcode::Shl || op == Opcode::LShr || op == Opcode::AShr ||
-           op == Opcode::ICmp || op == Opcode::FCmp;
+    switch (op)
+    {
+    case Opcode::Add:
+    case Opcode::Sub:
+    case Opcode::Mul:
+    case Opcode::UDiv:
+    case Opcode::SDiv:
+    case Opcode::URem:
+    case Opcode::SRem:
+    case Opcode::BitAnd:
+    case Opcode::BitOr:
+    case Opcode::BitXor:
+    case Opcode::Shl:
+    case Opcode::LShr:
+    case Opcode::AShr:
+    case Opcode::ICmp:
+    case Opcode::FCmp:
+        return true;
+    default:
+        return false;
+    }
 }
 
 BinaryInst *BinaryInst::create(Opcode op, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
