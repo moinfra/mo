@@ -1,5 +1,7 @@
 // src/parser.cc
 #include "parser.h"
+#include "utils.h"
+
 #include <cassert>
 #include <unordered_set>
 #include <algorithm>
@@ -96,7 +98,7 @@ int get_precedence(TokenType type, ASSOC assoc = L_ASSOC | R_ASSOC)
     }
     if (!found)
     {
-        debug("parser: warning: no precedence for token '%s' with associativity %s, "
+        MO_DEBUG("parser: warning: no precedence for token '%s' with associativity %s, "
               "falling back to 0",
               token_type_to_string(type).c_str(), assoc ? "right" : "left");
     }
@@ -219,7 +221,7 @@ int get_type_precedence(TokenType token_type, ASSOC assoc = L_ASSOC | R_ASSOC)
     }
     if (!found)
     {
-        debug("parser: warning: no precedence for token '%s' with associativity %s, "
+        MO_DEBUG("parser: warning: no precedence for token '%s' with associativity %s, "
               "falling back to 0",
               token_type_to_string(token_type).c_str(), assoc ? "right" : "left");
     }
@@ -385,7 +387,7 @@ std::unique_ptr<Type> Parser::parse_type(int precedence)
 
 ExprPtr Parser::parse_expr(int precedence)
 {
-    debug("parser: parsing expression with precedence %d", precedence);
+    MO_DEBUG("parser: parsing expression with precedence %d", precedence);
     auto token_type = current_.type;
 
     auto it = pratt_rules_.find(token_type);
@@ -408,7 +410,7 @@ ExprPtr Parser::parse_expr(int precedence)
 
     auto left = prefix_it->prefix();
 
-    debug("parser: parsed %s prefix expression. new token is %s (precedence %d)",
+    MO_DEBUG("parser: parsed %s prefix expression. new token is %s (precedence %d)",
           token_type_to_string(token_type).c_str(), token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
 
     while (precedence < get_precedence(current_.type))
@@ -416,7 +418,7 @@ ExprPtr Parser::parse_expr(int precedence)
         auto infix_it = pratt_rules_.find(current_.type);
         if (infix_it == pratt_rules_.end())
         {
-            debug("parser: no infix rule for token %s", token_type_to_string(current_.type).c_str());
+            MO_DEBUG("parser: no infix rule for token %s", token_type_to_string(current_.type).c_str());
             break;
         }
 
@@ -426,12 +428,12 @@ ExprPtr Parser::parse_expr(int precedence)
 
         if (infix_rule_it == infix_rules.end())
         {
-            debug("parser: no infix rule for token %s", token_type_to_string(current_.type).c_str());
+            MO_DEBUG("parser: no infix rule for token %s", token_type_to_string(current_.type).c_str());
             break;
         }
 
         left = infix_rule_it->infix(std::move(left));
-        debug("parser: parsed infix expression. new token is %s (precedence %d)",
+        MO_DEBUG("parser: parsed infix expression. new token is %s (precedence %d)",
               token_type_to_string(current_.type).c_str(), get_precedence(current_.type));
     }
 
@@ -440,20 +442,19 @@ ExprPtr Parser::parse_expr(int precedence)
 
 ExprPtr Parser::parse_member_access(ExprPtr left)
 {
-    auto expr = std::make_unique<MemberAccessExpr>();
-    expr->object = std::move(left);
-    expr->accessor = current_.type;
-
+    auto accessor = current_.type;
     advance(); // Skip . or ->
-    expr->member = current_.lexeme;
+    auto member = current_.lexeme;
     consume(TokenType::Identifier, "Expected member name after access operator");
+
+    auto expr = std::make_unique<MemberAccessExpr>(std::move(left), member, accessor);
 
     // 处理链式访问 Handle chained member access
     if (current_.type == TokenType::Dot ||
         current_.type == TokenType::Arrow ||
         current_.type == TokenType::DoubleColon)
     {
-        return parse_expr(get_precedence(expr->accessor));
+        return parse_expr(get_precedence(accessor));
     }
 
     if (match(TokenType::LParen))
@@ -466,36 +467,28 @@ ExprPtr Parser::parse_member_access(ExprPtr left)
 
 ExprPtr Parser::parse_array_access(ExprPtr left)
 {
-    auto expr = std::make_unique<ArrayAccessExpr>();
-    expr->array = std::move(left);
-
     consume(TokenType::LBracket, "Expected '[' after array name");
-    expr->index = parse_expr();
+    auto index = parse_expr();
     consume(TokenType::RBracket, "Expected ']' after array index");
-
-    return expr;
+    return std::make_unique<ArrayAccessExpr>(std::move(left), std::move(index));
 }
 
 ExprPtr Parser::parse_call(ExprPtr left)
 {
-    debug("parser: parsing call expression");
-    auto call_expr = std::make_unique<CallExpr>();
-    call_expr->callee = std::move(left);
-
+    MO_DEBUG("parser: parsing call expression");
     consume(TokenType::LParen, "Expected '(' after function name");
 
-    // Parse arguments
+    std::vector<ExprPtr> args;
     if (current_.type != TokenType::RParen)
     {
         do
         {
-            call_expr->args.push_back(parse_expr());
+            args.push_back(parse_expr());
         } while (try_consume(TokenType::Comma));
     }
 
     consume(TokenType::RParen, "Expected ')' after arguments");
-
-    return call_expr;
+    return std::make_unique<CallExpr>(std::move(left), std::move(args));
 }
 
 void Parser::consume(TokenType type, const std::string &message)
@@ -503,7 +496,7 @@ void Parser::consume(TokenType type, const std::string &message)
     if (current_.type == type)
     {
         Token consumed = current_;
-        debug("parser: consumed token %s", token_to_string(consumed).c_str());
+        MO_DEBUG("parser: consumed token %s", token_to_string(consumed).c_str());
         advance();
         // return consumed;
     }
@@ -518,7 +511,7 @@ bool Parser::try_consume(TokenType type)
     if (current_.type == type)
     {
         Token consumed = current_;
-        debug("parser: consumed token %s", token_to_string(consumed).c_str());
+        MO_DEBUG("parser: consumed token %s", token_to_string(consumed).c_str());
         advance();
         return true;
     }
@@ -530,27 +523,26 @@ bool Parser::match(TokenType type)
 {
     if (current_.type == type)
     {
-        debug("parser: matched token %s", token_to_string(current_).c_str());
+        MO_DEBUG("parser: matched token %s", token_to_string(current_).c_str());
         return true;
     }
-    debug("parser: no match for token %s, actual token is %s", token_type_to_string(type).c_str(), token_to_string(current_).c_str());
+    MO_DEBUG("parser: no match for token %s, actual token is %s", token_type_to_string(type).c_str(), token_to_string(current_).c_str());
     return false;
 }
 
 std::unique_ptr<BlockStmt> Parser::parse_block()
 {
-    auto block = std::make_unique<BlockStmt>();
-
     consume(TokenType::LBrace, "Expected '{' at the start of block");
 
+    std::vector<StmtPtr> statements;
     while (current_.type != TokenType::RBrace && current_.type != TokenType::Eof)
     {
-        block->statements.push_back(parse_statement());
+        statements.push_back(parse_statement());
     }
 
     consume(TokenType::RBrace, "Expected '}' at the end of block");
 
-    return block;
+    return std::make_unique<BlockStmt>(std::move(statements));
 }
 
 TypeAliasDecl Parser::parse_type_alias_decl()
@@ -642,21 +634,19 @@ ExprPtr Parser::parse_function_pointer_expr()
 
 ExprPtr Parser::parse_struct_literal(std::string struct_name)
 {
-    // consume(TokenType::Struct, "Expected 'struct'");
-    auto expr = std::make_unique<StructLiteralExpr>();
-
     if (!struct_name.empty())
     {
-        expr->struct_name = struct_name;
+        // struct_name is already set
     }
     else if (match(TokenType::Identifier))
     {
-        expr->struct_name = current_.lexeme;
+        struct_name = current_.lexeme;
         advance();
     }
 
     consume(TokenType::LBrace, "Expected '{'");
     std::unordered_set<std::string> seen_fields;
+    std::vector<std::pair<std::string, ExprPtr>> members;
 
     while (!match(TokenType::RBrace))
     {
@@ -672,7 +662,7 @@ ExprPtr Parser::parse_struct_literal(std::string struct_name)
         consume(TokenType::Colon, "Expected ':'");
         ExprPtr value = parse_expr();
 
-        expr->add_member(name, std::move(value));
+        members.emplace_back(name, std::move(value));
 
         if (!match(TokenType::Comma))
             break;
@@ -680,7 +670,7 @@ ExprPtr Parser::parse_struct_literal(std::string struct_name)
     }
 
     consume(TokenType::RBrace, "Expected '}'");
-    return expr;
+    return std::make_unique<StructLiteralExpr>(std::move(struct_name), std::move(members));
 }
 
 void Parser::synchronize_type()
@@ -713,7 +703,7 @@ std::unique_ptr<Type> Parser::parse_type_safe()
     }
     catch (const ParseError &e)
     {
-        debug("parse_type_safe error");
+        MO_DEBUG("parse_type_safe error");
         errors_.push_back(e.what());
         synchronize_type();
         // Placeholder
@@ -730,12 +720,12 @@ ExprPtr Parser::parse_identifier(int min_precedence)
     // handle MyStruct { ... } expr
     if (match(TokenType::LBrace))
     {
-        debug("parser: parsing struct value");
+        MO_DEBUG("parser: parsing struct value");
         return parse_struct_literal(ident);
     }
     else
     {
-        debug("parser: parsing identifier");
+        MO_DEBUG("parser: parsing identifier");
         return std::make_unique<VariableExpr>(ident);
     }
 }
@@ -804,34 +794,30 @@ ExprPtr Parser::parse_cast()
 {
     consume(TokenType::Cast, "Expected 'cast'");
     consume(TokenType::LParen, "Expected '(' after 'cast'");
-    auto expr = std::make_unique<CastExpr>();
-    expr->target_type = parse_type();
+    auto target_type = parse_type();
     consume(TokenType::RParen, "Expected ')' after cast type");
-    expr->expr = parse_expr();
-    return expr;
+    auto expr = parse_expr();
+    return std::make_unique<CastExpr>(std::move(target_type), std::move(expr));
 }
 
 ExprPtr Parser::parse_sizeof()
 {
-    consume(TokenType::Sizeof, "Expected'sizeof'");
-    consume(TokenType::LParen, "Expected '(' after'sizeof'");
+    consume(TokenType::Sizeof, "Expected 'sizeof'");
+    consume(TokenType::LParen, "Expected '(' after 'sizeof'");
+
     TypePtr target_type = parse_type_safe();
-    ExprPtr target_expr = nullptr;
-    std::unique_ptr<SizeofExpr> expr = nullptr;
-    if (!target_type)
+    if (target_type)
     {
-        debug("parser: sizeof target is not a type, try parse expr");
-        target_expr = parse_expr();
-        expr = std::make_unique<SizeofExpr>(SizeofExpr::Kind::Expr);
-        expr->target_expr = std::move(target_expr);
+        consume(TokenType::RParen, "Expected ')' after sizeof type");
+        return std::make_unique<SizeofExpr>(std::move(target_type));
     }
     else
     {
-        expr = std::make_unique<SizeofExpr>(SizeofExpr::Kind::Type);
-        expr->target_type = std::move(target_type);
+        MO_DEBUG("parser: sizeof target is not a type, try parse expr");
+        ExprPtr target_expr = parse_expr();
+        consume(TokenType::RParen, "Expected ')' after sizeof expr");
+        return std::make_unique<SizeofExpr>(std::move(target_expr));
     }
-    consume(TokenType::RParen, "Expected ')' after sizeof type");
-    return expr;
 }
 
 ExprPtr Parser::parse_address_of()
@@ -854,11 +840,10 @@ ExprPtr Parser::parse_init_list()
 {
     consume(TokenType::LBracket, "Expected '[' for initializer list");
 
-    auto init_list = std::make_unique<InitListExpr>();
-
+    std::vector<ExprPtr> members;
     while (current_.type != TokenType::RBracket && current_.type != TokenType::Eof)
     {
-        init_list->members.push_back(parse_expr());
+        members.push_back(parse_expr());
 
         if (current_.type == TokenType::Comma)
         {
@@ -871,13 +856,12 @@ ExprPtr Parser::parse_init_list()
     }
 
     consume(TokenType::RBracket, "Expected ']' at the end of initializer list");
-
-    return init_list;
+    return std::make_unique<InitListExpr>(std::move(members));
 }
 
 ExprPtr Parser::parse_binary(ExprPtr left, int min_precedence)
 {
-    debug("parser: parsing binary expression");
+    MO_DEBUG("parser: parsing binary expression");
     auto op = current_.type;
     advance();
     return std::make_unique<BinaryExpr>(op, std::move(left), std::move(parse_expr(min_precedence)));
@@ -885,7 +869,7 @@ ExprPtr Parser::parse_binary(ExprPtr left, int min_precedence)
 
 ExprPtr Parser::parse_unary(int min_precedence)
 {
-    debug("parser: parsing unary expression");
+    MO_DEBUG("parser: parsing unary expression");
     auto op = current_.type;
     advance();
     return std::make_unique<UnaryExpr>(op, std::move(parse_expr(min_precedence)));
@@ -998,11 +982,9 @@ StmtPtr Parser::parse_while()
 
 VarDeclStmt Parser::parse_var_decl()
 {
-    VarDeclStmt stmt;
-
-    if (current_.type == TokenType::Const)
+    bool is_const = (current_.type == TokenType::Const);
+    if (is_const)
     {
-        stmt.is_const = true;
         advance();
     }
     else
@@ -1010,60 +992,58 @@ VarDeclStmt Parser::parse_var_decl()
         consume(TokenType::Let, "Expected 'let' or 'const'");
     }
 
-    stmt.name = current_.lexeme;
+    std::string name = current_.lexeme;
     consume(TokenType::Identifier, "Expected variable name");
 
+    TypePtr type = nullptr;
     if (match(TokenType::Colon))
     {
         advance();
-        stmt.type = parse_type(); // Assuming parse_type returns a Type
+        type = parse_type();
     }
 
+    ExprPtr init_expr = nullptr;
     if (match(TokenType::Assign))
     {
         advance();
-        stmt.init_expr = parse_expr();
+        init_expr = parse_expr();
     }
 
-    consume(TokenType::Semicolon, vstring("Expected ';' after variable declaration for ", stmt.name, ", but got ", current_.lexeme));
-    return stmt;
+    consume(TokenType::Semicolon, vstring("Expected ';' after variable declaration for ", name, ", but got ", current_.lexeme));
+    return VarDeclStmt{is_const, std::move(name), std::move(type), std::move(init_expr)};
 }
 
 FunctionDecl Parser::parse_function_decl(StructType *receiver_type)
 {
-    FunctionDecl func;
     consume(TokenType::Fn, "Expected 'fn'");
 
-    func.name = current_.lexeme;
+    std::string name = current_.lexeme;
     consume(TokenType::Identifier, "Expected function name");
 
     // Params
     consume(TokenType::LParen, "Expected (");
+    std::vector<TypedField> params;
+
     // receiver
-    if (func.is_method)
+    bool is_static = true;
+    TypePtr receiver_type_ptr;
+    if (receiver_type != nullptr)
     {
-        assert(receiver_type != nullptr && "receiver_type is null");
-        // case 1: impl Ty { fn method(this, args) {... } }
         if (try_consume(TokenType::This))
         {
-            func.is_static = false;
+            is_static = false;
         }
-        // case 2: impl Ty { fn method(args) {... } }
-        else
-        {
-            func.is_static = true;
-        }
-        func.receiver_type = receiver_type->clone();
-        assert(!receiver_type->name().empty() && "receiver_type name is empty");
-        func.name = receiver_type->name() + "::" + func.name;
+        receiver_type_ptr = receiver_type->clone();
+        name = receiver_type->name() + "::" + name;
     }
+
     while (!match(TokenType::RParen))
     {
-        std::string name = current_.lexeme;
+        std::string param_name = current_.lexeme;
         consume(TokenType::Identifier, "Expected parameter name");
         consume(TokenType::Colon, "Expected : after parameter name");
         auto type = parse_type();
-        func.params.emplace_back(name, std::move(type));
+        params.emplace_back(param_name, std::move(type));
 
         if (!match(TokenType::Comma))
             break;
@@ -1072,26 +1052,31 @@ FunctionDecl Parser::parse_function_decl(StructType *receiver_type)
     consume(TokenType::RParen, "Expected )");
 
     // Return type
+    TypePtr return_type = Type::create_void();
     if (match(TokenType::Arrow))
     {
         advance();
-        func.return_type = parse_type();
-    }
-    else
-    {
-        func.return_type = Type::create_void();
+        return_type = parse_type();
     }
 
     StmtPtr body = parse_block();
+    std::vector<StmtPtr> body_statements;
     if (auto blockStmt = dynamic_cast<BlockStmt *>(body.get()))
     {
-        func.body = std::move(blockStmt->statements);
+        body_statements = std::move(blockStmt->statements);
     }
     else
     {
         error("Expected block statement after function body");
     }
-    return func;
+
+    return FunctionDecl(
+        std::move(name),
+        std::move(return_type),
+        std::move(params),
+        std::move(body_statements),
+        std::move(receiver_type_ptr),
+        is_static);
 }
 
 void Parser::error(const std::string &message) const
@@ -1101,7 +1086,7 @@ void Parser::error(const std::string &message) const
 
 void Parser::advance()
 {
-    debug("parser: advancing to next token (from %s)", current_.lexeme.c_str());
+    MO_DEBUG("parser: advancing to next token (from %s)", current_.lexeme.c_str());
     previous_ = current_;
     current_ = lexer_.next_token();
 }
@@ -1161,7 +1146,7 @@ Program Parser::parse()
         }
         catch (const ParseError &e)
         {
-            debug(e.what());
+            MO_DEBUG(e.what());
             errors_.push_back(e.what());
             synchronize();
         }
