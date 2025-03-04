@@ -191,6 +191,8 @@ void Parser::init_pratt_rules()
                    { return parse_binary(std::move(l), get_precedence(TokenType::Star)); });
     add_infix_rule(TokenType::Slash, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::Slash)); });
+    add_infix_rule(TokenType::Modulo, [&](ExprPtr l)
+                   { return parse_binary(std::move(l), get_precedence(TokenType::Modulo)); });
 
     add_infix_rule(TokenType::And, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::And)); });
@@ -208,7 +210,6 @@ void Parser::init_pratt_rules()
                    { return parse_binary(std::move(l), get_precedence(TokenType::Gt)); });
     add_infix_rule(TokenType::Lt, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::Lt)); });
-
     add_infix_rule(TokenType::LShift, [&](ExprPtr l)
                    { return parse_binary(std::move(l), get_precedence(TokenType::LShift)); });
     add_infix_rule(TokenType::RShift, [&](ExprPtr l)
