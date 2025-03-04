@@ -51,8 +51,13 @@ enum class TokenType
     AndAssign,   // &=
     OrAssign,    // |=
     XorAssign,   // ^=
-    LeftAssign,  // <<=
-    RightAssign, // >>=
+    LSAssign,    // <<=
+    RSAssign,    // >>=
+    LShift,      // <<
+    RShift,      // >>
+    Increment,   // ++
+    Decrement,   // --
+    DoubleDot,   //..
     Colon,       // :
     Semicolon,   // ;
     Comma,       // ,
@@ -117,6 +122,8 @@ private:
     void skip_whitespace_and_comments();
     void skip_line_comment();
     void skip_block_comment();
+    Token parse_assign_operators();
+    Token parse_double_char_operators();
     Token parse_number();
     Token parse_string();
     Token parse_identifier_or_keyword();

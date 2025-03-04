@@ -28,10 +28,10 @@ std::string token_type_to_string(TokenType type)
         return "fn";
     case TokenType::This:
         return "this";
-    case TokenType::Type:
-        return "type";
     case TokenType::Return:
         return "return";
+    case TokenType::Type:
+        return "type";
     case TokenType::Int:
         return "int";
     case TokenType::Float:
@@ -68,6 +68,36 @@ std::string token_type_to_string(TokenType type)
         return "::";
     case TokenType::Assign:
         return "=";
+    case TokenType::AddAssign:
+        return "+=";
+    case TokenType::SubAssign:
+        return "-=";
+    case TokenType::MulAssign:
+        return "*=";
+    case TokenType::DivAssign:
+        return "/=";
+    case TokenType::ModAssign:
+        return "%=";
+    case TokenType::AndAssign:
+        return "&=";
+    case TokenType::OrAssign:
+        return "|=";
+    case TokenType::XorAssign:
+        return "^=";
+    case TokenType::LSAssign:
+        return "<<=";
+    case TokenType::RSAssign:
+        return ">>=";
+    case TokenType::LShift:
+        return "<<";
+    case TokenType::RShift:
+        return ">>";
+    case TokenType::Increment:
+        return "++";
+    case TokenType::Decrement:
+        return "--";
+    case TokenType::DoubleDot:
+        return "..";
     case TokenType::Colon:
         return ":";
     case TokenType::Semicolon:
@@ -126,7 +156,7 @@ std::string token_type_to_string(TokenType type)
         return "<eof>";
     default:
         MO_ASSERT(false, "Unknown token type %d", (int)type);
-        return "<unknown>"; // 添加 default 情况
+        return "<unknown>";
     }
 }
 
@@ -160,6 +190,126 @@ Lexer::Lexer(Lexer &&other) noexcept : input(std::move(other.input)),
 {
 }
 
+Token Lexer::parse_assign_operators()
+{
+    int start_line = current_line;
+    int start_col = current_col;
+    char c = input[pos];
+    advance(); // Skip the first character
+
+    if (peek() == '=')
+    {
+        advance(); // Skip '='
+        switch (c)
+        {
+        case '+':
+            return Token(TokenType::AddAssign, start_line, start_col, current_line, current_col - 1, "+=");
+        case '-':
+            return Token(TokenType::SubAssign, start_line, start_col, current_line, current_col - 1, "-=");
+        case '*':
+            return Token(TokenType::MulAssign, start_line, start_col, current_line, current_col - 1, "*=");
+        case '/':
+            return Token(TokenType::DivAssign, start_line, start_col, current_line, current_col - 1, "/=");
+        case '%':
+            return Token(TokenType::ModAssign, start_line, start_col, current_line, current_col - 1, "%=");
+        case '&':
+            return Token(TokenType::AndAssign, start_line, start_col, current_line, current_col - 1, "&=");
+        case '|':
+            return Token(TokenType::OrAssign, start_line, start_col, current_line, current_col - 1, "|=");
+        case '^':
+            return Token(TokenType::XorAssign, start_line, start_col, current_line, current_col - 1, "^=");
+        case '<':
+            if (peek() == '<')
+            {
+                advance();
+                return Token(TokenType::LSAssign, start_line, start_col, current_line, current_col - 1, "<<=");
+            }
+            break;
+        case '>':
+            if (peek() == '>')
+            {
+                advance();
+                return Token(TokenType::RSAssign, start_line, start_col, current_line, current_col - 1, ">>=");
+            }
+            break;
+        default:
+            break;
+        }
+    }
+
+    // If no match, return the single character token
+    switch (c)
+    {
+    case '+':
+        return Token(TokenType::Plus, start_line, start_col, current_line, current_col - 1, "+");
+    case '-':
+        return Token(TokenType::Minus, start_line, start_col, current_line, current_col - 1, "-");
+    case '*':
+        return Token(TokenType::Star, start_line, start_col, current_line, current_col - 1, "*");
+    case '/':
+        return Token(TokenType::Slash, start_line, start_col, current_line, current_col - 1, "/");
+    case '%':
+        return Token(TokenType::Modulo, start_line, start_col, current_line, current_col - 1, "%");
+    case '&':
+        return Token(TokenType::Ampersand, start_line, start_col, current_line, current_col - 1, "&");
+    case '|':
+        return Token(TokenType::Pipe, start_line, start_col, current_line, current_col - 1, "|");
+    case '^':
+        return Token(TokenType::Caret, start_line, start_col, current_line, current_col - 1, "^");
+    case '<':
+        return Token(TokenType::Lt, start_line, start_col, current_line, current_col - 1, "<");
+    case '>':
+        return Token(TokenType::Gt, start_line, start_col, current_line, current_col - 1, ">");
+    default:
+        throw LexerError("Unexpected character: " + std::string(1, c));
+    }
+}
+
+Token Lexer::parse_double_char_operators()
+{
+    int start_line = current_line;
+    int start_col = current_col;
+    char c = input[pos];
+    advance(); // Skip the first character
+
+    if (peek() == c)
+    {
+        advance(); // Skip the second character
+        switch (c)
+        {
+        case '<':
+            return Token(TokenType::LShift, start_line, start_col, current_line, current_col - 1, "<<");
+        case '>':
+            return Token(TokenType::RShift, start_line, start_col, current_line, current_col - 1, ">>");
+        case '+':
+            return Token(TokenType::Increment, start_line, start_col, current_line, current_col - 1, "++");
+        case '-':
+            return Token(TokenType::Decrement, start_line, start_col, current_line, current_col - 1, "--");
+        case '.':
+            return Token(TokenType::DoubleDot, start_line, start_col, current_line, current_col - 1, "..");
+        default:
+            break;
+        }
+    }
+
+    // If no match, return the single character token
+    switch (c)
+    {
+    case '<':
+        return Token(TokenType::Lt, start_line, start_col, current_line, current_col - 1, "<");
+    case '>':
+        return Token(TokenType::Gt, start_line, start_col, current_line, current_col - 1, ">");
+    case '+':
+        return Token(TokenType::Plus, start_line, start_col, current_line, current_col - 1, "+");
+    case '-':
+        return Token(TokenType::Minus, start_line, start_col, current_line, current_col - 1, "-");
+    case '.':
+        return Token(TokenType::Dot, start_line, start_col, current_line, current_col - 1, ".");
+    default:
+        throw LexerError("Unexpected character: " + std::string(1, c));
+    }
+}
+
 Token Lexer::next_token()
 {
     skip_whitespace_and_comments();
@@ -185,28 +335,29 @@ Token Lexer::next_token()
 
     switch (c)
     {
+    case '+':
     case '-':
-        return parse_arrow_or_minus();
-    case ':':
-        return parse_double_colon_or_colon();
-    case '.':
-        return parse_dot();
-    case ';':
-        return parse_single_char(TokenType::Semicolon, ";");
-    case ',':
-        return parse_single_char(TokenType::Comma, ",");
+    case '*':
+    case '/':
+    case '%':
+    case '&':
+    case '|':
+    case '^':
+    case '<':
+    case '>':
+        return parse_assign_operators();
     case '=':
         return parse_equal_or_eq();
     case '!':
         return parse_ne();
-    case '<':
-        return parse_le_or_lt();
-    case '>':
-        return parse_ge_or_gt();
-    case '&':
-        return parse_and();
-    case '|':
-        return parse_or();
+    case ':':
+        return parse_double_colon_or_colon();
+    case '.':
+        return parse_double_char_operators();
+    case ';':
+        return parse_single_char(TokenType::Semicolon, ";");
+    case ',':
+        return parse_single_char(TokenType::Comma, ",");
     case '(':
         return parse_single_char(TokenType::LParen, "(");
     case ')':
@@ -219,14 +370,8 @@ Token Lexer::next_token()
         return parse_single_char(TokenType::LBracket, "[");
     case ']':
         return parse_single_char(TokenType::RBracket, "]");
-    case '*':
-        return parse_single_char(TokenType::Star, "*");
-    case '+':
-        return parse_single_char(TokenType::Plus, "+");
-    case '/':
-        return parse_single_char(TokenType::Slash, "/");
-    case '%':
-        return parse_single_char(TokenType::Modulo, "%");
+    case '~':
+        return parse_single_char(TokenType::Tilde, "~");
     default:
         throw LexerError("Unexpected character: " + std::string(1, c));
     }
