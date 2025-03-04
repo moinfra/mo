@@ -9,7 +9,9 @@ cc_library(
     name = "lexer",
     srcs = ["lexer.cc"],
     hdrs = ["lexer.h"],
-    deps = [":utils"],
+    deps = [":utils",
+        # "@icu//:icuuc", # unicode identifier support
+    ],
     visibility = ["//visibility:public"],
 )
 
