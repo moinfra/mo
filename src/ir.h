@@ -110,6 +110,16 @@ constexpr Qualifier operator&(Qualifier a, Qualifier b) noexcept
 //===----------------------------------------------------------------------===//
 using ParamList = std::vector<std::pair<std::string, Type *>>;
 
+std::vector<Type *> param_list_to_types(const ParamList &params)
+{
+    std::vector<Type *> types;
+    for (auto &param : params)
+    {
+        types.push_back(param.second);
+    }
+    return types;
+}
+
 class Type
 {
 public:

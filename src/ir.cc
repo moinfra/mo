@@ -288,7 +288,7 @@ Instruction *Instruction::create(Opcode opc, Type *type,
 //                           BasicBlock Implementation
 //===----------------------------------------------------------------------===//
 BasicBlock::BasicBlock(const std::string &name, Function *parent)
-    : Value(Type::get_void_type(parent->parent_module()), name),
+    : Value(parent->parent_module()->get_void_type(), name),
       parent_(parent), head_(nullptr), tail_(nullptr) {}
 
 BasicBlock::~BasicBlock()
@@ -444,7 +444,7 @@ Instruction *BasicBlock::get_terminator() const
 //===----------------------------------------------------------------------===//
 Function::Function(const std::string &name, Module *parent, Type *return_type,
                    const ParamList &params)
-    : Value(return_type, name),
+    : Value(parent->get_function_type(return_type, param_list_to_types(params)), name),
       parent_(parent),
       return_type_(return_type)
 {
