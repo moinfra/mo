@@ -172,14 +172,14 @@ size_t StructType::get_member_index(const std::string &name) const
 {
     for (size_t i = 0; i < members_.size(); ++i)
     {
-        MO_DEBUG("StructType::get_member_index: %s, %s", members_[i].name.c_str(), name.c_str());
+        MO_DEBUG("StructType::get_member_index: '%s', '%s'", members_[i].name.c_str(), name.c_str());
         if (members_[i].name == name)
         {
             return i;
         }
     }
 
-    MO_ASSERT(false, "Invalid struct member name %s", name.c_str());
+    MO_ASSERT(false, "Invalid struct member name '%s'", name.c_str());
     return std::numeric_limits<size_t>::max();
 }
 
@@ -590,6 +590,7 @@ ArrayType *Module::get_array_type(Type *element_type, uint64_t num_elements)
     }
 
     auto ty = new ArrayType(this, element_type, num_elements);
+    MO_DEBUG("Registering new array type, element type: '%s', num elements: %lu", element_type->name().c_str(), num_elements);
     array_types_.emplace(key, std::unique_ptr<ArrayType>(ty));
     return ty;
 }
@@ -608,11 +609,12 @@ StructType *Module::get_struct_type_anonymous(const std::vector<MemberInfo> &mem
 
     // Create new struct
     auto *st = new StructType(this, members);
+    MO_DEBUG("Registering new struct type, name: '%s' type: '%s'", st->name().c_str(), st->name().c_str());
     struct_types_.push_back(std::unique_ptr<StructType>(st));
     return st;
 }
 
-StructType *Module::try_get_struct_type(const std::string &name)
+StructType *Module::try_get_named_struct_type(const std::string &name)
 {
     assert(!name.empty() && "Invalid struct name");
 
@@ -624,29 +626,38 @@ StructType *Module::try_get_struct_type(const std::string &name)
             return st.get();
         }
     }
-    // Check opaque types
-    if (auto it = opaque_structs_.find(name); it != opaque_structs_.end())
-    {
-        return it->second.get();
-    }
+
     return nullptr;
 }
 
 StructType *Module::get_struct_type(const std::string &name, const std::vector<MemberInfo> &members)
 {
-    // Check existing struct types
-    if (auto st = try_get_struct_type(name); st)
+    if (!name.empty())
     {
-        // Check if the struct has the same members
-        if (st->members() != members)
+        // Check existing struct types
+        if (auto st = try_get_named_struct_type(name); st)
         {
-            assert(false && "Struct with the same name already exists");
+            // Check if the struct has the same members
+            if (st->members() != members)
+            {
+                assert(false && "Struct with the same name already exists");
+            }
+            return st;
         }
-        return st;
+    } else {
+        // Anonymous struct, search by match all members
+        for (auto &st : struct_types_)
+        {
+            if (!st->is_opaque() && st->members() == members)
+            {
+                return st.get();
+            }
+        }
     }
 
     // Create new struct
     auto *st = new StructType(this, name, members);
+    MO_DEBUG("Registering new struct type, name: '%s' type: '%s'", name.c_str(), st->name().c_str());
     struct_types_.push_back(std::unique_ptr<StructType>(st));
     return st;
 }
@@ -660,7 +671,9 @@ VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements)
         return it->second.get();
     }
 
-    auto vector_type = std::unique_ptr<VectorType>(new VectorType(this, element_type, num_elements));
+    auto vt = new VectorType(this, element_type, num_elements);
+    MO_DEBUG("Registering new vector type, element type: '%s', num elements: %lu", element_type->name().c_str(), num_elements);
+    auto vector_type = std::unique_ptr<VectorType>(vt);
     auto *result = vector_type.get();
     vector_types_[key] = std::move(vector_type);
     return result;

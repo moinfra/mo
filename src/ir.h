@@ -1198,7 +1198,7 @@ public:
     }
 
     StructType *get_struct_type_anonymous(const std::vector<MemberInfo> &members);
-    StructType *try_get_struct_type(const std::string &name);
+    StructType *try_get_named_struct_type(const std::string &name);
     ArrayType *get_array_type(Type *element_type, uint64_t num_elements);
     StructType *get_struct_type(const std::string &name, const std::vector<MemberInfo> &members);
     VectorType *get_vector_type(Type *element_type, uint64_t num_elements);
@@ -1239,7 +1239,6 @@ private:
         array_types_;
     std::vector<std::unique_ptr<StructType>> struct_types_;
     std::unordered_map<std::pair<Type *, uint64_t>, std::unique_ptr<VectorType>> vector_types_;
-    std::unordered_map<std::string, std::unique_ptr<StructType>> opaque_structs_;
 
     using FunctionTypeKey = std::pair<Type *, std::vector<Type *>>;
     struct FunctionTypeKeyHash
