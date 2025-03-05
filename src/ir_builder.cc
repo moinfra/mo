@@ -267,11 +267,11 @@ AllocaInst *IRBuilder::create_entry_alloca(Type *type, const std::string &name)
 LoadInst *IRBuilder::create_load(Value *ptr, const std::string &name)
 {
     // Ensure pointer type
-    assert(ptr->type()->type_id() == Type::PtrTy &&
-           "Load operand must be pointer");
+    MO_ASSERT(ptr->type()->type_id() == Type::PtrTy,
+              "Load operand must be pointer, actually `%s`", ptr->type()->to_string().c_str());
 
     auto *loaded_type = static_cast<PointerType *>(ptr->type())->element_type();
-    assert(loaded_type->size() > 0 && "Cannot load zero-sized type");
+    MO_ASSERT(loaded_type->size() > 0, "Cannot load zero-sized type");
     auto *inst = LoadInst::create(ptr, insert_block_);
     inst->set_name(name);
     insert(inst);
@@ -281,8 +281,7 @@ LoadInst *IRBuilder::create_load(Value *ptr, const std::string &name)
 StoreInst *IRBuilder::create_store(Value *value, Value *ptr)
 {
     MO_DEBUG("Store value: %s to ptr: %s", value->type()->to_string().c_str(), ptr->type()->to_string().c_str());
-    assert(ptr->type()->type_id() == Type::PtrTy &&
-           "Store operand must be pointer");
+    MO_ASSERT(ptr->type()->type_id() == Type::PtrTy, "Store operand must be pointer");
     auto *ptr_type = static_cast<PointerType *>(ptr->type());
     MO_ASSERT(*value->type() == *ptr_type->element_type(),
               "Stored value type mismatch, expect `%s`, got `%s`", ptr_type->element_type()->to_string().c_str(), value->type()->to_string().c_str());
@@ -296,12 +295,11 @@ GetElementPtrInst *IRBuilder::create_gep(Value *ptr,
                                          std::vector<Value *> indices,
                                          const std::string &name)
 {
-    assert(ptr->type()->type_id() == Type::PtrTy && "GEP base must be pointer");
+    MO_ASSERT(ptr->type()->is_pointer(), "GEP base must be pointer, actually `%s`", ptr->type()->to_string().c_str());
 
     for (auto *index : indices)
     {
-        assert(index->type()->type_id() == Type::IntTy &&
-               "GEP indices must be integers");
+        MO_ASSERT(index->type()->is_integer(), "GEP indices must be integers, actually `%s`", index->type()->to_string().c_str());
     }
 
     auto *inst = GetElementPtrInst::create(ptr, indices, insert_block_, name);
@@ -424,7 +422,7 @@ CallInst *IRBuilder::create_call(Value *callee, const std::vector<Value *> &args
     {
         return create_call(func, args, name);
     }
-
+    // TODO: use create_indirect_call
     // Handle indirect calls through function pointers
     assert(callee->type()->type_id() == Type::PtrTy &&
            "Callee must be a function pointer");
