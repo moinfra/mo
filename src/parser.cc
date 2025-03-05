@@ -321,7 +321,7 @@ void Parser::init_type_pratt_rules()
                     {
         const std::string name = current_.lexeme;
         advance();
-        return Type::create_alias(name, nullptr); });
+        return Type::create_alias(name); });
 
     add_prefix_rule(TokenType::Star, [&]
                     {

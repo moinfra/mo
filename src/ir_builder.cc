@@ -24,6 +24,28 @@ void IRBuilder::clear_insert_point()
     insert_pos_ = nullptr;
 }
 
+UnaryInst *IRBuilder::create_unary(Opcode opc, Value *operand, const std::string &name)
+{
+    auto *inst = UnaryInst::create(opc, operand, insert_block_, name);
+    insert(inst);
+    return inst;
+}
+
+UnaryInst *IRBuilder::create_neg(Value *val, const std::string &name)
+{
+    return create_unary(Opcode::Neg, val, name);
+}
+
+UnaryInst *IRBuilder::create_fneg(Value *val, const std::string &name)
+{
+    return create_unary(Opcode::FNeg, val, name);
+}
+
+UnaryInst *IRBuilder::create_not(Value *val, const std::string &name)
+{
+    return create_unary(Opcode::Not, val, name);
+}
+
 BinaryInst *IRBuilder::create_binary(Opcode opc, Value *lhs, Value *rhs,
                                      const std::string &name)
 {
@@ -267,7 +289,7 @@ AllocaInst *IRBuilder::create_entry_alloca(Type *type, const std::string &name)
 LoadInst *IRBuilder::create_load(Value *ptr, const std::string &name)
 {
     // Ensure pointer type
-    MO_ASSERT(ptr->type()->type_id() == Type::PtrTy,
+    MO_ASSERT(ptr->type()->is_pointer(),
               "Load operand must be pointer, actually `%s`", ptr->type()->to_string().c_str());
 
     auto *loaded_type = static_cast<PointerType *>(ptr->type())->element_type();
@@ -281,7 +303,7 @@ LoadInst *IRBuilder::create_load(Value *ptr, const std::string &name)
 StoreInst *IRBuilder::create_store(Value *value, Value *ptr)
 {
     MO_DEBUG("Store value: %s to ptr: %s", value->type()->to_string().c_str(), ptr->type()->to_string().c_str());
-    MO_ASSERT(ptr->type()->type_id() == Type::PtrTy, "Store operand must be pointer");
+    MO_ASSERT(ptr->type()->is_pointer(), "Store operand must be pointer");
     auto *ptr_type = static_cast<PointerType *>(ptr->type());
     MO_ASSERT(*value->type() == *ptr_type->element_type(),
               "Stored value type mismatch, expect `%s`, got `%s`", ptr_type->element_type()->to_string().c_str(), value->type()->to_string().c_str());
@@ -311,7 +333,7 @@ Value *IRBuilder::create_struct_gep(Value *struct_ptr, unsigned idx,
                                     const std::string &name)
 {
     // Structure pointer type verification
-    assert(struct_ptr->type()->type_id() == Type::PtrTy &&
+    assert(struct_ptr->type()->is_pointer() &&
            "struct_gep requires pointer operand");
     auto *ptr_type = static_cast<PointerType *>(struct_ptr->type());
     assert(ptr_type->element_type()->type_id() == Type::StructTy &&
@@ -424,7 +446,7 @@ CallInst *IRBuilder::create_call(Value *callee, const std::vector<Value *> &args
     }
     // TODO: use create_indirect_call
     // Handle indirect calls through function pointers
-    assert(callee->type()->type_id() == Type::PtrTy &&
+    assert(callee->type()->is_pointer() &&
            "Callee must be a function pointer");
     PointerType *ptr_type = static_cast<PointerType *>(callee->type());
     assert(ptr_type->element_type()->type_id() == Type::FuncTy &&
@@ -452,7 +474,7 @@ CallInst *IRBuilder::create_indirect_call(Value *callee,
                                           const std::string &name)
 {
     // Verify function pointer type
-    assert(callee->type()->type_id() == Type::PtrTy &&
+    assert(callee->type()->is_pointer() &&
            "Callee must be pointer type");
     auto *ptr_type = static_cast<PointerType *>(callee->type());
     assert(ptr_type->element_type()->type_id() == Type::TypeID::FuncTy &&
@@ -509,7 +531,7 @@ BitCastInst *IRBuilder::create_bitcast(Value *val, Type *target_type,
 PtrToIntInst *IRBuilder::create_ptrtoint(Value *ptr, Type *target_type,
                                          const std::string &name)
 {
-    assert(ptr->type()->type_id() == Type::PtrTy && "PtrToInt operand must be pointer");
+    assert(ptr->type()->is_pointer() && "PtrToInt operand must be pointer");
     assert(target_type->type_id() == Type::IntTy && "PtrToInt target must be integer");
     auto *inst = PtrToIntInst::create(ptr, target_type, insert_block_, name);
     insert(inst);
@@ -577,7 +599,7 @@ IntToPtrInst *IRBuilder::create_inttoptr(Value *val, Type *target_type,
 {
     assert(val->type()->type_id() == Type::IntTy &&
            "IntToPtr source must be integer");
-    assert(target_type->type_id() == Type::PtrTy &&
+    assert(target_type->is_pointer() &&
            "IntToPtr target must be pointer");
     auto *inst = IntToPtrInst::create(val, target_type, insert_block_, name);
     insert(inst);

@@ -48,6 +48,11 @@ public:
     BinaryInst *create_ashr(Value *lhs, Value *rhs, const std::string &name = "");
     BinaryInst *create_lshr(Value *lhs, Value *rhs, const std::string &name = "");
 
+    UnaryInst *create_unary(Opcode opc, Value *val, const std::string &name = "");
+    UnaryInst *create_fneg(Value *val, const std::string &name = "");
+    UnaryInst *create_not(Value *val, const std::string &name = "");
+    UnaryInst *create_neg(Value *val, const std::string &name = "");
+
     //--- Comparison Instructions ---//
     ICmpInst *create_icmp(ICmpInst::Predicate pred, Value *lhs, Value *rhs,
                           const std::string &name = "");

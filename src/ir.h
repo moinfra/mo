@@ -110,15 +110,7 @@ constexpr Qualifier operator&(Qualifier a, Qualifier b) noexcept
 //===----------------------------------------------------------------------===//
 using ParamList = std::vector<std::pair<std::string, Type *>>;
 
-std::vector<Type *> param_list_to_types(const ParamList &params)
-{
-    std::vector<Type *> types;
-    for (auto &param : params)
-    {
-        types.push_back(param.second);
-    }
-    return types;
-}
+std::vector<Type *> param_list_to_types(const ParamList &params);
 
 class Type
 {
@@ -601,6 +593,10 @@ public:
         return result;
     }
     unsigned bits() const override { return size() * 8; }
+    size_t alignment() const override
+    {
+        return 8; // TODO: handle alignment properly
+    }
 
     // Completes the struct definition with member names and types
     void set_body(const std::vector<MemberInfo> &members);
@@ -836,6 +832,10 @@ enum class Opcode
     URem, // Unsigned Remainder
     SRem, // Signed Remainder
 
+    Neg,  // Negation
+    Not,  // Logical Not
+    FNeg, // Floating Negation
+
     // Memory Operations
     Alloca,        // Allocate memory
     Load,          // Load from memory
@@ -874,6 +874,7 @@ enum class Opcode
     BitAnd, // Bitwise AND
     BitOr,  // Bitwise OR
     BitXor, // Bitwise XOR
+    BitNot, // Bitwise Not
 
     Shl,
     LShr,
@@ -1594,6 +1595,17 @@ public:
 private:
     BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
     static bool isBinaryOp(Opcode op);
+};
+
+class UnaryInst : public Instruction
+{
+public:
+    static UnaryInst *create(Opcode op, Value *operand, BasicBlock *parent, const std::string &name = "");
+    Value *get_operand() const { return operand(0); }
+
+private:
+    UnaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
+    static bool isUnaryOp(Opcode op);
 };
 
 // FIXME: Deprecated use CastInst instead

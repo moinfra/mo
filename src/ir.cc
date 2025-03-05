@@ -9,6 +9,16 @@
 //===----------------------------------------------------------------------===//
 //                              Type Implementation
 //===----------------------------------------------------------------------===//
+std::vector<Type *> param_list_to_types(const ParamList &params)
+{
+    std::vector<Type *> types;
+    for (auto &param : params)
+    {
+        types.push_back(param.second);
+    }
+    return types;
+}
+
 Type *Type::get_void_type(Module *m)
 {
     return m->get_void_type();
@@ -75,7 +85,8 @@ ArrayType::ArrayType(Module *m, Type *element_type, uint64_t num_elements)
 size_t ArrayType::size() const
 {
     assert(element_type_ && "Invalid element type");
-    return element_type_->size() * num_elements_;
+    auto size_ = element_type_->size() * num_elements_;
+    return size_ != 0 ? size_ : 1;
 }
 
 StructLayout calculate_aligned_layout(const std::vector<Type *> &members)
@@ -198,7 +209,7 @@ bool StructType::has_member(const std::string &name) const
 size_t StructType::size() const
 {
     assert(!is_opaque_ && "Opaque struct has no size");
-    return size_;
+    return size_ != 0 ? size_ : 1;
 }
 
 //===----------------------------------------------------------------------===//
@@ -1282,6 +1293,32 @@ BinaryInst *BinaryInst::create(Opcode op, Value *lhs, Value *rhs, BasicBlock *pa
 {
     assert(isBinaryOp(op) && "Invalid binary opcode");
     return new BinaryInst(op, lhs->type(), parent, {lhs, rhs}, name);
+}
+
+//____________________________________________________________________________
+//                           UnaryInst Implementations
+// ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
+UnaryInst::UnaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
+    : Instruction(op, type, parent, operands, name) {}
+
+bool UnaryInst::isUnaryOp(Opcode op)
+{
+    switch (op)
+    {
+    case Opcode::Neg:
+    case Opcode::Not:
+    case Opcode::BitNot:
+    case Opcode::FNeg:
+        return true;
+    default:
+        return false;
+    }
+}
+
+UnaryInst *UnaryInst::create(Opcode op, Value *operand, BasicBlock *parent, const std::string &name)
+{
+    assert(isUnaryOp(op) && "Invalid unary opcode");
+    return new UnaryInst(op, operand->type(), parent, {operand}, name);
 }
 
 //____________________________________________________________________________

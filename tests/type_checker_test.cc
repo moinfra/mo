@@ -67,7 +67,7 @@ TEST_F(TypeCheckerTest, ResolveAlias)
     TypeAliasDecl alias("MyInt", (Type::create_int()));
     program_->aliases.push_back(std::make_unique<TypeAliasDecl>(std::move(alias)));
     EXPECT_TRUE(no_error(check()));
-    auto resolved = resolve_alias("MyInt");
+    auto resolved = resolve_alias(*Type::create_alias("MyInt"));
     EXPECT_NE(resolved, nullptr);
     EXPECT_TRUE(types_equal(*resolved, *Type::create_int()));
 }
@@ -86,9 +86,9 @@ TEST_F(TypeCheckerTest, FindAndInsert)
     Scope globalScope(nullptr);
     auto IntegerType = Type::create_int();
 
-    EXPECT_TRUE(globalScope.insert("x", IntegerType->clone()));
-    EXPECT_TRUE(types_equal(*globalScope.find("x"), *IntegerType));
-    EXPECT_EQ(globalScope.find("y"), nullptr);
+    EXPECT_TRUE(globalScope.insert_variable("x", IntegerType->clone()));
+    EXPECT_TRUE(types_equal(*globalScope.resolve_variable("x"), *IntegerType));
+    EXPECT_EQ(globalScope.resolve_variable("y"), nullptr);
 }
 
 TEST_F(TypeCheckerTest, NestedScope)
@@ -99,22 +99,22 @@ TEST_F(TypeCheckerTest, NestedScope)
     auto IntegerType = Type::create_int();
     auto floatType = Type::create_float();
 
-    globalScope.insert("x", IntegerType->clone());
-    localScope.insert("y", floatType->clone());
+    globalScope.insert_variable("x", IntegerType->clone());
+    localScope.insert_variable("y", floatType->clone());
 
-    EXPECT_TRUE(types_equal(*localScope.find("x"), *IntegerType));
-    EXPECT_TRUE(types_equal(*localScope.find("y"), *floatType));
-    EXPECT_EQ(localScope.find("z"), nullptr);
+    EXPECT_TRUE(types_equal(*localScope.resolve_variable("x"), *IntegerType));
+    EXPECT_TRUE(types_equal(*localScope.resolve_variable("y"), *floatType));
+    EXPECT_EQ(localScope.resolve_variable("z"), nullptr);
 }
 
 TEST_F(TypeCheckerTest, PushAndPopScope)
 {
     push_scope();
-    current_scope_->insert("x", (Type::create_int()));
-    EXPECT_NE(current_scope_->find("x"), nullptr);
+    current_scope_->insert_variable("x", (Type::create_int()));
+    EXPECT_NE(current_scope_->resolve_variable("x"), nullptr);
 
     pop_scope();
-    EXPECT_EQ(current_scope_->find("x"), nullptr);
+    EXPECT_EQ(current_scope_->resolve_variable("x"), nullptr);
 }
 
 TEST_F(TypeCheckerTest, ValidBreakContinue)
@@ -224,7 +224,7 @@ TEST_F(TypeCheckerTest, StructMemberAccess)
 
     auto var_decl = std::make_unique<VarDeclStmt>();
     var_decl->name = "p";
-    var_decl->type = Type::create_alias("Point", nullptr);
+    var_decl->type = Type::create_alias("Point");
 
     auto var_expr = std::make_unique<VariableExpr>("p");
     auto member_access = std::make_unique<MemberAccessExpr>(
@@ -284,7 +284,7 @@ TEST_F(TypeCheckerTest, TypeAliasResolution)
 
     auto var_decl = std::make_unique<VarDeclStmt>();
     var_decl->name = "user_id";
-    var_decl->type = Type::create_alias("ID", nullptr);
+    var_decl->type = Type::create_alias("ID");
 
     program_->globals.push_back(std::make_unique<GlobalDecl>(std::move(*var_decl)));
 
