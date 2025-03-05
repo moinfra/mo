@@ -107,6 +107,7 @@ public:
             break;
         }
         case Opcode::Br:
+        case Opcode::CondBr:
         {
             auto br_inst = static_cast<const BranchInst &>(inst);
             if (br_inst.is_conditional())
@@ -120,11 +121,18 @@ public:
             }
             break;
         }
+        case Opcode::Unreachable:
+        {
+            os << "  unreachable\n";
+            break;
+        }
         case Opcode::Add:
         case Opcode::Sub:
         case Opcode::Mul:
         case Opcode::UDiv:
         case Opcode::SDiv:
+        case Opcode::SRem:
+        case Opcode::URem:
         {
             auto binary_inst = static_cast<const BinaryInst &>(inst);
             os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
@@ -183,48 +191,24 @@ public:
         case Opcode::ZExt:
         case Opcode::SExt:
         case Opcode::Trunc:
-        {
-            auto conv_inst = static_cast<const ConversionInst &>(inst);
-            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
-               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
-            break;
-        }
-            // add other ConversionInst opcodes
         case Opcode::SIToFP:
-        {
-            auto conv_inst = static_cast<const ConversionInst &>(inst);
-            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
-               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
-            break;
-        }
         case Opcode::FPToSI:
-        {
-            auto conv_inst = static_cast<const ConversionInst &>(inst);
-            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
-               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
-            break;
-        }
         case Opcode::FPExt:
-        {
-            auto conv_inst = static_cast<const ConversionInst &>(inst);
-            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
-               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
-            break;
-        }
         case Opcode::FPTrunc:
-        {
-            auto conv_inst = static_cast<const ConversionInst &>(inst);
-            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
-               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
-            break;
-        }
         case Opcode::BitCast:
+        case Opcode::PtrToInt:
+        case Opcode::IntToPtr:
+        case Opcode::FPToUI:
+        case Opcode::UIToFP:
         {
             auto conv_inst = static_cast<const ConversionInst &>(inst);
             os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
                << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
             break;
         }
+        case Opcode::Shl:
+        case Opcode::LShr:
+        case Opcode::AShr:
         case Opcode::BitAnd:
         case Opcode::BitOr:
         case Opcode::BitXor:
@@ -236,13 +220,6 @@ public:
             os << ", ";
             os << format_value(binary_inst.get_rhs());
             os << "\n";
-            break;
-        }
-        case Opcode::PtrToInt:
-        {
-            auto conv_inst = static_cast<const ConversionInst &>(inst);
-            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
-               << conv_inst.get_source()->type()->name() << " " << format_value(conv_inst.get_source()) << " to " << conv_inst.get_dest_type()->name() << "\n";
             break;
         }
         case Opcode::Call:
@@ -261,10 +238,8 @@ public:
             os << ")\n";
             break;
         }
-        default:
-            os << "  ; Unsupported instruction: " << get_opcode_str(inst.opcode()) << "\n";
-            break;
         }
+        MO_ASSERT(false, "Invalid instruction %s", inst.name().c_str());
     }
     static std::string get_opcode_str(Opcode op)
     {
@@ -280,6 +255,10 @@ public:
             return "udiv";
         case Opcode::SDiv:
             return "sdiv";
+        case Opcode::URem:
+            return "urem";
+        case Opcode::SRem:
+            return "srem";
         case Opcode::ZExt:
             return "zext";
         case Opcode::SExt:
