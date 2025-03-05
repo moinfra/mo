@@ -1,16 +1,20 @@
 // ir_generator.h -- Generates SSA IR from type-checked AST
 
 #pragma once
-#include "ast.h"
-#include "ir_builder.h"
+
 #include <stack>
 #include <vector>
 #include <unordered_map>
+
+#include "ast.h"
+#include "ir_builder.h"
+#include "ir_scope.h"
 
 class IRGenerator
 {
 public:
     explicit IRGenerator(Module *module);
+    ~IRGenerator();
     void generate(const ast::Program &program);
 
 protected:
@@ -29,7 +33,8 @@ protected:
     }
 
     // Symbol table stack for scoping
-    std::vector<std::unordered_map<std::string, Value *>> sym_table_stack_;
+    // std::vector<std::unordered_map<std::string, Value *>> sym_table_stack_;
+    Scope* current_scope_;
 
     // Loop context stacks
     std::stack<BasicBlock *> loop_cond_stack_;
@@ -79,6 +84,7 @@ protected:
 
     // Expression handlers
     Value *handle_binary(const ast::BinaryExpr &bin);
+    Value *handle_pointer_arithmetic(const ast::BinaryExpr &bin, Value *lhs, Value *rhs);
     Value *handle_call(const ast::CallExpr &call);
     Value *handle_variable(const ast::VariableExpr &var);
     Value *handle_member_access(const ast::MemberAccessExpr &access);

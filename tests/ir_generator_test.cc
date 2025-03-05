@@ -1292,12 +1292,12 @@ TEST_F(IrGeneratorTest, MethodCall)
     auto test_fn = create_test_function(ast::Type::create_int());
     auto p_decl = std::make_unique<ast::VarDeclStmt>();
     p_decl->name = "p";
-    p_decl->type = ast::Type::create_alias("Point", struct_type->clone());
+    p_decl->type = ast::Type::create_alias("Point");
     p_decl->init_expr = std::make_unique<ast::StructLiteralExpr>("Point");
     auto *struct_lit = static_cast<ast::StructLiteralExpr *>(p_decl->init_expr.get());
     struct_lit->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(3));
     struct_lit->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(5));
-    struct_lit->type = ast::Type::create_alias("Point", struct_type->clone());
+    struct_lit->type = ast::Type::create_alias("Point");
 
     auto block = std::make_unique<ast::BlockStmt>();
     block->statements.push_back(std::move(p_decl));
@@ -1456,7 +1456,7 @@ TEST_F(IrGeneratorTest, StructMemberAccess)
 
     auto p_decl = std::make_unique<ast::VarDeclStmt>();
     p_decl->name = "p";
-    p_decl->type = ast::Type::create_alias("Point", struct_type->clone());
+    p_decl->type = ast::Type::create_alias("Point");
     auto struct_lit = std::make_unique<ast::StructLiteralExpr>("Point");
     struct_lit->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(3));
     struct_lit->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(5));
@@ -1840,12 +1840,12 @@ TEST_F(IrGeneratorTest, TypeAlias)
     // Type aliases
     auto alias1 = std::make_unique<ast::TypeAliasDecl>();
     alias1->name = "MyInt";
-    // alias1->type = ast::Type::create_int();
+    alias1->type = ast::Type::create_int();
     program.aliases.push_back(std::move(alias1));
 
     auto alias2 = std::make_unique<ast::TypeAliasDecl>();
     alias2->name = "IntPtr";
-    // alias2->type = ast::Type::create_pointer(ast::Type::create_alias("MyInt"));
+    alias2->type = ast::Type::create_pointer(ast::Type::create_alias("MyInt"));
     program.aliases.push_back(std::move(alias2));
 
     // Test function
@@ -1905,7 +1905,7 @@ TEST_F(IrGeneratorTest, TypeAlias)
 }
 
 //===----------------------------------------------------------------------===//
-//                          内存操作测试
+//                          Memory
 //===----------------------------------------------------------------------===//
 //===----------------------------------------------------------------------===//
 //                          Pointer Operations Tests

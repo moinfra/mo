@@ -3,40 +3,54 @@
 IRGenerator::IRGenerator(Module *module)
     : module_(module), builder_(module)
 {
-    sym_table_stack_.emplace_back(); // Global scope
+    // sym_table_stack_.emplace_back(); // Global scope
+    current_scope_ = new Scope(nullptr);
 }
 
+IRGenerator::~IRGenerator()
+{
+    delete current_scope_;
+}
 //===----------------------------------------------------------------------===//
 // Scope Management
 //===----------------------------------------------------------------------===//
 void IRGenerator::push_scope()
 {
-    sym_table_stack_.emplace_back();
+    // sym_table_stack_.emplace_back();
+    current_scope_ = new Scope(current_scope_);
 }
 
 void IRGenerator::pop_scope()
 {
-    assert(sym_table_stack_.size() > 1 && "Cannot pop global scope");
-    sym_table_stack_.pop_back();
+    // assert(sym_table_stack_.size() > 1 && "Cannot pop global scope");
+    // sym_table_stack_.pop_back();
+    MO_ASSERT(current_scope_->parent() != nullptr, "Cannot pop global scope");
+    auto tmp = current_scope_;
+    current_scope_ = current_scope_->parent();
+    delete tmp;
 }
 
 Value *IRGenerator::lookup_symbol(const std::string &name)
 {
-    for (auto it = sym_table_stack_.rbegin(); it != sym_table_stack_.rend(); ++it)
-    {
-        if (auto found = it->find(name); found != it->end())
-        {
-            return found->second;
-        }
-    }
-    return nullptr;
+    // for (auto it = sym_table_stack_.rbegin(); it != sym_table_stack_.rend(); ++it)
+    // {
+    //     if (auto found = it->find(name); found != it->end())
+    //     {
+    //         return found->second;
+    //     }
+    // }
+    // return nullptr;
+    return current_scope_->resolve_variable(name);
 }
 
 void IRGenerator::declare_symbol(const std::string &name, Value *val)
 {
+    // MO_DEBUG("Declaring symbol '%s' with value addr %p type '%s' (symbol depth %zu)",
+    //          name.c_str(), val, val->type()->name().c_str(), sym_table_stack_.size());
+    // sym_table_stack_.back()[name] = val;
     MO_DEBUG("Declaring symbol '%s' with value addr %p type '%s' (symbol depth %zu)",
-             name.c_str(), val, val->type()->name().c_str(), sym_table_stack_.size());
-    sym_table_stack_.back()[name] = val;
+             name.c_str(), val, val->type()->name().c_str(), current_scope_->depth());
+    current_scope_->insert_variable(name, val);
 }
 
 //===----------------------------------------------------------------------===//
@@ -244,7 +258,8 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
     case ast::Type::Kind::Alias:
     {
         auto &alias_type = static_cast<const ast::AliasType &>(ast_type);
-        ir_type = convert_type(alias_type.target());
+        ir_type = current_scope_->resolve_type(alias_type.name());
+        MO_ASSERT(ir_type != nullptr, "Failed to resolve alias type");
         break;
     }
     case ast::Type::Kind::Function:
@@ -1018,6 +1033,57 @@ bool is_assignment_op(TokenType op)
     return op >= TokenType::Assign && op <= TokenType::RSAssign;
 }
 
+Value *IRGenerator::handle_pointer_arithmetic(const ast::BinaryExpr &bin, Value *lhs, Value *rhs)
+{
+    if (bin.op == TokenType::Plus || bin.op == TokenType::Minus)
+    {
+        Type *lhs_type = lhs->type();
+        Type *rhs_type = rhs->type();
+        bool lhs_ptr = lhs_type->is_pointer();
+        bool rhs_ptr = rhs_type->is_pointer();
+        auto isize_ty = module_->get_integer_type(64); // TODO: pointer size depends on platform
+
+        if (bin.op == TokenType::Plus)
+        {
+            //  ptr + int or int + ptr
+            if (lhs_ptr && rhs_type->is_integer())
+            {
+                Value *offset = handle_conversion(rhs, isize_ty);
+                return builder_.create_gep(lhs, {offset}, "ptr_add");
+            }
+            else if (rhs_ptr && lhs_type->is_integer())
+            {
+                Value *offset = handle_conversion(lhs, isize_ty);
+                return builder_.create_gep(rhs, {offset}, "ptr_add");
+            }
+        }
+        else if (bin.op == TokenType::Minus)
+        {
+            // ptr - int
+            if (lhs_ptr && rhs_type->is_integer())
+            {
+                Value *offset = handle_conversion(rhs, isize_ty);
+                Value *neg_offset = builder_.create_neg(offset, "neg_offset");
+                return builder_.create_gep(lhs, {neg_offset}, "ptr_sub");
+            }
+            // ptr - ptr
+            else if (lhs_ptr && rhs_ptr)
+            {
+                Value *lhs_int = builder_.create_ptrtoint(lhs, isize_ty, "lhs_ptr");
+                Value *rhs_int = builder_.create_ptrtoint(rhs, isize_ty, "rhs_ptr");
+                Value *diff_bytes = builder_.create_sub(lhs_int, rhs_int, "diff_bytes");
+
+                Type *elem_type = lhs_type->element_type();
+                size_t elem_size = elem_type->size();
+                Value *elem_size_val = module_->get_constant_int(isize_ty, elem_size);
+                return builder_.create_sdiv(diff_bytes, elem_size_val, "diff_elements");
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 Value *IRGenerator::handle_binary(const ast::BinaryExpr &bin)
 {
     if (is_assignment_op(bin.op))
@@ -1032,6 +1098,11 @@ Value *IRGenerator::handle_binary(const ast::BinaryExpr &bin)
 
     Value *lhs = generate_expr(*bin.left);
     Value *rhs = generate_expr(*bin.right);
+
+    if (auto val = handle_pointer_arithmetic(bin, lhs, rhs))
+    {
+        return val;
+    }
 
     // Apply implicit conversions
     Type *target_type = dominant_type(lhs->type(), rhs->type());
@@ -1119,6 +1190,9 @@ Value *IRGenerator::handle_compound_assign(const ast::BinaryExpr &bin)
     Value *result = nullptr;
     switch (bin.op)
     {
+    case TokenType::Assign:
+        result = rhs;
+        break;
     case TokenType::AddAssign:
         result = builder_.create_add(loaded_val, rhs, "add_tmp");
         break;
@@ -1852,13 +1926,16 @@ void IRGenerator::generate_global(const ast::GlobalDecl &global)
         init = generate_constant_initializer(*global.init_expr);
     }
 
+    PointerType *ptr_type = module_->get_pointer_type(type);
     GlobalVariable *gv = module_->create_global_variable(
-        type,
+        ptr_type,
         global.is_const,
         init,
         global.name);
 
-    sym_table_stack_[0][global.name] = gv; // Add to global scope
+    // sym_table_stack_[0][global.name] = gv; // Add to global scope
+    MO_ASSERT(current_scope_->parent() == nullptr, "Global variable not at global scope");
+    declare_symbol(global.name, gv);
 }
 
 //===----------------------------------------------------------------------===//
@@ -1866,19 +1943,37 @@ void IRGenerator::generate_global(const ast::GlobalDecl &global)
 //===----------------------------------------------------------------------===//
 void IRGenerator::generate(const ast::Program &program)
 {
-    // Process global variables first
+    // 1.1. Collect type names
+    for (const auto &alias : program.aliases)
+    {
+        current_scope_->insert_type(alias->name, nullptr);
+    }
+
+    for (const auto &struct_decl : program.structs)
+    {
+        current_scope_->insert_type(struct_decl->name, nullptr);
+    }
+
+    // 1.2. Fill in type aliases
+    for (const auto &alias : program.aliases)
+    {
+        auto ty = convert_type(*alias->type); // Force alias type creation
+        current_scope_->insert_type(alias->name, ty);
+    }
+
+    for (const auto &struct_decl : program.structs)
+    {
+        auto ty = convert_type(*struct_decl->type()); // Force struct type creation
+        current_scope_->insert_type(struct_decl->name, ty);
+    }
+
+    // 2. Generate global variables
     for (const auto &global : program.globals)
     {
         generate_global(*global);
     }
 
-    // Process struct declarations
-    for (const auto &struct_decl : program.structs)
-    {
-        convert_type(*struct_decl->type()); // Force struct type creation
-    }
-
-    // Stage 1. Declare all functions
+    // 3.1. Declare all functions
     for (const auto &func : program.functions)
     {
         declare_function(*func);
@@ -1891,7 +1986,7 @@ void IRGenerator::generate(const ast::Program &program)
         }
     }
 
-    // Stage 2. Generate function bodies
+    // 3.2. Generate function bodies
     for (const auto &func : program.functions)
     {
         generate_function_body(*func);
