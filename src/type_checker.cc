@@ -277,11 +277,13 @@ void TypeChecker::check_expr(Expr &expr)
         visit(*d);
     else if (auto i = dynamic_cast<InitListExpr *>(&expr))
         visit(*i);
+    else if (auto i = dynamic_cast<TupleExpr *>(&expr))
+        visit(*i);
     else if (auto f = dynamic_cast<FunctionPointerExpr *>(&expr))
         visit(*f);
     else
     {
-        assert(false && "Unknown expression type");
+        MO_ASSERT(false, "Unknown expression type `%s`", expr.name().c_str());
     }
 
     switch (expr.expr_category)
@@ -791,10 +793,9 @@ void TypeChecker::visit(CallExpr &expr)
     for (size_t i = 0; i < expr.args.size(); ++i)
     {
         auto &arg_type = expr.args[i]->type;
+        MO_ASSERT(arg_type != nullptr, "Argument must have a type");
         auto &param_type = function_type->params()[i];
-        if (!arg_type || !param_type)
-            continue;
-
+        MO_ASSERT(param_type != nullptr, "Parameter must have a type");
         if (!is_convertible(*arg_type, *param_type))
         {
             add_error("Argument type mismatch in function call");
@@ -1124,6 +1125,17 @@ void TypeChecker::visit(InitListExpr &expr)
     expr.expr_category = Expr::Category::RValue;
 }
 
+void TypeChecker::visit(TupleExpr &expr) {
+    std::vector<TypePtr> elem_types;
+    for (auto &member : expr.elements) {
+        check_expr(*member);
+        MO_ASSERT(member->type != nullptr, "Tuple element must have a type");
+        elem_types.push_back(member->type->clone());
+    }
+    expr.type = Type::create_tuple(std::move(elem_types));
+    expr.expr_category = Expr::Category::RValue;
+}
+
 // Enhanced type conversion rules
 bool TypeChecker::is_convertible(const Type &from, const Type &to) const
 {
@@ -1234,11 +1246,17 @@ void TypeChecker::visit(StructLiteralExpr &expr)
     {
         check_expr(*value);
 
-        // Find struct field
-        const Type *field_type = struct_decl->get_field(name)->type.get();
-        if (!field_type)
+        auto field = struct_decl->get_field(name);
+        if (!field)
         {
             add_error("No member '" + name + "' in struct " + expr.struct_name);
+            continue;
+        }
+        // Find struct field
+        const Type *field_type = field->type.get();
+        if (!field_type)
+        {
+            add_error("No type for member '" + name + "' in struct " + expr.struct_name);
             continue;
         }
 

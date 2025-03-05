@@ -82,6 +82,7 @@ protected:
     void visit(ast::MemberAccessExpr &expr);
     void visit(ast::ArrayAccessExpr &expr);
     void visit(ast::InitListExpr &expr);
+    void visit(ast::TupleExpr &expr);
     void visit(ast::SizeofExpr &expr);
     void visit(ast::AddressOfExpr &expr);
     void visit(ast::DerefExpr &expr);
