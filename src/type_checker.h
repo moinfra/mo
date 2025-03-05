@@ -1,24 +1,13 @@
 #pragma once
 
-#include "ast.h"
 #include <vector>
 #include <memory>
 #include <sstream>
 #include <unordered_map>
 #include <string>
 
-struct Scope
-{
-    std::unordered_map<std::string, ast::TypePtr> variables_;
-    std::unordered_map<std::string, ast::TypePtr> types_;
-    Scope *parent = nullptr;
-
-    ast::TypePtr find(const std::string &name) const;
-    bool insert(std::string name, ast::TypePtr type);
-    ast::TypePtr resolve_type(const std::string &name) const;
-
-    Scope(Scope *parent) : parent(parent) {}
-};
+#include "ast.h"
+#include "ast_scope.h"
 
 class TypeChecker
 {
@@ -35,16 +24,17 @@ public:
 
 protected:
     ast::Program *program_;
-    std::vector<std::string> errors_;
-    std::unique_ptr<Scope> global_scope_;
-    Scope *current_scope_ = nullptr;
+    mutable std::vector<std::string> errors_;
+    std::unique_ptr<ast::Scope> global_scope_;
+    ast::Scope *current_scope_ = nullptr;
     ast::Type *current_return_type_ = nullptr;
     int loop_depth_ = 0; // Track nested loop depth
 
     void push_scope();
     void pop_scope();
-    template<typename... Args>
-    void add_error(const Args&... args) {
+    template <typename... Args>
+    void add_error(const Args &...args) const
+    {
         std::stringstream ss;
         (ss << ... << args); // Fold expression to handle multiple arguments
         errors_.push_back(ss.str());
@@ -54,7 +44,7 @@ protected:
     bool types_equal(const ast::Type &t1, const ast::Type &t2) const;
     bool is_convertible(const ast::Type &from, const ast::Type &to) const;
     bool verify_assignable(const ast::Expr &target, const ast::Expr &value);
-    ast::TypePtr resolve_alias(const std::string &name) const;
+    ast::TypePtr resolve_alias(const ast::Type &type) const;
     ast::StructDecl *find_struct(const std::string &name) const;
     bool is_valid_lvalue(ast::Expr &expr);
     bool is_valid_cond_type(const ast::Type &type);

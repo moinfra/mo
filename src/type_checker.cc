@@ -9,71 +9,6 @@
 
 using namespace ast;
 
-// Find a variable in the current or parent scopes
-TypePtr Scope::find(const std::string &name) const
-{
-    if (name.empty())
-    {
-        throw std::invalid_argument("Cannot find empty name");
-    }
-
-    auto var_it = variables_.find(name);
-    if (var_it != variables_.end())
-    {
-        return var_it->second->clone();
-    }
-
-    if (parent)
-    {
-        return parent->find(name);
-    }
-
-    return nullptr;
-}
-
-// Insert a variable into the current scope
-bool Scope::insert(std::string name, TypePtr type)
-{
-    if (name.empty())
-    {
-        throw std::invalid_argument("Cannot insert empty name");
-    }
-    if (!type)
-    {
-        throw std::invalid_argument("Type cannot be null");
-    }
-
-    if (variables_.find(name) != variables_.end() || types_.find(name) != types_.end())
-    {
-        return false; // Variable or type already exists
-    }
-
-    variables_[name] = std::move(type);
-    return true;
-}
-
-// Resolve a type in the current or parent scopes
-TypePtr Scope::resolve_type(const std::string &name) const
-{
-    if (name.empty())
-    {
-        throw std::invalid_argument("Cannot resolve empty name");
-    }
-
-    auto type_it = types_.find(name);
-    if (type_it != types_.end())
-    {
-        return type_it->second->clone();
-    }
-
-    if (parent)
-    {
-        return parent->resolve_type(name);
-    }
-
-    return nullptr;
-}
-
 TypeChecker::TypeChecker(ast::Program *program)
     : program_(program),
       global_scope_(std::make_unique<Scope>(nullptr))
@@ -106,7 +41,7 @@ TypeChecker::TypeCheckResult TypeChecker::check()
     for (auto &global : program_->globals)
     {
         visit(*global);
-        global_scope_->insert(global->name, global->type->clone());
+        global_scope_->insert_variable(global->name, global->type->clone());
     }
 
     for (auto &func : program_->functions)
@@ -126,98 +61,14 @@ void TypeChecker::push_scope()
 void TypeChecker::pop_scope()
 {
     assert(current_scope_ != global_scope_.get() && "Cannot pop global scope");
-    current_scope_ = current_scope_->parent;
+    auto tmp = current_scope_;
+    current_scope_ = current_scope_->parent();
+    delete tmp;
 }
 
-// Type system implementation. NOTE: alias kind t1 will be resolved
 bool TypeChecker::types_equal(const Type &t1, const Type &t2) const
 {
-    if (t1.kind() != t2.kind())
-        return false;
-
-    switch (t1.kind())
-    {
-    case Type::Kind::Placeholder:
-        return true;
-    case Type::Kind::Void:
-        return true;
-    case Type::Kind::Int:
-    {
-        auto i1 = static_cast<const IntegerType *>(&t1);
-        auto i2 = static_cast<const IntegerType *>(&t2);
-        return i1->bit_width() == i2->bit_width();
-    }
-    case Type::Kind::Float:
-    {
-        auto f1 = static_cast<const FloatType *>(&t1);
-        auto f2 = static_cast<const FloatType *>(&t2);
-        return f1->precision() == f2->precision();
-    }
-    case Type::Kind::Bool:
-        return true;
-    case Type::Kind::String:
-        return true;
-    case Type::Kind::Pointer:
-    {
-        auto p1 = static_cast<const PointerType *>(&t1);
-        auto p2 = static_cast<const PointerType *>(&t2);
-        return types_equal(p1->pointee(), p2->pointee());
-    }
-    case Type::Kind::Array:
-    {
-        auto a1 = static_cast<const ArrayType *>(&t1);
-        auto a2 = static_cast<const ArrayType *>(&t2);
-        return a1->size() == a2->size() &&
-               types_equal(a1->element_type(), a2->element_type());
-    }
-    case Type::Kind::Tuple:
-    {
-        auto t1_tuple = static_cast<const TupleType *>(&t1);
-        auto t2_tuple = static_cast<const TupleType *>(&t2);
-        if (t1_tuple->element_types().size() != t2_tuple->element_types().size())
-            return false;
-        return std::equal(t1_tuple->element_types().begin(), t1_tuple->element_types().end(),
-                          t2_tuple->element_types().begin(),
-                          [this](const TypePtr &t1, const TypePtr &t2)
-                          {
-                              return types_equal(*t1, *t2);
-                          });
-    }
-    case Type::Kind::Struct:
-    {
-        auto s1 = static_cast<const StructType *>(&t1);
-        auto s2 = static_cast<const StructType *>(&t2);
-        return s1->name() == s2->name();
-    }
-    case Type::Kind::Function:
-    {
-        auto f1 = static_cast<const FunctionType *>(&t1);
-        auto f2 = static_cast<const FunctionType *>(&t2);
-        if (!types_equal(f1->return_type(), f2->return_type()))
-            return false;
-        if (f1->params().size() != f2->params().size())
-            return false;
-        for (size_t i = 0; i < f1->params().size(); ++i)
-        {
-            if (!types_equal(*f1->params()[i], *f2->params()[i]))
-                return false;
-        }
-        return true;
-    }
-    case Type::Kind::Alias:
-    {
-        auto a1 = static_cast<const AliasType *>(&t1);
-        return types_equal(a1->target(), t2);
-    }
-    case Type::Kind::Qualified:
-    {
-        auto q1 = static_cast<const QualifiedType *>(&t1);
-        auto q2 = static_cast<const QualifiedType *>(&t2);
-        return q1->qualifiers() == q2->qualifiers() && types_equal(q1->base_type(), q2->base_type());
-    }
-    }
-
-    return false;
+    return t1.equals(&t2);
 }
 
 bool TypeChecker::is_valid_lvalue(Expr &expr)
@@ -302,7 +153,8 @@ void TypeChecker::check_expr(Expr &expr)
         break;
     }
 
-    MO_ASSERT(expr.type, "Expression has no type after checking");
+    MO_ASSERT(expr.type, "Expression '%s' has no type after checking", expr.name().c_str());
+    expr.type = resolve_alias(*expr.type);
     MO_DEBUG("Type of %s: %s", expr.name().c_str(), expr.type->to_string().c_str());
 }
 
@@ -310,7 +162,8 @@ void TypeChecker::check_expr(Expr &expr)
 void TypeChecker::visit(CastExpr &expr)
 {
     check_expr(*expr.expr);
-
+    MO_ASSERT(expr.target_type, "Cast expression has no target type");
+    expr.target_type = resolve_alias(*expr.target_type);
     if (!expr.expr->type || !expr.target_type)
     {
         add_error("Invalid cast expression");
@@ -331,6 +184,7 @@ void TypeChecker::visit(SizeofExpr &expr)
     switch (expr.kind)
     {
     case SizeofExpr::Kind::Type:
+        expr.target_type = resolve_alias(*expr.target_type);
         if (!expr.target_type || expr.target_type->kind() == Type::Kind::Placeholder)
         {
             add_error("Invalid type in sizeof operator");
@@ -390,7 +244,7 @@ void TypeChecker::visit(VariableExpr &expr)
 {
     expr.expr_category = Expr::Category::LValue;
 
-    if (auto type = current_scope_->find(expr.identifier))
+    if (auto type = current_scope_->resolve_variable(expr.identifier))
     {
         expr.type = type->clone();
     }
@@ -424,6 +278,15 @@ void TypeChecker::visit(StructDecl &decl)
 {
     for (auto &field : decl.fields)
     {
+        if (field.type->kind() == Type::Kind::Alias)
+        {
+            TypePtr resolved = resolve_alias(*field.type);
+            if (resolved)
+            {
+                field.type = std::move(resolved);
+            }
+        }
+
         if (field.type->kind() == Type::Kind::Struct)
         {
             if (!find_struct(static_cast<StructType *>(field.type.get())->name()))
@@ -438,7 +301,7 @@ void TypeChecker::visit(StructDecl &decl)
         }
     }
 
-    if (!current_scope_->types_.emplace(decl.name, decl.type()).second)
+    if (!current_scope_->insert_type(decl.name, decl.type()))
     {
         add_error("Duplicate struct name: " + decl.name);
     }
@@ -451,6 +314,15 @@ void TypeChecker::visit(GlobalDecl &decl)
         if (!find_struct(static_cast<StructType *>(decl.type.get())->name()))
         {
             add_error("Undefined struct type in global variable '" + decl.name + "': " + static_cast<StructType *>(decl.type.get())->name());
+        }
+    }
+
+    if (decl.type->kind() == Type::Kind::Alias)
+    {
+        TypePtr resolved = resolve_alias(*decl.type);
+        if (resolved)
+        {
+            decl.type = std::move(resolved);
         }
     }
 
@@ -481,7 +353,7 @@ void TypeChecker::visit(GlobalDecl &decl)
         }
     }
 
-    if (!global_scope_->insert(decl.name, decl.type->clone()))
+    if (!global_scope_->insert_variable(decl.name, decl.type->clone()))
     {
         add_error("Duplicate global variable name: " + decl.name);
     }
@@ -516,11 +388,22 @@ void TypeChecker::visit(ImplBlock &impl)
 // Type alias support
 void TypeChecker::visit(TypeAliasDecl &decl)
 {
-    // Register alias in current scope
-    // Ensure that the alias name does not already exist
-    if (!current_scope_->types_.emplace(decl.name, decl.type->clone()).second)
+    MO_ASSERT(decl.type, "Type alias has no target type");
+    TypePtr resolved = resolve_alias(*decl.type);
+    if (resolved)
     {
-        add_error("Duplicate type name for alias: " + decl.name);
+        decl.type = std::move(resolved);
+    }
+    else
+    {
+        add_error("Invalid target type for alias: " + decl.name);
+        MO_ASSERT(false, "Invalid target type for alias: %s", decl.name.c_str());
+    }
+
+    if (!current_scope_->insert_type(decl.name, decl.type->clone()))
+    {
+        add_error("Duplicate alias: " + decl.name);
+        MO_ASSERT(false, "Duplicate alias: %s", decl.name.c_str());
     }
 }
 
@@ -614,20 +497,67 @@ void TypeChecker::visit(BinaryExpr &expr)
     case TokenType::Star:
     case TokenType::Slash:
     {
-        if (expr.left->type->kind() == Type::Kind::Int && expr.right->type->kind() == Type::Kind::Int)
+        if (auto lhs_int_ty = expr.left->type->as_integer())
         {
-            auto ty = expr.left->type->as_integer();
-            expr.type = Type::create_int(ty->bit_width(), !ty->is_signed());
-            ;
+            if (auto rhs_int_ty = expr.right->type->as_integer()) // int +-*/ int = int
+            {
+                if (!lhs_int_ty->equals(rhs_int_ty))
+                {
+                    add_error("Operands must have same integer type for arithmetic operation");
+                }
+                expr.type = lhs_int_ty->clone();
+            }
+            else if (auto rhs_float_ty = expr.right->type->as_float()) // int +-*/ float = float
+            {
+                add_error("Operands must have same numeric type for arithmetic operation");
+                expr.type = Type::create_float(static_cast<uint8_t>(rhs_float_ty->precision()));
+            }
+            else
+            {
+                add_error("Invalid operands for arithmetic operation");
+                expr.type = lhs_int_ty->clone();
+            }
         }
-        else if (expr.left->type->kind() == Type::Kind::Float && expr.right->type->kind() == Type::Kind::Float)
+        else if (auto lhs_float_ty = expr.left->type->as_float())
         {
-            auto ty = expr.left->type->as_float();
-            expr.type = Type::create_float(static_cast<uint8_t>(ty->precision()));
+            if (auto rhs_float_ty = expr.right->type->as_float()) // float +-*/ float = float
+            {
+                if (!lhs_float_ty->equals(rhs_float_ty))
+                {
+                    add_error("Operands must have same float type for arithmetic operation");
+                }
+                expr.type = lhs_float_ty->clone();
+            }
+            else
+            {
+                add_error("Invalid operands for arithmetic operation");
+                expr.type = lhs_float_ty->clone();
+            }
+        }
+        else if (expr.op == TokenType::Plus || expr.op == TokenType::Minus)
+        {
+            if (auto lhs_ptr_ty = expr.left->type->as_pointer())
+            {
+                if (auto rhs_int_ty = expr.right->type->as_integer()) // ptr +- int = ptr
+                {
+                    expr.type = lhs_ptr_ty->clone();
+                }
+                else
+                {
+                    add_error("Invalid operands for pointer arithmetic operation");
+                }
+            }
+            else
+            {
+                add_error("Invalid operands for pointer arithmetic operation");
+            }
         }
         else
         {
             add_error("Invalid operands for arithmetic operation");
+            MO_ASSERT(false, "Invalid operands for arithmetic operation, left: %s, right: %s",
+                      expr.left->type->to_string().c_str(),
+                      expr.right->type->to_string().c_str());
         }
         expr.expr_category = Expr::Category::RValue;
         break;
@@ -835,6 +765,15 @@ void TypeChecker::visit(ExprStmt &stmt)
 // Type deduction system
 void TypeChecker::visit(VarDeclStmt &stmt)
 {
+    if (stmt.type)
+    {
+        TypePtr resolved = resolve_alias(*stmt.type);
+        if (resolved)
+        {
+            stmt.type = std::move(resolved);
+        }
+    }
+
     // Handle type deduction and explicit type declarations
     const bool has_explicit_type = static_cast<bool>(stmt.type);
     const bool has_initializer = static_cast<bool>(stmt.init_expr);
@@ -896,7 +835,7 @@ void TypeChecker::visit(VarDeclStmt &stmt)
     }
 
     // Check for variable redeclaration
-    if (current_scope_->find(stmt.name))
+    if (current_scope_->resolve_variable(stmt.name))
     {
         add_error("Redeclaration of variable: " + stmt.name);
         return;
@@ -904,7 +843,7 @@ void TypeChecker::visit(VarDeclStmt &stmt)
 
     // Register the variable in the current scope
     assert(!stmt.name.empty() && "Variable name must be set");
-    if (!current_scope_->insert(stmt.name, stmt.type->clone()))
+    if (!current_scope_->insert_variable(stmt.name, stmt.type->clone()))
     {
         add_error("Failed to register variable in scope: " + stmt.name);
     }
@@ -956,13 +895,16 @@ void TypeChecker::visit(BlockStmt &stmt)
 // Function declaration handling
 void TypeChecker::visit(FunctionDecl &func)
 {
+    func.return_type = resolve_alias(*func.return_type);
+
+    // Check for duplicate function name
     auto prev_return_type = current_return_type_;
     current_return_type_ = func.return_type.get();
 
     // To handle recursive function calls, we need to add current function to the
     // current scope before checking its body.
     assert(!func.name.empty() && "Function name must be set");
-    if (!current_scope_->insert(func.name, func.type()))
+    if (!current_scope_->insert_variable(func.name, func.type()))
     {
         add_error("Duplicate function name: " + func.name);
     }
@@ -973,7 +915,7 @@ void TypeChecker::visit(FunctionDecl &func)
     for (auto &param : func.params)
     {
         assert(!param.name.empty() && "Parameter name must be set");
-        if (!current_scope_->insert(param.name, param.type->clone()))
+        if (!current_scope_->insert_variable(param.name, param.type->clone()))
         {
             add_error("Duplicate parameter name: " + param.name);
         }
@@ -992,11 +934,16 @@ void TypeChecker::visit(MemberAccessExpr &expr)
 {
     check_expr(*expr.object);
     if (!expr.object->type)
+    {
+        MO_ASSERT(false, "Member access on invalid object");
+        expr.type = Type::create_placeholder();
         return;
+    }
 
     if (expr.object->type->kind() != Type::Kind::Struct)
     {
         add_error("Member access on non-struct type");
+        expr.type = Type::create_placeholder();
         return;
     }
 
@@ -1008,6 +955,7 @@ void TypeChecker::visit(MemberAccessExpr &expr)
     if (!struct_decl)
     {
         add_error("Undefined struct type: " + struct_type->name());
+        expr.type = Type::create_placeholder();
         return;
     }
 
@@ -1046,10 +994,18 @@ void TypeChecker::visit(MemberAccessExpr &expr)
     }
 
     // Find member
-    Type *member_type = struct_decl->get_field(expr.member)->type.get();
-    if (!member_type)
+    auto field = struct_decl->get_field(expr.member);
+    if (!field)
     {
         add_error("No member '" + expr.member + "' in struct '" + struct_type->name() + "'");
+        expr.type = Type::create_placeholder();
+        return;
+    }
+    Type *member_type = field->type.get();
+    if (!member_type)
+    {
+        add_error("No type for member '" + expr.member + "' in struct '" + struct_type->name() + "'");
+        expr.type = Type::create_placeholder();
         return;
     }
 
@@ -1125,9 +1081,11 @@ void TypeChecker::visit(InitListExpr &expr)
     expr.expr_category = Expr::Category::RValue;
 }
 
-void TypeChecker::visit(TupleExpr &expr) {
+void TypeChecker::visit(TupleExpr &expr)
+{
     std::vector<TypePtr> elem_types;
-    for (auto &member : expr.elements) {
+    for (auto &member : expr.elements)
+    {
         check_expr(*member);
         MO_ASSERT(member->type != nullptr, "Tuple element must have a type");
         elem_types.push_back(member->type->clone());
@@ -1176,15 +1134,15 @@ bool TypeChecker::is_convertible(const Type &from, const Type &to) const
     // Conversion from alias to its target type
     if (from.kind() == Type::Kind::Alias)
     {
-        auto alias_type = static_cast<const AliasType *>(&from);
-        return is_convertible(alias_type->target(), to);
+        auto resolved = resolve_alias(*from.clone());
+        return is_convertible(*resolved, to);
     }
 
     // Conversion to alias from its target type
     if (to.kind() == Type::Kind::Alias)
     {
-        auto alias_type = static_cast<const AliasType *>(&to);
-        return is_convertible(from, alias_type->target());
+        auto resolved = resolve_alias(*to.clone());
+        return is_convertible(from, *resolved);
     }
 
     return false;
@@ -1285,20 +1243,45 @@ void TypeChecker::visit(StructLiteralExpr &expr)
 }
 
 // Alias resolution
-TypePtr TypeChecker::resolve_alias(const std::string &name) const
+TypePtr TypeChecker::resolve_alias(const Type &type) const
 {
-    auto type = current_scope_->resolve_type(name);
-    if (!type)
-        return nullptr;
-
-    while (type->kind() == Type::Kind::Alias)
+    if (!type.is_alias())
     {
-        auto alias_type = static_cast<AliasType *>(type.get());
-        type = current_scope_->resolve_type(alias_type->name());
-        if (!type)
-            break;
+        return type.clone();
     }
-    return type;
+
+    std::unordered_set<std::string> visited;
+    TypePtr current = type.clone();
+
+    while (auto alias = current->as_alias())
+    {
+        const std::string &name = alias->name();
+
+        // loop ref dectect
+        if (visited.count(name))
+        {
+            add_error("Detected cyclic alias: ", name);
+            return nullptr;
+        }
+        visited.insert(name);
+
+        // resolve target
+        TypePtr resolved = current_scope_->resolve_type(name);
+        if (!resolved)
+        {
+            add_error("Unresolved alias: ", name);
+            return nullptr;
+        }
+        current = std::move(resolved->clone());
+    }
+
+    if (auto fin = current->as_alias())
+    {
+        add_error("Alias is still unresolved: ", fin->name());
+        return nullptr;
+    }
+
+    return current;
 }
 
 StructDecl *TypeChecker::find_struct(const std::string &name) const

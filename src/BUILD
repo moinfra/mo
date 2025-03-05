@@ -25,8 +25,8 @@ cc_library(
 
 cc_library(
     name = "type_checker",
-    srcs = ["type_checker.cc", "ast.cc", "ast_type.cc"],
-    hdrs = ["type_checker.h", "ast.h", "ast_type.h"],
+    srcs = ["type_checker.cc", "ast.cc", "ast_type.cc", "ast_scope.cc"],
+    hdrs = ["type_checker.h", "ast.h", "ast_type.h", "ast_scope.h"],
     deps = [":lexer"],
     visibility = ["//visibility:public"],
 )
@@ -71,8 +71,8 @@ cc_library(
 
 cc_library(
     name = "ir_generator",
-    srcs = ["ir_generator.cc"],
-    hdrs = ["ir_generator.h"],
+    srcs = ["ir_generator.cc", "ir_scope.cc"],
+    hdrs = ["ir_generator.h", "ir_scope.h"],
     deps = [":parser", ":ir_builder"],
     visibility = ["//visibility:public"],
 )
