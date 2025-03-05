@@ -132,6 +132,18 @@ namespace ast
         virtual bool is_aggregate() const noexcept { return false; }
         virtual bool is_signed() const noexcept { return false; }
 
+        virtual bool is_integer() const noexcept { return false; }
+        virtual bool is_float() const noexcept { return false; }
+        virtual bool is_bool() const noexcept { return false; }
+        virtual bool is_string() const noexcept { return false; }
+        virtual bool is_pointer() const noexcept { return false; }
+        virtual bool is_array() const noexcept { return false; }
+        virtual bool is_tuple() const noexcept { return false; }
+        virtual bool is_function() const noexcept { return false; }
+        virtual bool is_struct() const noexcept { return false; }
+        virtual bool is_alias() const noexcept { return false; }
+        virtual bool is_qualified() const noexcept { return false; }
+
         // Factory methods
         static TypePtr create_placeholder();
         static TypePtr create_void();
@@ -144,7 +156,7 @@ namespace ast
         static TypePtr create_tuple(std::vector<TypePtr> element_types);
         static TypePtr create_function(TypePtr return_type, std::vector<TypePtr> params);
         static TypePtr create_struct(std::string name, std::vector<TypedField> members);
-        static TypePtr create_alias(std::string name, TypePtr target = nullptr);
+        static TypePtr create_alias(std::string name);
         static TypePtr create_qualified(Qualifier q, TypePtr base);
     };
 
@@ -210,7 +222,8 @@ namespace ast
     public:
         bool is_aggregate() const noexcept override { return true; }
 
-        bool is_signed() const noexcept override {
+        bool is_signed() const noexcept override
+        {
             return false;
         }
 
@@ -233,6 +246,7 @@ namespace ast
         // Type conversion
         IntegerType *as_integer() noexcept override { return this; }
         const IntegerType *as_integer() const noexcept override { return this; }
+        bool is_integer() const noexcept override { return true; }
 
         Kind kind() const noexcept override { return Kind::Int; }
         size_t bit_width() const noexcept { return bit_width_; }
@@ -281,6 +295,7 @@ namespace ast
         // Type conversion
         FloatType *as_float() noexcept override { return this; }
         const FloatType *as_float() const noexcept override { return this; }
+        bool is_float() const noexcept override { return true; }
 
         Kind kind() const noexcept override { return Kind::Float; }
         Precision precision() const noexcept { return precision_; }
@@ -297,7 +312,8 @@ namespace ast
             return precision_ == static_cast<const FloatType *>(other)->precision_;
         }
 
-        bool is_signed() const noexcept override {
+        bool is_signed() const noexcept override
+        {
             return false;
         }
 
@@ -318,6 +334,7 @@ namespace ast
         // Type conversion
         BoolType *as_bool() noexcept override { return this; }
         const BoolType *as_bool() const noexcept override { return this; }
+        bool is_bool() const noexcept override { return true; }
 
         Kind kind() const noexcept override { return Kind::Bool; }
 
@@ -331,7 +348,8 @@ namespace ast
             return other->kind() == Kind::Bool;
         }
 
-        bool is_signed() const noexcept override {
+        bool is_signed() const noexcept override
+        {
             return false;
         }
 
@@ -347,6 +365,7 @@ namespace ast
         // Type conversion
         StringType *as_string() noexcept override { return this; }
         const StringType *as_string() const noexcept override { return this; }
+        bool is_string() const noexcept override { return true; }
 
         Kind kind() const noexcept override { return Kind::String; }
 
@@ -360,7 +379,8 @@ namespace ast
             return other->kind() == Kind::String;
         }
 
-        bool is_signed() const noexcept override {
+        bool is_signed() const noexcept override
+        {
             return false;
         }
 
@@ -379,6 +399,7 @@ namespace ast
         // Type conversion
         PointerType *as_pointer() noexcept override { return this; }
         const PointerType *as_pointer() const noexcept override { return this; }
+        bool is_pointer() const noexcept override { return true; }
 
         Kind kind() const noexcept override { return Kind::Pointer; }
         const Type &pointee() const noexcept { return *pointee_; }
@@ -398,8 +419,8 @@ namespace ast
 
         std::string to_string() const override;
 
-
-        bool is_signed() const noexcept override {
+        bool is_signed() const noexcept override
+        {
             return false;
         }
 
@@ -422,6 +443,7 @@ namespace ast
         // Type conversion
         ArrayType *as_array() noexcept override { return this; }
         const ArrayType *as_array() const noexcept override { return this; }
+        bool is_array() const noexcept override { return true; }
 
         // Type characteristics
         Kind kind() const noexcept override { return Kind::Array; }
@@ -465,6 +487,7 @@ namespace ast
         Kind kind() const noexcept override { return Kind::Tuple; }
         TupleType *as_tuple() noexcept override { return this; }
         const TupleType *as_tuple() const noexcept override { return this; }
+        bool is_tuple() const noexcept override { return true; }
 
         size_t element_count() const noexcept { return elements_.size(); }
         const Type &element_type(size_t index) const
@@ -547,6 +570,9 @@ namespace ast
         }
 
         const std::string &name() const noexcept { return name_; }
+        const StructType *as_struct() const noexcept override { return this; }
+        StructType *as_struct() noexcept override { return this; }
+        bool is_struct() const noexcept override { return true; }
 
         size_t member_count() const noexcept { return members_.size(); }
         const TypedField &get_member(size_t index) const { return members_.at(index); }
@@ -647,7 +673,7 @@ namespace ast
         // Type conversion
         FunctionType *as_function() noexcept override { return this; }
         const FunctionType *as_function() const noexcept override { return this; }
-
+        bool is_function() const noexcept override { return true; }
         // Type characteristics
         Kind kind() const noexcept override { return Kind::Function; }
         const Type &return_type() const noexcept { return *return_type_; }
@@ -708,9 +734,8 @@ namespace ast
     class AliasType : public Type
     {
     public:
-        AliasType(std::string name, TypePtr target)
-            : name_(std::move(name)),
-              target_(std::move(target)) // target can be unresolved in the parsing stage
+        AliasType(std::string name)
+            : name_(std::move(name))
         {
             assert(!name_.empty() && "Alias name cannot be empty");
         }
@@ -718,33 +743,31 @@ namespace ast
         // Type conversion
         AliasType *as_alias() noexcept override { return this; }
         const AliasType *as_alias() const noexcept override { return this; }
+        bool is_alias() const noexcept override { return true; }
 
         // Type characteristics
         Kind kind() const noexcept override { return Kind::Alias; }
         const std::string &name() const noexcept { return name_; }
-        const Type &target() const noexcept { return *target_; }
 
         // Cloning operation
         TypePtr clone() const override
         {
-            assert(target_ && "Alias target cannot be null. Is it unresolved?");
-            return std::make_unique<AliasType>(name_, target_->clone());
+            return std::make_unique<AliasType>(name_);
         }
 
-        // Type comparison (compares alias names directly)
+        // Type comparison
         bool equals(const Type *other) const noexcept override
         {
             if (other->kind() != Kind::Alias)
                 return false;
-            const auto *o = static_cast<const AliasType *>(other);
-            return name_ == o->name_;
+
+            return name_ == other->as_alias()->name_;
         }
 
         std::string to_string() const override;
 
     private:
         std::string name_;
-        TypePtr target_;
     };
 
     //===----------------------------------------------------------------------===//
@@ -759,6 +782,7 @@ namespace ast
         // Type conversion
         QualifiedType *as_qualified() noexcept override { return this; }
         const QualifiedType *as_qualified() const noexcept override { return this; }
+        bool is_qualified() const noexcept override { return true; }
 
         // Type characteristics
         Kind kind() const noexcept override { return Kind::Qualified; }

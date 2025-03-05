@@ -110,9 +110,9 @@ namespace ast
         return std::make_unique<StructType>(std::move(name), std::move(members));
     }
 
-    TypePtr Type::create_alias(std::string name, TypePtr target)
+    TypePtr Type::create_alias(std::string name)
     {
-        return std::make_unique<AliasType>(std::move(name), std::move(target));
+        return std::make_unique<AliasType>(std::move(name));
     }
 
     TypePtr Type::create_qualified(Qualifier q, TypePtr base)
