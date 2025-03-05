@@ -27,11 +27,15 @@ protected:
         return result.ok;
     }
 
-    void build_and_generate(FnPtr func, bool type_check = true)
+    void generate_simple_program(FnPtr func, bool type_check = true)
     {
         ast::Program program;
         program.functions.push_back(std::move(func));
+        generate(program, type_check);
+    }
 
+    void generate(ast::Program &program, bool type_check = true)
+    {
         if (type_check)
         {
             TypeChecker checker(&program);
@@ -81,7 +85,7 @@ TEST_F(IrGeneratorTest, IntegerLiteral)
     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
         std::make_unique<ast::IntegerLiteralExpr>(42)));
 
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     Function *test_fn = module.get_function("test");
     ASSERT_NE(test_fn, nullptr);
@@ -100,7 +104,7 @@ TEST_F(IrGeneratorTest, FloatLiteral)
     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
         std::make_unique<ast::FloatLiteralExpr>(3.14f)));
 
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     Function *test_func = module.get_function("test");
     ASSERT_NE(test_func, nullptr);
@@ -126,7 +130,7 @@ TEST_F(IrGeneratorTest, StringLiteral)
     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
         std::make_unique<ast::StringLiteralExpr>("hello")));
 
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     // Verify global string
     bool found_global = false;
@@ -188,7 +192,7 @@ TEST_F(IrGeneratorTest, BoolImplicitConversion)
     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
         std::make_unique<ast::IntegerLiteralExpr>(0)));
 
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     Function *test_fn = module.get_function("test");
     ASSERT_NE(test_fn, nullptr);
@@ -221,7 +225,7 @@ TEST_F(IrGeneratorTest, BoolLiteral)
     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
         std::make_unique<ast::IntegerLiteralExpr>(1))); // AST中bool用IntegerLiteral表示
 
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     Function *test_fn = module.get_function("test");
     ASSERT_NE(test_fn, nullptr);
@@ -260,7 +264,7 @@ TEST_F(IrGeneratorTest, StructLiteral)
     auto fn = create_test_function(point_struct.type());
     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(struct_literal)));
 
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     Function *test_fn = module.get_function("test");
     ASSERT_NE(test_fn, nullptr);
@@ -319,7 +323,7 @@ TEST_F(IrGeneratorTest, InitListExpr)
     auto fn = create_test_function(std::move(array_type));
     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(init_list)));
 
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     Function *test_fn = module.get_function("test");
     ASSERT_NE(test_fn, nullptr);
@@ -426,7 +430,7 @@ TEST_F(IrGeneratorTest, BinaryArithmeticOps)
         std::make_unique<ast::VariableExpr>("f")));
 
     fn->body.push_back(std::move(block));
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     // Verify instructions
     Function *test_fn = module.get_function("test");
@@ -551,7 +555,7 @@ TEST_F(IrGeneratorTest, ComparisonOps)
     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(final_and)));
 
     fn->body.push_back(std::move(block));
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     // Verify instructions
     Function *test_fn = module.get_function("test");
@@ -625,7 +629,7 @@ TEST_F(IrGeneratorTest, LogicalOps)
             std::make_unique<ast::VariableExpr>("a")));
     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(logical_or)));
 
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     // Verify short-circuit logic
     Function *test_fn = module.get_function("test");
@@ -746,7 +750,7 @@ TEST_F(IrGeneratorTest, UnaryOps)
     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
 
     fn->body.push_back(std::move(block));
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     // Verify unary operations
     Function *test_fn = module.get_function("test");
@@ -872,7 +876,7 @@ TEST_F(IrGeneratorTest, IfElseStatement)
         std::move(else_if_stmt));
 
     fn->body.push_back(std::move(main_if));
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     // Verify control flow
     Function *test_fn = module.get_function("test");
@@ -982,7 +986,7 @@ TEST_F(IrGeneratorTest, WhileLoop)
         std::make_unique<ast::VariableExpr>("sum")));
 
     fn->body.push_back(std::move(block));
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     // Verify loop structure
     Function *test_fn = module.get_function("test");
@@ -1107,7 +1111,7 @@ TEST_F(IrGeneratorTest, BreakContinue)
         std::make_unique<ast::VariableExpr>("i")));
 
     fn->body.push_back(std::move(block));
-    build_and_generate(std::move(fn));
+    generate_simple_program(std::move(fn));
 
     // Verify break/continue targets
     Function *test_fn = module.get_function("test");
@@ -1207,7 +1211,7 @@ TEST_F(IrGeneratorTest, FunctionCall)
             std::move(vec_1))));
     program.functions.push_back(std::move(test_fn));
 
-    generator.generate(program);
+    generate(program);
 
     // Verify call instruction
     Function *add_func = module.get_function("add");
@@ -1242,15 +1246,17 @@ TEST_F(IrGeneratorTest, MethodCall)
         struct Point {
             x: i32,
             y: i32,
-
-            fn sum(self) -> i32 {
-                return self.x + self.y;
-            }
         }
 
         fn test() -> i32 {
             let p = Point { x: 3, y: 5 };
             return p.sum();
+        }
+
+        impl Point {
+            fn sum(self) -> i32 {
+                return self.x + self.y;
+            }
         }
     */
     ast::Program program;
@@ -1260,6 +1266,7 @@ TEST_F(IrGeneratorTest, MethodCall)
     point_struct->name = "Point";
     point_struct->add_field({"x", ast::Type::create_int()});
     point_struct->add_field({"y", ast::Type::create_int()});
+    auto struct_type = point_struct->type();
 
     // sum() method
     auto sum_method = std::make_unique<ast::FunctionDecl>();
@@ -1285,12 +1292,12 @@ TEST_F(IrGeneratorTest, MethodCall)
     auto test_fn = create_test_function(ast::Type::create_int());
     auto p_decl = std::make_unique<ast::VarDeclStmt>();
     p_decl->name = "p";
-    p_decl->type = ast::Type::create_alias("Point", point_struct->type());
+    p_decl->type = ast::Type::create_alias("Point", struct_type->clone());
     p_decl->init_expr = std::make_unique<ast::StructLiteralExpr>("Point");
     auto *struct_lit = static_cast<ast::StructLiteralExpr *>(p_decl->init_expr.get());
     struct_lit->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(3));
     struct_lit->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(5));
-    struct_lit->type = ast::Type::create_alias("Point", point_struct->type());
+    struct_lit->type = ast::Type::create_alias("Point", struct_type->clone());
 
     auto block = std::make_unique<ast::BlockStmt>();
     block->statements.push_back(std::move(p_decl));
@@ -1302,7 +1309,7 @@ TEST_F(IrGeneratorTest, MethodCall)
     test_fn->body = std::move(block->statements);
     program.functions.push_back(std::move(test_fn));
 
-    generator.generate(program);
+    generate(program);
 
     // Verify method call
     Function *sum_func = module.get_function("Point.sum");
@@ -1387,7 +1394,7 @@ TEST_F(IrGeneratorTest, RecursiveCall)
     fact_fn->body.push_back(std::move(if_stmt));
     program.functions.push_back(std::move(fact_fn));
 
-    generator.generate(program);
+    generate(program);
 
     // Verify recursive call
     Function *fact_func = module.get_function("factorial");
@@ -1440,6 +1447,8 @@ TEST_F(IrGeneratorTest, StructMemberAccess)
     point_struct->name = "Point";
     point_struct->add_field({"x", ast::Type::create_int()});
     point_struct->add_field({"y", ast::Type::create_int()});
+    auto struct_type = point_struct->type();
+
     program.structs.push_back(std::move(point_struct));
 
     // Test function
@@ -1447,7 +1456,7 @@ TEST_F(IrGeneratorTest, StructMemberAccess)
 
     auto p_decl = std::make_unique<ast::VarDeclStmt>();
     p_decl->name = "p";
-    p_decl->type = ast::Type::create_alias("Point");
+    p_decl->type = ast::Type::create_alias("Point", struct_type->clone());
     auto struct_lit = std::make_unique<ast::StructLiteralExpr>("Point");
     struct_lit->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(3));
     struct_lit->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(5));
@@ -1470,7 +1479,7 @@ TEST_F(IrGeneratorTest, StructMemberAccess)
     test_fn->body = std::move(block->statements);
     program.functions.push_back(std::move(test_fn));
 
-    generator.generate(program);
+    generate(program);
 
     // Verify GEP instructions
     Function *test_func = module.get_function("test");
@@ -1558,7 +1567,7 @@ TEST_F(IrGeneratorTest, ArrayAccess)
     test_fn->body = std::move(block->statements);
     program.functions.push_back(std::move(test_fn));
 
-    generator.generate(program);
+    generate(program);
 
     // Verify array access patterns
     Function *test_func = module.get_function("test");
@@ -1679,7 +1688,7 @@ TEST_F(IrGeneratorTest, ExplicitTypeCast)
 
     fn->body = std::move(block->statements);
     program.functions.push_back(std::move(fn));
-    generator.generate(program);
+    generate(program);
 
     // Verify cast instructions
     Function *test_fn = module.get_function("test");
@@ -1778,7 +1787,7 @@ TEST_F(IrGeneratorTest, SizeofOperator)
 
     test_fn->body = std::move(block->statements);
     program.functions.push_back(std::move(test_fn));
-    generator.generate(program);
+    generate(program);
 
     // Verify sizeof constants
     Function *test_func = module.get_function("test");
@@ -1860,7 +1869,7 @@ TEST_F(IrGeneratorTest, TypeAlias)
 
     test_fn->body = std::move(block->statements);
     program.functions.push_back(std::move(test_fn));
-    generator.generate(program);
+    generate(program);
 
     // Verify type equivalence
     Function *test_func = module.get_function("test");
@@ -1968,7 +1977,7 @@ TEST_F(IrGeneratorTest, PointerOperations)
 
     test_fn->body = std::move(block->statements);
     program.functions.push_back(std::move(test_fn));
-    generator.generate(program);
+    generate(program);
 
     // Verify pointer operations
     Function *test_func = module.get_function("test");
@@ -2066,7 +2075,7 @@ TEST_F(IrGeneratorTest, GlobalVariable_)
 
     test_fn->body = std::move(block->statements);
     program.functions.push_back(std::move(test_fn));
-    generator.generate(program);
+    generate(program);
 
     // Verify global variable handling
     GlobalVariable *global_var = nullptr;
@@ -2152,10 +2161,10 @@ TEST_F(IrGeneratorTest, EmptyStruct)
     test_fn->body = std::move(block->statements);
 
     program.functions.push_back(std::move(test_fn));
-    generator.generate(program);
+    generate(program);
 
     // Verify empty struct has 1 byte size (minimum allowed)
-    StructType *empty_type = module.try_get_struct_type("Empty");
+    StructType *empty_type = module.try_get_named_struct_type("Empty");
     ASSERT_NE(empty_type, nullptr);
     EXPECT_EQ(empty_type->size(), 1) << "Empty struct should have 1 byte size";
 }
@@ -2190,10 +2199,10 @@ TEST_F(IrGeneratorTest, ZeroSizeArray)
     test_fn->body = std::move(block->statements);
 
     program.functions.push_back(std::move(test_fn));
-    generator.generate(program);
+    generate(program);
 
     // Verify zero-size array handling
-    StructType *container_type = module.try_get_struct_type("Container");
+    StructType *container_type = module.try_get_named_struct_type("Container");
     ASSERT_NE(container_type, nullptr);
 
     // Should have 0 size but alignment may vary
@@ -2269,7 +2278,7 @@ TEST_F(IrGeneratorTest, NestedStructs)
     test_fn->body = std::move(block->statements);
 
     program.functions.push_back(std::move(test_fn));
-    generator.generate(program);
+    generate(program);
 
     // Verify nested GEP instructions
     Function *test_func = module.get_function("test");

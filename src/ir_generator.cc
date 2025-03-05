@@ -34,6 +34,8 @@ Value *IRGenerator::lookup_symbol(const std::string &name)
 
 void IRGenerator::declare_symbol(const std::string &name, Value *val)
 {
+    MO_DEBUG("Declaring symbol '%s' with value addr %p type '%s' (symbol depth %zu)",
+             name.c_str(), val, val->type()->name().c_str(), sym_table_stack_.size());
     sym_table_stack_.back()[name] = val;
 }
 
@@ -269,7 +271,7 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
         auto &struct_type = static_cast<const ast::StructType &>(ast_type);
         const std::string &struct_name = struct_type.name();
 
-        if (auto existing = module_->try_get_struct_type(struct_name))
+        if (auto existing = module_->try_get_named_struct_type(struct_name))
         {
             if (existing->is_opaque())
             {
@@ -335,7 +337,22 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
     MO_ASSERT(val != nullptr && target_type != nullptr, "Invalid operands");
     Type *source_type = val->type();
     MO_ASSERT(source_type != nullptr, "Invalid source type");
+
+    // No conversion needed if types are the same
+    if (*source_type == *target_type)
+        return val;
+
     MO_DEBUG("Converting %s to %s is_explicit=%d", val->type()->name().c_str(), target_type->name().c_str(), is_explicit);
+
+    // Enable strict standard checking in debug mode
+    const bool strict_mode = true; // Configurable via compiler options
+
+    if (val->type()->is_pointer() &&
+        *val->type()->element_type() == *target_type &&
+        target_type->is_struct())
+    {
+        return builder_.create_load(val, "structload");
+    }
 
     if (val->type()->is_struct() && !target_type->is_struct())
     {
@@ -352,21 +369,6 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
         }
         return val;
     }
-
-    // No conversion needed if types are the same
-    if (*source_type == *target_type)
-        return val;
-
-    // Enable strict standard checking in debug mode
-    const bool strict_mode = true; // Configurable via compiler options
-
-    if (val->type()->is_pointer() &&
-        *val->type()->element_type() == *target_type &&
-        target_type->is_struct())
-    {
-        return builder_.create_load(val, "structload");
-    }
-
     // ---------------------------
     // Boolean Context Conversion (C11 6.3.1.2)
     // ---------------------------
@@ -676,11 +678,6 @@ void IRGenerator::handle_return(const ast::ReturnStmt &stmt)
             else
             {
                 Type *target_type = current_func_->return_type();
-                printf("target_type ptr addr: %p\n", target_type);
-                auto void_ty = module_->get_void_type();
-                printf("void_ty ptr addr: %p\n", void_ty);
-                auto i32x3_ty = module_->get_array_type(module_->get_integer_type(32), 3);
-                printf("i32x3_ty ptr addr: %p\n", i32x3_ty);
                 target_type->name();
 
                 ret_val = handle_conversion(ret_val, target_type);
@@ -914,6 +911,10 @@ Value *IRGenerator::generate_expr(const ast::Expr &expr)
     {
         return handle_init_list(*init_list);
     }
+    else if (const auto *tuple = dynamic_cast<const ast::TupleExpr *>(&expr))
+    {
+        return handle_tuple(*tuple);
+    }
     else if (const auto *fp_expr = dynamic_cast<const ast::FunctionPointerExpr *>(&expr))
     {
         return handle_function_pointer(*fp_expr);
@@ -931,7 +932,7 @@ Value *IRGenerator::generate_expr(const ast::Expr &expr)
         return handle_struct_literal(*struct_lit);
     }
 
-    assert(false && "Unsupported expression type");
+    MO_ASSERT(false, "Unsupported expression type: %s", expr.name().c_str());
     return nullptr;
 }
 
@@ -1371,6 +1372,21 @@ Value *IRGenerator::handle_deref(const ast::DerefExpr &expr)
     return builder_.create_load(ptr, "deref");
 }
 
+Value *IRGenerator::handle_tuple(const ast::TupleExpr &expr)
+{
+    Type *tuple_type = convert_type(*expr.type);
+    AllocaInst *temp = builder_.create_alloca(tuple_type, "tuple.tmp");
+    for (size_t i = 0; i < expr.elements.size(); ++i)
+    {
+        Value *elem_ptr = builder_.create_struct_gep(temp, i, "tuple.elem.ptr");
+        Value *elem_val = generate_expr(*expr.elements[i]);
+        Type *elem_target_type = tuple_type->as_struct()->members()[i].type;
+        elem_val = handle_conversion(elem_val, elem_target_type);
+        builder_.create_store(elem_val, elem_ptr);
+    }
+    return builder_.create_load(temp, "tuple.val");
+}
+
 Value *IRGenerator::handle_init_list(const ast::InitListExpr &expr)
 {
     MO_ASSERT(expr.type != nullptr, "InitListExpr must have a type");
@@ -1558,39 +1574,82 @@ void IRGenerator::generate_impl_block(const ast::ImplBlock &impl)
 //===----------------------------------------------------------------------===//
 // Function Call Handling
 //===----------------------------------------------------------------------===//
+bool is_callable(Value *val)
+{
+    return (val->type()->is_pointer() && val->type()->as_pointer()->element_type()->is_function()) || // indirect call
+           val->type()->is_function();                                                                // direct call
+}
 
 Value *IRGenerator::handle_call(const ast::CallExpr &call)
 {
     Value *callee_value = generate_expr(*call.callee);
-    MO_ASSERT(callee_value->type()->is_pointer(), "Callee is not a pointer");
-    PointerType *callee_ptr_type = static_cast<PointerType *>(callee_value->type());
-    FunctionType *callee_func_type = static_cast<FunctionType *>(callee_ptr_type->element_type());
+    MO_ASSERT(is_callable(callee_value), "Expected a function or function pointer, actuall got '%s'", callee_value->type()->to_string().c_str());
 
-    if (call.args.size() != callee_func_type->num_params())
+    FunctionType *callee_func_type = nullptr;
+    if (FunctionType *direct_func_type = dynamic_cast<FunctionType *>(callee_value->type()))
     {
-        MO_ASSERT(false, "Invalid number of arguments in function call");
+        callee_func_type = direct_func_type;
+    }
+    else if (PointerType *callee_ptr_type = dynamic_cast<PointerType *>(callee_value->type()))
+    {
+        callee_func_type = dynamic_cast<FunctionType *>(callee_ptr_type->element_type());
+    }
+    MO_ASSERT(callee_func_type, "Failed to get function type");
+
+    // Prepare arguments with proper handling for methods and aggregates
+    std::vector<Value *> args;
+    bool is_method_call = false;
+
+    // Check if this is a method call via member access
+    if (auto member_expr = dynamic_cast<const ast::MemberAccessExpr *>(call.callee.get()))
+    {
+        if (member_expr->is_method_call)
+        {
+            // Generate 'this' pointer for implicit first argument
+            Value *base_ptr = generate_lvalue(*member_expr->object);
+            args.push_back(base_ptr);
+            is_method_call = true;
+        }
     }
 
-    std::vector<Value *> args;
     for (const auto &arg_expr : call.args)
     {
-        Value *arg_val = generate_expr(*arg_expr);
+        MO_ASSERT(arg_expr->type, "Argument type not resolved, there could be a bug in the type checker");
 
-        // Handle pass-by-reference for arrays/structs
+        // Handle aggregate types by passing pointers
         if (arg_expr->type->is_aggregate())
         {
-            Value *ptr = lookup_symbol(
-                static_cast<const ast::VariableExpr &>(*arg_expr).identifier);
+            Value *ptr = generate_lvalue(*arg_expr);
             args.push_back(ptr);
         }
+        // Handle function pointer parameters
+        else if (arg_expr->type->as_function())
+        {
+            Value *fn_ptr = generate_expr(*arg_expr);
+            args.push_back(fn_ptr);
+        }
+        // Handle normal value parameters
         else
         {
+            Value *arg_val = generate_expr(*arg_expr);
             args.push_back(arg_val);
         }
-
-        // FIXME: maybe handle method calls here?
     }
 
+    // Validate parameter count after potential method adjustments
+    size_t expected_params = callee_func_type->num_params();
+    if (is_method_call)
+    {
+        expected_params -= 1; // Account for added 'this' parameter
+    }
+
+    if (args.size() != expected_params)
+    {
+        MO_ASSERT(false, "Argument count mismatch. Expected %zu, got %zu",
+                  expected_params, args.size());
+    }
+
+    // Generate the actual call instruction
     Value *result = builder_.create_call(callee_value, args, "calltmp");
     return result;
 }
@@ -1600,12 +1659,30 @@ Value *IRGenerator::handle_call(const ast::CallExpr &call)
 //===----------------------------------------------------------------------===//
 Value *IRGenerator::handle_variable(const ast::VariableExpr &var)
 {
-    Value *alloca = lookup_symbol(var.identifier);
-    MO_ASSERT(alloca != nullptr, "Undefined variable: %s", var.identifier.c_str());
+    Value *symbol = lookup_symbol(var.identifier);
+    MO_ASSERT(symbol != nullptr, "Undefined variable: %s", var.identifier.c_str());
 
-    return builder_.create_load(alloca, "load.global");
+    if (auto *alloca = dynamic_cast<AllocaInst *>(symbol))
+    {
+        MO_DEBUG("Variable `%s` loaded from stack", var.identifier.c_str());
+        return builder_.create_load(alloca, "load.local");
+    }
+    else if (auto *global = dynamic_cast<GlobalVariable *>(symbol))
+    {
+        MO_DEBUG("Variable `%s` loaded from global", var.identifier.c_str());
+        return builder_.create_load(global, "load.global");
+    }
+    else if (auto *func = dynamic_cast<Function *>(symbol))
+    {
+        MO_DEBUG("Function `%s` loaded from symbol table", var.identifier.c_str());
+        return func;
+    }
+    else
+    {
+        MO_ASSERT(false, "Unsupported symbol type for variable '%s'", var.identifier.c_str());
+        return nullptr;
+    }
 }
-
 //===----------------------------------------------------------------------===//
 // Memory Operations
 //===----------------------------------------------------------------------===//
@@ -1740,8 +1817,18 @@ void IRGenerator::validate_receiver_type(
 
 Value *IRGenerator::handle_array_access(const ast::ArrayAccessExpr &access)
 {
-    Value *base_ptr = generate_expr(*access.array);
+    Value *base_ptr = generate_lvalue(*access.array);
+    if (base_ptr == nullptr)
+    {
+        MO_ASSERT(false, "Array access on null pointer");
+        return nullptr;
+    }
     Value *index_val = generate_expr(*access.index);
+    if (index_val == nullptr)
+    {
+        MO_ASSERT(false, "Array access with null index");
+        return nullptr;
+    }
 
     std::vector<Value *> indices = {
         builder_.get_int32(0), // Array pointer decay

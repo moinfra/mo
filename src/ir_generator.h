@@ -99,6 +99,7 @@ protected:
     Value *handle_address_of(const ast::AddressOfExpr &expr);
     Value *handle_deref(const ast::DerefExpr &expr);
     Value *handle_init_list(const ast::InitListExpr &expr);
+    Value *handle_tuple(const ast::TupleExpr &expr);
     Value *handle_function_pointer(const ast::FunctionPointerExpr &expr);
     Value *handle_struct_literal(const ast::StructLiteralExpr &expr);
 
