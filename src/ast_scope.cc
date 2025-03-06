@@ -34,7 +34,7 @@ bool Scope::insert_variable(std::string name, TypePtr type)
     }
     if (!type)
     {
-        throw std::invalid_argument("Type cannot be null");
+        MO_WARN("Type be null");
     }
 
     if (variables_.find(name) != variables_.end() || types_.find(name) != types_.end())
@@ -55,12 +55,12 @@ bool Scope::insert_type(std::string name, TypePtr type)
     }
     if (!type)
     {
-        throw std::invalid_argument("Type cannot be null");
+        MO_WARN("Type be null");
     }
 
-    if (variables_.find(name) != variables_.end() || types_.find(name) != types_.end())
+    if (variables_.find(name) != variables_.end())
     {
-        MO_WARN("Variable or type already exists: %s", name.c_str());
+        MO_WARN("Variable already exists: %s", name.c_str());
         return false; // Variable or type already exists
     }
 

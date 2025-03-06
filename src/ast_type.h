@@ -585,6 +585,9 @@ namespace ast
             return nullptr;
         }
 
+        auto begin() const noexcept { return members_.begin(); }
+        auto end() const noexcept { return members_.end(); }
+
         bool equals(const Type *other) const noexcept override
         {
             if (other->kind() != Kind::Struct)
