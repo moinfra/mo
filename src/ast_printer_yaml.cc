@@ -270,6 +270,8 @@ string ASTPrinter::print(const Expr &expr)
         return print(*e);
     if (auto e = dynamic_cast<const IntegerLiteralExpr *>(&expr))
         return print(*e);
+        if (auto e = dynamic_cast<const BooleanLiteralExpr *>(&expr))
+        return print(*e);
     if (auto e = dynamic_cast<const FloatLiteralExpr *>(&expr))
         return print(*e);
     if (auto e = dynamic_cast<const StringLiteralExpr *>(&expr))
@@ -491,6 +493,16 @@ string ASTPrinter::print(const IntegerLiteralExpr &expr)
     oss << indent() << "integer_literal:\n";
     enter_scope();
     oss << indent() << "value: " << expr.value << "\n";
+    leave_scope();
+    return oss.str();
+}
+
+string ASTPrinter::print(const BooleanLiteralExpr &expr)
+{
+    ostringstream oss;
+    oss << indent() << "boolean_literal:\n";
+    enter_scope();
+    oss << indent() << "value: " << (expr.value ? "true" : "false") << "\n";
     leave_scope();
     return oss.str();
 }

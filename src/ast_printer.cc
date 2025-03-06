@@ -33,6 +33,8 @@ string ASTPrinter::print(const Expr &expr)
         return visit(*p);
     if (auto p = dynamic_cast<const IntegerLiteralExpr *>(&expr))
         return visit(*p);
+    if (auto p = dynamic_cast<const BooleanLiteralExpr *>(&expr))
+        return visit(*p);
     if (auto p = dynamic_cast<const FloatLiteralExpr *>(&expr))
         return visit(*p);
     if (auto p = dynamic_cast<const StringLiteralExpr *>(&expr))
@@ -238,6 +240,11 @@ string ASTPrinter::visit(const VariableExpr &expr)
 string ASTPrinter::visit(const IntegerLiteralExpr &expr)
 {
     return to_string(expr.value);
+}
+
+string ASTPrinter::visit(const BooleanLiteralExpr &expr)
+{
+    return (expr.value ? "true" : "false");
 }
 
 string ASTPrinter::visit(const FloatLiteralExpr &expr)

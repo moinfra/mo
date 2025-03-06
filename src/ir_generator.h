@@ -97,6 +97,7 @@ protected:
     Value *handle_logical_and(const ast::BinaryExpr &and_expr);
     Value *handle_logical_or(const ast::BinaryExpr &or_expr);
     Value *handle_integer_literal(const ast::IntegerLiteralExpr &expr);
+    Value *handle_boolean_literal(const ast::BooleanLiteralExpr &expr);
     Value *handle_float_literal(const ast::FloatLiteralExpr &expr);
     Value *handle_string_literal(const ast::StringLiteralExpr &expr);
     Value *handle_unary(const ast::UnaryExpr &expr);

@@ -47,6 +47,7 @@ enum class TokenType
     Identifier,
     // Literals
     IntegerLiteral,
+    BooleanLiteral,
     FloatLiteral,
     StringLiteral,
     // Operators

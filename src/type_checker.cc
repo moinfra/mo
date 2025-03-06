@@ -102,6 +102,8 @@ void TypeChecker::check_expr(Expr &expr)
         visit(*v);
     else if (auto i = dynamic_cast<IntegerLiteralExpr *>(&expr))
         visit(*i);
+    else if (auto i = dynamic_cast<BooleanLiteralExpr *>(&expr))
+        visit(*i);
     else if (auto f = dynamic_cast<FloatLiteralExpr *>(&expr))
         visit(*f);
     else if (auto s = dynamic_cast<StringLiteralExpr *>(&expr))
@@ -259,6 +261,12 @@ void TypeChecker::visit(VariableExpr &expr)
 void TypeChecker::visit(IntegerLiteralExpr &expr)
 {
     expr.type = Type::create_int();
+    expr.expr_category = Expr::Category::RValue;
+}
+
+void TypeChecker::visit(BooleanLiteralExpr &expr)
+{
+    expr.type = Type::create_int(1);
     expr.expr_category = Expr::Category::RValue;
 }
 
@@ -893,6 +901,7 @@ void TypeChecker::visit(ReturnStmt &stmt)
         }
         else if (!is_convertible(*stmt.value->type, *current_return_type_))
         {
+            MO_WARN("Return type mismatch: %s vs %s", stmt.value->type->to_string().c_str(), current_return_type_->to_string().c_str());
             add_error("Return type mismatch");
         }
     }

@@ -894,6 +894,10 @@ Value *IRGenerator::generate_expr(const ast::Expr &expr)
     {
         return handle_integer_literal(*int_lit);
     }
+    else if (const auto *int_lit = dynamic_cast<const ast::BooleanLiteralExpr *>(&expr))
+    {
+        return handle_boolean_literal(*int_lit);
+    }
     else if (const auto *float_lit = dynamic_cast<const ast::FloatLiteralExpr *>(&expr))
     {
         return handle_float_literal(*float_lit);
@@ -1299,6 +1303,11 @@ Value *IRGenerator::handle_logical_or(const ast::BinaryExpr &or_expr)
 Value *IRGenerator::handle_integer_literal(const ast::IntegerLiteralExpr &expr)
 {
     return builder_.get_int32(expr.value);
+}
+
+Value *IRGenerator::handle_boolean_literal(const ast::BooleanLiteralExpr &expr)
+{
+    return builder_.get_int1(expr.value ? true : false);
 }
 
 Value *IRGenerator::handle_float_literal(const ast::FloatLiteralExpr &expr)
@@ -2088,6 +2097,14 @@ Constant *IRGenerator::generate_constant_initializer(const ast::Expr &expr)
             module_->get_integer_type(32),
             int_lit->value);
     }
+
+    if (auto int_lit = dynamic_cast<const ast::BooleanLiteralExpr *>(&expr))
+    {
+        return module_->get_constant_int(
+            module_->get_integer_type(1),
+            int_lit->value);
+    }
+
 
     if (auto float_lit = dynamic_cast<const ast::FloatLiteralExpr *>(&expr))
     {

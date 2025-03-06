@@ -55,8 +55,10 @@ std::string token_type_to_string(TokenType type)
         return "for";
     case TokenType::Identifier:
         return "<id>";
-    case TokenType::IntegerLiteral:
-        return "<integer>";
+        case TokenType::IntegerLiteral:
+            return "<integer>";
+            case TokenType::BooleanLiteral:
+                return "<boolean>";
     case TokenType::FloatLiteral:
         return "<float>";
     case TokenType::StringLiteral:

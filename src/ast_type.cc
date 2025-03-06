@@ -56,6 +56,9 @@ namespace ast
 
     TypePtr Type::create_int(uint8_t bit_width, bool unsigned_)
     {
+        if (bit_width == 1) {
+            return std::make_unique<BoolType>();
+        }
         return std::make_unique<IntegerType>(bit_width, unsigned_);
     }
 

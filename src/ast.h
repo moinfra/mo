@@ -75,9 +75,17 @@ namespace ast
 
     struct IntegerLiteralExpr : LiteralExpr
     {
+        // TODO: support bitwidth and sign
         int value;
         IntegerLiteralExpr(int value) : value(value) {}
         std::string name() const override { return "IntegerLiteralExpr"; }
+    };
+
+    struct BooleanLiteralExpr : LiteralExpr
+    {
+        bool value;
+        BooleanLiteralExpr(bool value) : value(value) {}
+        std::string name() const override { return "BooleanLiteralExpr"; }
     };
 
     struct FloatLiteralExpr : LiteralExpr

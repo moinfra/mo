@@ -37,6 +37,13 @@ TEST(LexerTest, TestIntegerLiterals)
     EXPECT_TRUE(no_errors(lexer));
 }
 
+TEST(LexerTest, TestBooleanLiterals)
+{
+    Lexer lexer("true false");
+    EXPECT_EQ(lexer_to_string(lexer), "<boolean> <boolean>");
+    EXPECT_TRUE(no_errors(lexer));
+}
+
 TEST(LexerTest, TestFloatLiterals)
 {
     Lexer lexer("3.14 .123 123.0 0.0");

@@ -240,7 +240,8 @@ namespace ast
         explicit IntegerType(int bit_width, bool is_unsigned)
             : bit_width_(bit_width), unsigned_(is_unsigned)
         {
-            assert(bit_width > 0 && "Invalid bit width");
+            MO_ASSERT(bit_width > 0 ,"Invalid bit width");
+            MO_ASSERT(bit_width != 1 ,"Please use bool type explicitly");
         }
 
         // Type conversion

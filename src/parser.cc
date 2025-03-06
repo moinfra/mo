@@ -134,6 +134,8 @@ void Parser::init_pratt_rules()
                     { return parse_identifier(get_precedence(TokenType::Identifier) - 1); });
     add_prefix_rule(TokenType::IntegerLiteral, [&]
                     { return parse_literal(); });
+    add_prefix_rule(TokenType::BooleanLiteral, [&]
+                    { return parse_literal(); });
     add_prefix_rule(TokenType::FloatLiteral, [&]
                     { return parse_literal(); });
     add_prefix_rule(TokenType::StringLiteral, [&]
@@ -778,6 +780,24 @@ ExprPtr Parser::parse_literal()
     case TokenType::IntegerLiteral:
         expr = std::make_unique<IntegerLiteralExpr>(std::stoi(current_.lexeme));
         break;
+    case TokenType::BooleanLiteral:
+    {
+        bool val = false;
+        if (current_.lexeme == "true")
+        {
+            val = true;
+        }
+        else if (current_.lexeme == "false")
+        {
+            val = false;
+        }
+        else
+        {
+            error("Invalid boolean literal: " + current_.lexeme);
+        }
+        expr = std::make_unique<BooleanLiteralExpr>(val);
+        break;
+    }
     case TokenType::FloatLiteral:
         expr = std::make_unique<FloatLiteralExpr>(std::stof(current_.lexeme));
         break;
@@ -914,47 +934,6 @@ ExprPtr Parser::parse_unary(int min_precedence)
     auto op = current_.type;
     advance();
     return std::make_unique<UnaryExpr>(op, std::move(parse_expr(min_precedence)));
-}
-
-ExprPtr Parser::parse_primary()
-{
-    // Check the type of the current token and parse accordingly
-    if (current_.type == TokenType::IntegerLiteral)
-    {
-        int value = std::stoi(current_.lexeme);
-        advance();
-        return std::make_unique<IntegerLiteralExpr>(value);
-    }
-    else if (current_.type == TokenType::FloatLiteral)
-    {
-        float value = std::stof(current_.lexeme);
-        advance();
-        return std::make_unique<FloatLiteralExpr>(value);
-    }
-    else if (current_.type == TokenType::StringLiteral)
-    {
-        std::string value = current_.lexeme;
-        advance();
-        return std::make_unique<StringLiteralExpr>(value);
-    }
-    else if (current_.type == TokenType::Identifier)
-    {
-        std::string name = current_.lexeme;
-        advance();
-        return std::make_unique<VariableExpr>(name);
-    }
-    else if (current_.type == TokenType::LParen)
-    {
-        advance();
-        ExprPtr expr = parse_expr();
-        consume(TokenType::RParen, "Expect ')' after expression.");
-        return expr;
-    }
-    else
-    {
-        error("Unexpected token in primary expression.");
-        return nullptr;
-    }
 }
 
 StmtPtr Parser::parse_statement()

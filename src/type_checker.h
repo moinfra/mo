@@ -62,6 +62,7 @@ protected:
     // Expression visitors
     void visit(ast::VariableExpr &expr);
     void visit(ast::IntegerLiteralExpr &expr);
+    void visit(ast::BooleanLiteralExpr &expr);
     void visit(ast::FloatLiteralExpr &expr);
     void visit(ast::StringLiteralExpr &expr);
     void visit(ast::StructLiteralExpr &expr);

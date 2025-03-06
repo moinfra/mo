@@ -116,7 +116,6 @@ private:
 
     ast::ExprPtr parse_unary(int min_precedence);
     ast::ExprPtr parse_binary(ast::ExprPtr left, int min_precedence);
-    ast::ExprPtr parse_primary();
     ast::ExprPtr parse_call(ast::ExprPtr left);
     ast::ExprPtr parse_member_access(ast::ExprPtr left);
     ast::ExprPtr parse_array_access(ast::ExprPtr left);

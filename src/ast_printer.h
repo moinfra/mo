@@ -20,6 +20,7 @@ public:
 private:
     std::string visit(const ast::VariableExpr &expr);
     std::string visit(const ast::IntegerLiteralExpr &expr);
+    std::string visit(const ast::BooleanLiteralExpr &expr);
     std::string visit(const ast::FloatLiteralExpr &expr);
     std::string visit(const ast::StringLiteralExpr &expr);
     std::string visit(const ast::BinaryExpr &expr);

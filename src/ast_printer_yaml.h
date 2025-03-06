@@ -20,6 +20,7 @@ private:
     // Expression visitors
     std::string print(const ast::VariableExpr &expr);
     std::string print(const ast::IntegerLiteralExpr &expr);
+    std::string print(const ast::BooleanLiteralExpr &expr);
     std::string print(const ast::FloatLiteralExpr &expr);
     std::string print(const ast::StringLiteralExpr &expr);
     std::string print(const ast::BinaryExpr &expr);

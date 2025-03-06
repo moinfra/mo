@@ -120,7 +120,7 @@ TEST_F(TypeCheckerTest, PushAndPopScope)
 TEST_F(TypeCheckerTest, ValidBreakContinue)
 {
     auto while_loop = std::make_unique<WhileStmt>(
-        std::make_unique<IntegerLiteralExpr>(1),
+        std::make_unique<BooleanLiteralExpr>(true),
         std::make_unique<BlockStmt>());
 
     auto &body = static_cast<BlockStmt &>(*while_loop->body);
