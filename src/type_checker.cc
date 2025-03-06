@@ -300,10 +300,20 @@ void TypeChecker::visit(StructDecl &decl)
             add_error("Field '" + field.name + "' cannot have void type");
         }
     }
-
-    if (!current_scope_->insert_type(decl.name, decl.type()))
+    MO_DEBUG("Struct '%s':", decl.name.c_str());
+    auto struct_ty = decl.type();
+    for (auto &field : *struct_ty->as_struct())
+    {
+        MO_DEBUG("  %s: %s", field.name.c_str(), field.type->to_string().c_str());
+    }
+    if (!current_scope_->insert_type(decl.name, std::move(struct_ty)))
     {
         add_error("Duplicate struct name: " + decl.name);
+        MO_DEBUG("Duplicate struct name: %s", decl.name.c_str());
+    }
+    else
+    {
+        MO_DEBUG("Struct '%s' defined", decl.name.c_str());
     }
 }
 
@@ -410,11 +420,15 @@ void TypeChecker::visit(TypeAliasDecl &decl)
 // Binary expression type rules
 void TypeChecker::visit(BinaryExpr &expr)
 {
+    MO_DEBUG("Checking BinaryExpr op: %s", token_type_to_string(expr.op).c_str());
     check_expr(*expr.left);
     check_expr(*expr.right);
 
     if (!expr.left->type || !expr.right->type)
+    {
+        MO_ASSERT(false, "LHS or RHS of binary expression has no type");
         return;
+    }
 
     switch (expr.op)
     {
@@ -466,7 +480,6 @@ void TypeChecker::visit(BinaryExpr &expr)
         {
             add_error("Left operand of compound assignment must be lvalue");
         }
-        // 需要整数类型
         if (expr.left->type->kind() != Type::Kind::Int ||
             expr.right->type->kind() != Type::Kind::Int)
         {
@@ -497,6 +510,7 @@ void TypeChecker::visit(BinaryExpr &expr)
     case TokenType::Star:
     case TokenType::Slash:
     {
+        MO_DEBUG("Checking arithmetic op: %s", token_type_to_string(expr.op).c_str());
         if (auto lhs_int_ty = expr.left->type->as_integer())
         {
             if (auto rhs_int_ty = expr.right->type->as_integer()) // int +-*/ int = int
@@ -504,17 +518,20 @@ void TypeChecker::visit(BinaryExpr &expr)
                 if (!lhs_int_ty->equals(rhs_int_ty))
                 {
                     add_error("Operands must have same integer type for arithmetic operation");
+                    MO_WARN("Operands must have same integer type for arithmetic operation");
                 }
                 expr.type = lhs_int_ty->clone();
             }
             else if (auto rhs_float_ty = expr.right->type->as_float()) // int +-*/ float = float
             {
                 add_error("Operands must have same numeric type for arithmetic operation");
+                MO_WARN("Operands must have same numeric type for arithmetic operation");
                 expr.type = Type::create_float(static_cast<uint8_t>(rhs_float_ty->precision()));
             }
             else
             {
                 add_error("Invalid operands for arithmetic operation");
+                MO_WARN("Invalid operands for arithmetic operation");
                 expr.type = lhs_int_ty->clone();
             }
         }
@@ -538,7 +555,7 @@ void TypeChecker::visit(BinaryExpr &expr)
         {
             if (auto lhs_ptr_ty = expr.left->type->as_pointer())
             {
-                if (auto rhs_int_ty = expr.right->type->as_integer()) // ptr +- int = ptr
+                if (expr.right->type->is_integer()) // ptr +- int = ptr
                 {
                     expr.type = lhs_ptr_ty->clone();
                 }
@@ -624,6 +641,8 @@ void TypeChecker::visit(BinaryExpr &expr)
         break;
     }
     }
+
+    MO_ASSERT(expr.type, "Binary expression has no type");
 }
 void TypeChecker::visit(UnaryExpr &expr)
 {
@@ -943,68 +962,64 @@ void TypeChecker::visit(MemberAccessExpr &expr)
     if (expr.object->type->kind() != Type::Kind::Struct)
     {
         add_error("Member access on non-struct type");
+        MO_WARN("Member access on non-struct type: %s", expr.object->type->to_string().c_str());
         expr.type = Type::create_placeholder();
         return;
     }
 
-    auto struct_type = static_cast<StructType *>(expr.object->type.get());
+    MO_DEBUG("Object type: %s", expr.object->type->to_string().c_str());
 
-    // Find struct declaration
-    StructDecl *struct_decl = find_struct(struct_type->name());
+    expr.object->type = resolve_alias(*expr.object->type);
 
-    if (!struct_decl)
+    auto struct_type = expr.object->type->as_struct();
+    if (!struct_type)
     {
-        add_error("Undefined struct type: " + struct_type->name());
+        add_error("Member access on non-struct type");
         expr.type = Type::create_placeholder();
         return;
     }
 
     // if followed by call, prioritize method call over function pointer member call
-    if (expr.is_call)
-    {
-        // Find method
-        auto method = struct_decl->get_method(expr.member);
-        if (!method)
-        {
-            MO_DEBUG("No method '%s' in struct '%s'", expr.member.c_str(), struct_type->name().c_str());
-            MO_DEBUG("Falling back to function pointer member access");
-        }
-        else
-        {
-            // Check method signature
-            if (method->params.size() != expr.args.size())
-            {
-                add_error("Argument count mismatch in method call");
-            }
-            for (size_t i = 0; i < expr.args.size(); ++i)
-            {
-                auto &arg_type = expr.args[i]->type;
-                auto &param_type = method->params[i].type;
+    // FIXME: support method call checking
+    // if (expr.is_call)
+    // {
+    //     // Find method
+    //     auto method = struct_type->get_method(expr.member);
+    //     if (!method)
+    //     {
+    //         MO_DEBUG("No method '%s' in struct '%s'", expr.member.c_str(), struct_type->name().c_str());
+    //         MO_DEBUG("Falling back to function pointer member access");
+    //     }
+    //     else
+    //     {
+    //         // Check method signature
+    //         if (method->params.size() != expr.args.size())
+    //         {
+    //             add_error("Argument count mismatch in method call");
+    //         }
+    //         for (size_t i = 0; i < expr.args.size(); ++i)
+    //         {
+    //             auto &arg_type = expr.args[i]->type;
+    //             auto &param_type = method->params[i].type;
 
-                if (!is_convertible(*arg_type, *param_type))
-                {
-                    add_error("Argument type mismatch in method call");
-                }
-            }
-            expr.resolved_func = method;
-            expr.type = method->return_type->clone();
-            expr.expr_category = Expr::Category::RValue;
-            return;
-        }
-    }
+    //             if (!is_convertible(*arg_type, *param_type))
+    //             {
+    //                 add_error("Argument type mismatch in method call");
+    //             }
+    //         }
+    //         expr.resolved_func = method;
+    //         expr.type = method->return_type->clone();
+    //         expr.expr_category = Expr::Category::RValue;
+    //         return;
+    //     }
+    // }
 
     // Find member
-    auto field = struct_decl->get_field(expr.member);
-    if (!field)
-    {
-        add_error("No member '" + expr.member + "' in struct '" + struct_type->name() + "'");
-        expr.type = Type::create_placeholder();
-        return;
-    }
-    Type *member_type = field->type.get();
+    auto member_type = struct_type->find_member(expr.member);
     if (!member_type)
     {
-        add_error("No type for member '" + expr.member + "' in struct '" + struct_type->name() + "'");
+        add_error("No member '" + expr.member + "' in struct '" + struct_type->name() + "'");
+        MO_WARN("No member '%s' in struct '%s'", expr.member.c_str(), struct_type->name().c_str());
         expr.type = Type::create_placeholder();
         return;
     }
