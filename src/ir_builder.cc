@@ -50,6 +50,9 @@ BinaryInst *IRBuilder::create_binary(Opcode opc, Value *lhs, Value *rhs,
                                      const std::string &name)
 {
     // Enhanced type checking
+    MO_DEBUG("Creating binary instruction: %d %s %s", int(opc),
+             lhs->type()->to_string().c_str(), rhs->type()->to_string().c_str());
+
     assert(*lhs->type() == *rhs->type() && "Operand type mismatch");
     assert((lhs->type()->type_id() == Type::IntTy ||
             lhs->type()->type_id() == Type::FpTy) &&

@@ -936,7 +936,20 @@ Value *IRGenerator::generate_expr(const ast::Expr &expr)
     }
     else if (const auto *member_expr = dynamic_cast<const ast::MemberAccessExpr *>(&expr))
     {
-        return handle_member_access(*member_expr);
+        auto access = handle_member_access(*member_expr);
+        if (expr.is_lvalue())
+        { // s.member = value
+            return access;
+        }
+        else if (expr.is_rvalue())
+        { // s.member
+            return builder_.create_load(access, "load.lvalue");
+        }
+        else
+        {
+            MO_ASSERT(false, "Invalid lvalue/rvalue expression");
+            return nullptr;
+        }
     }
     else if (const auto *array_expr = dynamic_cast<const ast::ArrayAccessExpr *>(&expr))
     {
@@ -1111,7 +1124,7 @@ Value *IRGenerator::handle_binary(const ast::BinaryExpr &bin)
     Type *lhs_type = lhs->type();
     Type *rhs_type = rhs->type();
     assert(*lhs_type == *rhs_type && "Type mismatch in binary operation");
-
+    MO_DEBUG("Creating binary operation %s on %s and %s", token_type_to_string(bin.op).c_str(), lhs_type->to_string().c_str(), rhs_type->to_string().c_str());
     switch (bin.op)
     {
     case TokenType::Plus:
@@ -1855,19 +1868,86 @@ Value *IRGenerator::handle_this_pointer(Value *base, TokenType accessor)
 Value *IRGenerator::handle_field_access(const ast::MemberAccessExpr &access)
 {
     Value *base = generate_expr(*access.object);
-    Type *base_type = base->type()->element_type();
+    if (!base)
+    {
+        MO_ASSERT(false, "Could not generate base expression for member access.");
+        return nullptr;
+    }
+
+    if (access.accessor == TokenType::Dot && !base->type()->is_pointer())
+    {
+        AllocaInst *temp_alloca = builder_.create_alloca(base->type(), "dot.temp");
+        builder_.create_store(base, temp_alloca);
+        base = temp_alloca;
+    }
+
+    Type *base_type = nullptr;
+    if (access.accessor == TokenType::Dot)
+    {
+        base_type = base->type()->as_pointer()->element_type();
+        MO_ASSERT(base_type->is_struct(), "Base expression is not a struct type.");
+    }
+    else if (access.accessor == TokenType::Arrow)
+    {
+        if (auto pointer_type = base->type()->as_pointer())
+        {
+            base_type = pointer_type->element_type();
+        }
+        else
+        {
+            MO_ASSERT(false, "Attempt to access member via '->' on a non-pointer type.");
+            return nullptr;
+        }
+    }
+    else if (access.accessor == TokenType::DoubleColon)
+    {
+        // Static member access
+        // Handle static member access differently (e.g., look up in symbol table)
+        // This might not involve GEP at all, and could return a constant or global value.
+        // ... Implementation for static member access ...
+        MO_ASSERT(false, "Static member access not yet implemented.");
+        return nullptr;
+    }
+    else
+    {
+        MO_ASSERT(false, "Unknown member access operator");
+        return nullptr;
+    }
+
+    if (!base_type)
+    {
+        MO_ASSERT(false, "Base type is null.");
+        return nullptr;
+    }
 
     if (auto struct_type = dynamic_cast<StructType *>(base_type))
     {
-        // Verify access is for instance members
-        assert(struct_type->has_member(access.member) &&
-               "Struct member does not exist");
+        if (!struct_type)
+        {
+            MO_ASSERT(false, "Base expression is not a struct type.");
+            return nullptr;
+        }
+
+        if (!struct_type->has_member(access.member))
+        {
+            MO_ASSERT(false, "Struct member '%s' does not exist in struct '%s'.", access.member.c_str(), struct_type->name().c_str());
+            return nullptr;
+        }
 
         unsigned index = struct_type->get_member_index(access.member);
-        return builder_.create_struct_gep(base, index, "member");
+        // Only create GEP for instance member access (. or ->)
+        if (access.accessor == TokenType::Dot || access.accessor == TokenType::Arrow)
+        {
+            return builder_.create_struct_gep(base, index, "member");
+        }
+        else
+        {
+            MO_ASSERT(false, "Unexpected accessor for struct member access.");
+            return nullptr;
+        }
     }
 
-    assert(false && "Invalid member access type");
+    MO_ASSERT(false, "Invalid member access type: %s", base_type->name().c_str());
     return nullptr;
 }
 
