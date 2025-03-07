@@ -856,8 +856,9 @@ ExprPtr Parser::parse_cast()
     consume(TokenType::Cast, "Expected 'cast'");
     consume(TokenType::LParen, "Expected '(' after 'cast'");
     auto target_type = parse_type();
-    consume(TokenType::RParen, "Expected ')' after cast type");
+    consume(TokenType::Comma, "Expected ',' after cast target type");
     auto expr = parse_expr();
+    consume(TokenType::RParen, "Expected ')' after cast expression");
     return std::make_unique<CastExpr>(std::move(target_type), std::move(expr));
 }
 
