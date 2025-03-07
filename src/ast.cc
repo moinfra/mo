@@ -74,7 +74,7 @@ void StructDecl::add_field(TypedField field)
 }
 
 // Get a field by name
-const TypedField *StructDecl::get_field(std::string_view name) const
+const TypedField *StructDecl::get_field(std::string name) const
 {
     auto it = field_map.find(name);
     if (it != field_map.end() && it->second < fields.size())
@@ -92,7 +92,7 @@ void StructDecl::add_method(FunctionDecl method)
 }
 
 // Get a method by name
-FunctionDecl *StructDecl::get_method(std::string_view name) const
+FunctionDecl *StructDecl::get_method(std::string name) const
 {
     auto it = method_map.find(name);
     if (it != method_map.end() && it->second < methods.size())
