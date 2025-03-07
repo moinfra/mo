@@ -1042,7 +1042,7 @@ BranchInst::BranchInst(BasicBlock *target, BasicBlock *parent,
 
 BranchInst *BranchInst::create(BasicBlock *target, BasicBlock *parent)
 {
-    std::vector<Value *> ops;
+    std::vector<Value *> ops{target};
     MO_ASSERT(target != nullptr, "Invalid target block");
     MO_ASSERT(parent != nullptr, "Invalid parent block");
     auto *inst = new BranchInst(target, parent, ops);
@@ -1053,7 +1053,7 @@ BranchInst *BranchInst::create(BasicBlock *target, BasicBlock *parent)
 BranchInst *BranchInst::create_cond(Value *cond, BasicBlock *true_bb,
                                     BasicBlock *false_bb, BasicBlock *parent)
 {
-    std::vector<Value *> ops{cond};
+    std::vector<Value *> ops{cond, true_bb, false_bb};
     auto *inst = new BranchInst(true_bb, parent, ops);
     parent->add_successor(true_bb);
     parent->add_successor(false_bb);

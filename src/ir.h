@@ -853,7 +853,15 @@ class User : public Value
 {
 public:
     const std::vector<Value *> &operands() const { return operands_; }
-    Value *operand(unsigned i) const { return operands_.at(i); }
+    Value *operand(unsigned i) const
+    {
+        if (i >= operands_.size())
+        {
+            MO_WARN("Invalid operand index: %u", i);
+            return nullptr;
+        }
+        return operands_.at(i);
+    }
     void set_operand(unsigned i, Value *v);
     void remove_use_of(Value *v);
 
@@ -1489,7 +1497,12 @@ public:
     static BranchInst *create_cond(Value *cond, BasicBlock *true_bb,
                                    BasicBlock *false_bb, BasicBlock *parent);
 
-    bool is_conditional() const { return operands_.size() > 0; }
+    bool is_conditional() const
+    {
+        auto sz = operands_.size();
+        MO_ASSERT(sz == 3 || sz == 1, "BranchInst should have 1 or 3 operands");
+        return sz == 3;
+    }
     BasicBlock *get_true_successor() const;
     BasicBlock *get_false_successor() const;
 
