@@ -695,14 +695,17 @@ static bool is_supported_bits(unsigned bits)
     return bits == 1 || bits == 8 || bits == 16 || bits == 32 || bits == 64;
 }
 
-static uint64_t truncate_value(uint64_t value, unsigned bits, bool is_signed)
+uint64_t truncate_value(uint64_t value, unsigned bits, bool is_signed)
 {
-    const unsigned mask = (bits == 64) ? 0xFFFFFFFFFFFFFFFF : (1ULL << bits) - 1;
-    value &= mask; // truncate high bits
-
-    if (is_signed && bits > 1)
+    const uint64_t mask = (bits == 64) ? 0xFFFFFFFFFFFFFFFF : (1ULL << bits) - 1;
+    if (bits > 0)
     {
-        // sign ext: if the most significant bit is 1 and signed, convert it to supplement form
+        value &= mask; // Truncate high bits only if bits > 0
+    }
+
+    if (is_signed && bits > 0)
+    {
+        // Check for any non-zero bits to handle sign extension
         const uint64_t sign_bit = 1ULL << (bits - 1);
         if (value & sign_bit)
         {
@@ -718,7 +721,7 @@ ConstantInt *Module::get_constant_int(IntegerType *type, uint64_t value)
 
     const bool is_signed = type->is_signed();
     const uint64_t processed_value = truncate_value(value, type->bits(), is_signed);
-
+    MO_DEBUG("Creating constant int, type: '%s', value: %zu", type->name().c_str(), processed_value);
     const auto key = std::make_pair(type, processed_value);
     if (auto it = constant_ints_.find(key); it != constant_ints_.end())
     {
@@ -1120,7 +1123,7 @@ BasicBlock *PhiInst::get_incoming_block(unsigned i) const
 // ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 ICmpInst::ICmpInst(BasicBlock *parent, std::vector<Value *> ops)
     : BinaryInst(Opcode::ICmp, parent->parent_function()->parent_module()->get_integer_type(1), parent, ops, ""),
-          pred_(EQ)
+      pred_(EQ)
 {
 }
 

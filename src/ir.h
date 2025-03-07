@@ -72,6 +72,7 @@ struct Member;
 struct StructLayout;
 
 StructLayout calculate_aligned_layout(const std::vector<Type *> &members);
+uint64_t truncate_value(uint64_t value, unsigned bits, bool is_signed);
 
 //===----------------------------------------------------------------------===//
 //                              Utility Classes

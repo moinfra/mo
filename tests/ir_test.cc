@@ -2,6 +2,67 @@
 #include "src/ir.h"
 #define NOP(x) ((void)(x))
 
+TEST(TruncateValueTest, UnsignedTruncation)
+{
+    // Test unsigned truncation
+    ASSERT_EQ(truncate_value(0xFFFFFFFFFFFFFFFF, 8, false), 0xFF);
+    ASSERT_EQ(truncate_value(0x123456789ABCDEF0, 16, false), 0xDEF0);
+    ASSERT_EQ(truncate_value(0x123456789ABCDEF0, 32, false), 0x9ABCDEF0);
+    ASSERT_EQ(truncate_value(0x123456789ABCDEF0, 64, false), 0x123456789ABCDEF0);
+    ASSERT_EQ(truncate_value(0x123, 0, false), 0x123); // Case where bits = 0
+}
+
+TEST(TruncateValueTest, SignedTruncationPositive)
+{
+    // Test signed truncation, positive numbers
+    ASSERT_EQ(truncate_value(0x7F, 8, true), 0x7F);
+    ASSERT_EQ(truncate_value(0x7FFF, 16, true), 0x7FFF);
+    ASSERT_EQ(truncate_value(0x7FFFFFFF, 32, true), 0x7FFFFFFF);
+}
+
+TEST(TruncateValueTest, SignedTruncationNegative)
+{
+    // Test signed truncation, negative numbers
+    ASSERT_EQ(truncate_value(0x80, 8, true), static_cast<uint64_t>(0xFFFFFFFFFFFFFF80));
+    ASSERT_EQ(truncate_value(0x8000, 16, true), static_cast<uint64_t>(0xFFFFFFFFFFFF8000));
+    ASSERT_EQ(truncate_value(0x80000000, 32, true), static_cast<uint64_t>(0xFFFFFFFF80000000));
+}
+
+TEST(TruncateValueTest, SignedTruncationEdgeCases)
+{
+    // Test signed truncation, edge cases
+    ASSERT_EQ(truncate_value(0x00, 8, true), 0x00);                                      // Minimum value
+    ASSERT_EQ(truncate_value(0xFF, 8, true), static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF)); // Maximum value
+    ASSERT_EQ(truncate_value(0x8000000000000000, 64, true), 0x8000000000000000);         // 64-bit negative minimum
+    ASSERT_EQ(truncate_value(0x7FFFFFFFFFFFFFFF, 64, true), 0x7FFFFFFFFFFFFFFF);         // 64-bit positive maximum
+}
+
+TEST(TruncateValueTest, ZeroBits)
+{
+    // Test the case where bits is 0
+    ASSERT_EQ(truncate_value(0x12345678, 0, false), 0x12345678);
+    ASSERT_EQ(truncate_value(0x12345678, 0, true), 0x12345678);
+}
+
+TEST(TruncateValueTest, VariousInputs)
+{
+    // Test with more various input values
+    ASSERT_EQ(truncate_value(0xABCDEF1234567890, 4, false), 0x0);
+    ASSERT_EQ(truncate_value(0xABCDEF1234567890, 4, true), 0x0);
+    ASSERT_EQ(truncate_value(0x10, 5, false), 0x10);
+    ASSERT_EQ(truncate_value(0x10, 5, true), static_cast<uint64_t>(0xFFFFFFFFFFFFFFF0));
+    ASSERT_EQ(truncate_value(0x1F, 5, true), static_cast<uint64_t>(0xFFFFFFFFFFFFFFFF));
+}
+
+TEST(TruncateValueTest, BitsEqualTo64)
+{
+    // Test the case where bits is equal to 64
+    ASSERT_EQ(truncate_value(0xFFFFFFFFFFFFFFFF, 64, false), 0xFFFFFFFFFFFFFFFF);
+    ASSERT_EQ(truncate_value(0x8000000000000000, 64, true), 0x8000000000000000);
+    ASSERT_EQ(truncate_value(0x7FFFFFFFFFFFFFFF, 64, true), 0x7FFFFFFFFFFFFFFF);
+    ASSERT_EQ(truncate_value(0x123456789ABCDEF0, 64, false), 0x123456789ABCDEF0);
+}
+
 TEST(TypeSystem, VoidType)
 {
     Module m;
