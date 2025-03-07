@@ -258,71 +258,74 @@ TEST_F(IrGeneratorTest, BoolLiteral)
     EXPECT_EQ(const_bool->value(), 1);
 }
 
-// TEST_F(IrGeneratorTest, StructLiteral)
-// {
-//     /*
-//         struct Point {
-//             x: i32,
-//             y: i32
-//         }
+TEST_F(IrGeneratorTest, StructLiteral)
+{
+    /*
+        struct Point {
+            x: i32,
+            y: i32
+        }
 
-//         fn test() -> Point {
-//             return Point { x: 5, y: 10 };
-//         }
-//     */
-//     ast::StructDecl point_struct;
-//     point_struct.name = "Point";
-//     point_struct.add_field(ast::TypedField{"x", ast::Type::create_int()});
-//     point_struct.add_field(ast::TypedField{"y", ast::Type::create_int()});
+        fn test() -> Point {
+            return Point { x: 5, y: 10 };
+        }
+    */
+    auto point_struct = std::make_unique<ast::StructDecl>();
+    point_struct->name = "Point";
+    point_struct->add_field(ast::TypedField{"x", ast::Type::create_int()});
+    point_struct->add_field(ast::TypedField{"y", ast::Type::create_int()});
 
-//     auto struct_literal = std::make_unique<ast::StructLiteralExpr>("Point");
-//     struct_literal->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(5));
-//     struct_literal->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(10));
-//     struct_literal->type = point_struct.type();
+    auto struct_literal = std::make_unique<ast::StructLiteralExpr>("Point");
+    struct_literal->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(5));
+    struct_literal->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(10));
+    struct_literal->type = point_struct->type()->clone();
 
-//     auto fn = create_test_function(point_struct.type());
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(struct_literal)));
+    auto fn = create_test_function(point_struct->type()->clone());
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(struct_literal)));
 
-//     generate_simple_program(std::move(fn));
+    ast::Program program;
+    program.structs.push_back(std::move(point_struct));
+    program.functions.push_back(std::move(fn));
+    generate(program);
 
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
 
-//     bool found_alloca = false;
-//     bool found_geps = false;
-//     bool found_stores = false;
-//     for (const auto &bb : *test_fn)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
-//             {
-//                 if (alloca->allocated_type()->is_struct())
-//                 {
-//                     found_alloca = true;
-//                 }
-//             }
-//             else if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
-//             {
-//                 if (gep->base_pointer()->type()->is_pointer() &&
-//                     gep->base_pointer()->type()->element_type()->is_struct())
-//                 {
-//                     found_geps = true;
-//                 }
-//             }
-//             else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
-//             {
-//                 if (store->stored_value()->type()->is_integer())
-//                 {
-//                     found_stores = true;
-//                 }
-//             }
-//         }
-//     }
-//     EXPECT_TRUE(found_alloca);
-//     EXPECT_TRUE(found_geps);
-//     EXPECT_TRUE(found_stores);
-// }
+    bool found_alloca = false;
+    bool found_geps = false;
+    bool found_stores = false;
+    for (const auto &bb : *test_fn)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
+            {
+                if (alloca->allocated_type()->is_struct())
+                {
+                    found_alloca = true;
+                }
+            }
+            else if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
+            {
+                if (gep->base_pointer()->type()->is_pointer() &&
+                    gep->base_pointer()->type()->element_type()->is_struct())
+                {
+                    found_geps = true;
+                }
+            }
+            else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
+            {
+                if (store->stored_value()->type()->is_integer())
+                {
+                    found_stores = true;
+                }
+            }
+        }
+    }
+    EXPECT_TRUE(found_alloca);
+    EXPECT_TRUE(found_geps);
+    EXPECT_TRUE(found_stores);
+}
 
 // TEST_F(IrGeneratorTest, InitListExpr)
 // {

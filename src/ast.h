@@ -407,6 +407,7 @@ namespace ast
         std::vector<FunctionDecl> methods;
         std::unordered_map<std::string_view, size_t> field_map;  // Map for quick field lookup
         std::unordered_map<std::string_view, size_t> method_map; // Map for quick method lookup
+        mutable TypePtr cached_type_;
 
         StructDecl() = default;
         StructDecl(std::string name, std::vector<TypedField> fields);
@@ -424,10 +425,7 @@ namespace ast
         FunctionDecl *get_method(std::string_view name) const;
 
         // Get the type of the struct
-        TypePtr type() const
-        {
-            return Type::create_struct(name, fields);
-        }
+        Type* type() const;
     };
 
     struct FunctionDecl

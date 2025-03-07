@@ -10,7 +10,10 @@ namespace ast
         : name(std::move(name)), type(std::move(type)) {}
 
     TypedField::TypedField(const TypedField &other)
-        : name(other.name), type(other.type ? other.type->clone() : nullptr) {}
+        : name(other.name), type(other.type ? other.type->clone() : nullptr)
+    {
+        assert(type != nullptr && "TypedField type cannot be null");
+    }
 
     TypedField &TypedField::operator=(TypedField other) noexcept
     {
@@ -56,7 +59,8 @@ namespace ast
 
     TypePtr Type::create_int(uint8_t bit_width, bool unsigned_)
     {
-        if (bit_width == 1) {
+        if (bit_width == 1)
+        {
             return std::make_unique<BoolType>();
         }
         return std::make_unique<IntegerType>(bit_width, unsigned_);

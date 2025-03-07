@@ -309,7 +309,7 @@ void TypeChecker::visit(StructDecl &decl)
         }
     }
     MO_DEBUG("Struct '%s':", decl.name.c_str());
-    auto struct_ty = decl.type();
+    auto struct_ty = decl.type()->clone();
     for (auto &field : *struct_ty->as_struct())
     {
         MO_DEBUG("  %s: %s", field.name.c_str(), field.type->to_string().c_str());
@@ -1252,11 +1252,17 @@ void TypeChecker::visit(StructLiteralExpr &expr)
     }
 
     // Check missing required members
-    auto struct_type = static_cast<StructType *>(struct_decl->type().get());
+    auto struct_type = struct_decl->type()->as_struct();
+    MO_ASSERT(struct_type, "Struct type must be a struct");
+    MO_DEBUG("struct_type has %zu members", struct_type->member_count());
     for (size_t i = 0; i < struct_type->member_count(); ++i)
     {
-        const auto &member = struct_type->get_member(i);
-        if (!initialized_members.count(member.name))
+        const auto &member = struct_type->get_member(i); // no error
+        printf("member ptr: %p\n", &member);
+        printf("mem.type ptr: %p\n", &member.type);
+        printf("type %s\n", member.type->to_string().c_str()); // Segmentation fault.
+        printf("member %s\n", member.name.c_str()); // Segmentation fault.
+        if (!initialized_members.count(member.name)) // Segmentation fault.
         {
             add_error("Missing initialization for member '" + member.name + "'");
         }
@@ -1313,7 +1319,7 @@ StructDecl *TypeChecker::find_struct(const std::string &name) const
     // TODO: make this more efficient by storing a map of struct names to decls
     for (const auto &struct_decl : program_->structs)
     {
-        if (static_cast<StructType *>(struct_decl->type().get())->name() == name)
+        if (static_cast<StructType *>(struct_decl->type())->name() == name)
         {
             return struct_decl.get();
         }

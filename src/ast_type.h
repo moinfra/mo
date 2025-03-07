@@ -240,8 +240,8 @@ namespace ast
         explicit IntegerType(int bit_width, bool is_unsigned)
             : bit_width_(bit_width), unsigned_(is_unsigned)
         {
-            MO_ASSERT(bit_width > 0 ,"Invalid bit width");
-            MO_ASSERT(bit_width != 1 ,"Please use bool type explicitly");
+            MO_ASSERT(bit_width > 0, "Invalid bit width");
+            MO_ASSERT(bit_width != 1, "Please use bool type explicitly");
         }
 
         // Type conversion
@@ -559,6 +559,10 @@ namespace ast
     class StructType : public AggregateType
     {
     public:
+        ~StructType()
+        {
+            MO_DEBUG("deleting struct type: %s with %zu members", name_.c_str(), members_.size());
+        }
         StructType(std::string name, std::vector<TypedField> members)
             : name_(std::move(name)), members_(std::move(members))
         {
@@ -566,6 +570,7 @@ namespace ast
             {
                 MO_DEBUG("warning: creating empty struct type");
             }
+            MO_DEBUG("creating struct type: %s with %zu members", name_.c_str(), members_.size());
             validate_members();
             build_index();
         }
@@ -576,7 +581,12 @@ namespace ast
         bool is_struct() const noexcept override { return true; }
 
         size_t member_count() const noexcept { return members_.size(); }
-        const TypedField &get_member(size_t index) const { return members_.at(index); }
+        const TypedField &get_member(size_t index) const
+        {
+            MO_ASSERT(index < members_.size(), "Invalid member index");
+            return members_.at(index);
+        }
+
         const Type *find_member(const std::string &name) const
         {
             if (auto it = member_indexes_.find(name); it != member_indexes_.end())

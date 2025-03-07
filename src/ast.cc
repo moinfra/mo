@@ -59,7 +59,6 @@ VarDeclStmt::VarDeclStmt(VarDeclStmt &&other) noexcept
 StructDecl::StructDecl(std::string name, std::vector<TypedField> fields)
     : name(std::move(name)), fields(std::move(fields))
 {
-    this->fields.reserve(this->fields.size());
     // Build the field map for quick lookup
     for (size_t i = 0; i < this->fields.size(); ++i)
     {
@@ -101,6 +100,16 @@ FunctionDecl *StructDecl::get_method(std::string_view name) const
         return const_cast<FunctionDecl *>(&methods[it->second]);
     }
     return nullptr;
+}
+
+Type *StructDecl::type() const
+{
+    if (!cached_type_)
+    {
+        MO_DEBUG("Generating new StructType for %s", name.c_str());
+        cached_type_ = Type::create_struct(name, fields);
+    }
+    return cached_type_.get();
 }
 
 //===----------------------------------------------------------------------===//

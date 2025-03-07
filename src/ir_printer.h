@@ -238,6 +238,16 @@ public:
             os << ")\n";
             break;
         }
+        case Opcode::Neg:
+        case Opcode::Not:
+        case Opcode::FNeg:
+        case Opcode::BitNot:
+        {
+            auto unary_inst = static_cast<const UnaryInst &>(inst);
+            os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
+               << unary_inst.get_operand()->type()->name() << " " << format_value(unary_inst.get_operand()) << "\n";
+            break;
+        }
         }
         MO_ASSERT(false, "Invalid instruction %s", inst.name().c_str());
     }
@@ -319,6 +329,14 @@ public:
             return "fptoui";
         case Opcode::UIToFP:
             return "uitofp";
+        case Opcode::Neg:
+            return "neg";
+        case Opcode::Not:
+            return "not";
+        case Opcode::FNeg:
+            return "fneg";
+        case Opcode::BitNot:
+            return "bitnot";
         }
 
         assert(false && "Invalid predicate");
