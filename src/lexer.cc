@@ -55,10 +55,10 @@ std::string token_type_to_string(TokenType type)
         return "for";
     case TokenType::Identifier:
         return "<id>";
-        case TokenType::IntegerLiteral:
-            return "<integer>";
-            case TokenType::BooleanLiteral:
-                return "<boolean>";
+    case TokenType::IntegerLiteral:
+        return "<integer>";
+    case TokenType::BooleanLiteral:
+        return "<boolean>";
     case TokenType::FloatLiteral:
         return "<float>";
     case TokenType::StringLiteral:
@@ -656,9 +656,11 @@ Token Lexer::parse_number()
             }
         }
 
-        if (pos < input.size() && isalpha(input[pos])) {
+        if (pos < input.size() && isalpha(input[pos]))
+        {
             errors.push_back({"Invalid decimal literal: invalid suffix", start_line, start_col});
-            while (pos < input.size() && isalpha(input[pos])) {
+            while (pos < input.size() && isalpha(input[pos]))
+            {
                 numStr += input[pos];
                 advance();
             }
@@ -813,6 +815,15 @@ Token Lexer::parse_identifier_or_keyword()
             pos = current_pos;
             break;
         }
+    }
+
+    if (ident == "true")
+    {
+        return Token(TokenType::BooleanLiteral, start_line, start_col, current_line, current_col - 1, "true");
+    }
+    else if (ident == "false")
+    {
+        return Token(TokenType::BooleanLiteral, start_line, start_col, current_line, current_col - 1, "false");
     }
 
     auto it = keywords.find(ident);

@@ -81,10 +81,12 @@ bool TypeChecker::is_valid_lvalue(Expr &expr)
 
 bool TypeChecker::is_valid_cond_type(const ast::Type &type)
 {
+    // TODO: Need strict boolean?
     bool isInt = type.kind() == Type::Kind::Int;
     bool isFloat = type.kind() == Type::Kind::Float;
+    bool isBool = type.kind() == Type::Kind::Bool;
 
-    if (!isInt && !isFloat)
+    if (!isInt && !isFloat && !isBool)
     {
         add_error("Condition must be of numeric type (int or float), actually is ", type.to_string());
         return false;

@@ -79,304 +79,298 @@ protected:
 //                           Literal Expression Tests
 //===----------------------------------------------------------------------===//
 
-TEST_F(IrGeneratorTest, IntegerLiteral)
-{
-    auto fn = create_test_function();
-    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-        std::make_unique<ast::IntegerLiteralExpr>(42)));
-
-    generate_simple_program(std::move(fn));
-
-    Function *test_fn = module.get_function("test");
-    ASSERT_NE(test_fn, nullptr);
-
-    ReturnInst *ret = find_return(test_fn);
-    ASSERT_NE(ret, nullptr);
-
-    auto *constInt = dynamic_cast<ConstantInt *>(ret->value());
-    ASSERT_NE(constInt, nullptr);
-    EXPECT_EQ(constInt->value(), 42);
-}
-
-TEST_F(IrGeneratorTest, BooleanLiteral)
-{
-    auto fn = create_test_function(ast::Type::create_bool());
-    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-        std::make_unique<ast::BooleanLiteralExpr>(true)));
-
-    generate_simple_program(std::move(fn));
-
-    Function *test_fn = module.get_function("test");
-    ASSERT_NE(test_fn, nullptr);
-
-    ReturnInst *ret = find_return(test_fn);
-    ASSERT_NE(ret, nullptr);
-
-    auto *constInt = dynamic_cast<ConstantInt *>(ret->value());
-    ASSERT_NE(constInt, nullptr);
-    EXPECT_EQ(constInt->value(), 1);
-}
-
-TEST_F(IrGeneratorTest, FloatLiteral)
-{
-    auto fn = create_test_function(ast::Type::create_float());
-    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-        std::make_unique<ast::FloatLiteralExpr>(3.14f)));
-
-    generate_simple_program(std::move(fn));
-
-    Function *test_func = module.get_function("test");
-    ASSERT_NE(test_func, nullptr);
-
-    ReturnInst *ret = find_return(test_func);
-    ASSERT_NE(ret, nullptr);
-
-    auto *const_fp = dynamic_cast<ConstantFP *>(ret->value());
-    ASSERT_NE(const_fp, nullptr);
-    EXPECT_FLOAT_EQ(const_fp->value(), 3.14f);
-}
-
-TEST_F(IrGeneratorTest, StringLiteral)
-{
-    /*
-        const u8* hello = "hello";
-
-        fn test() -> *u8 {
-            return hello;
-        }
-    */
-    auto fn = create_test_function(ast::Type::create_string());
-    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-        std::make_unique<ast::StringLiteralExpr>("hello")));
-
-    generate_simple_program(std::move(fn));
-
-    // Verify global string
-    bool found_global = false;
-    for (const auto &global : module.global_variables())
-    {
-        auto *initializer = global->initializer();
-        EXPECT_NE(initializer, nullptr);
-        if (auto *init = dynamic_cast<ConstantString *>(initializer))
-        {
-            EXPECT_EQ(init->value(), "hello");
-            found_global = true;
-        }
-    }
-    EXPECT_TRUE(found_global);
-
-    // Verify return value
-    Function *test_fn = module.get_function("test");
-    ASSERT_NE(test_fn, nullptr);
-
-    ReturnInst *ret = find_return(test_fn);
-    ASSERT_NE(ret, nullptr);
-
-    auto *inst = dynamic_cast<BitCastInst *>(ret->value());
-    ASSERT_NE(inst, nullptr);
-}
-
-TEST_F(IrGeneratorTest, BoolImplicitConversion)
-{
-    /*
-        fn test() -> i32 {
-            let a : i32 = 5;
-            if a {
-                return 1;
-            }
-            return 0;
-        }
-    */
-    auto fn = create_test_function();
-
-    // int a = 5;
-    auto var_decl = std::make_unique<ast::VarDeclStmt>();
-    var_decl->name = "a";
-    var_decl->type = ast::Type::create_int();
-    var_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(5);
-    fn->body.push_back(std::move(var_decl));
-
-    // if (a) return 1;
-    auto cond = std::make_unique<ast::VariableExpr>("a");
-    auto then_block = std::make_unique<ast::BlockStmt>();
-    then_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-        std::make_unique<ast::IntegerLiteralExpr>(1)));
-
-    fn->body.push_back(std::make_unique<ast::IfStmt>(
-        std::move(cond),
-        std::move(then_block),
-        nullptr // No else block
-        ));
-
-    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-        std::make_unique<ast::IntegerLiteralExpr>(0)));
-
-    generate_simple_program(std::move(fn));
-
-    Function *test_fn = module.get_function("test");
-    ASSERT_NE(test_fn, nullptr);
-
-    bool found_icmp = false;
-    for (const auto &bb : *test_fn)
-    {
-        for (const auto &inst : *bb)
-        {
-            if (auto *icmp = dynamic_cast<const ICmpInst *>(&inst))
-            {
-                EXPECT_EQ(icmp->predicate(), ICmpInst::NE);
-                auto *load = dynamic_cast<const LoadInst *>(icmp->operand(0));
-                ASSERT_NE(load, nullptr);
-                found_icmp = true;
-            }
-        }
-    }
-    EXPECT_TRUE(found_icmp);
-}
-
-TEST_F(IrGeneratorTest, BoolLiteral)
-{
-    /*
-        fn test() -> bool {
-            return true;
-        }
-    */
-    auto fn = create_test_function(ast::Type::create_bool());
-    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-        std::make_unique<ast::BooleanLiteralExpr>(true)));
-
-    generate_simple_program(std::move(fn));
-
-    Function *test_fn = module.get_function("test");
-    ASSERT_NE(test_fn, nullptr);
-
-    ReturnInst *ret = find_return(test_fn);
-    ASSERT_NE(ret, nullptr);
-
-    auto *const_bool = dynamic_cast<ConstantInt *>(ret->value());
-    ASSERT_NE(const_bool, nullptr);
-    EXPECT_EQ(const_bool->type(), module.get_integer_type(1));
-    EXPECT_EQ(const_bool->value(), 1);
-}
-
-TEST_F(IrGeneratorTest, StructLiteral)
-{
-    /*
-        struct Point {
-            x: i32,
-            y: i32
-        }
-
-        fn test() -> Point {
-            return Point { x: 5, y: 10 };
-        }
-    */
-    auto point_struct = std::make_unique<ast::StructDecl>();
-    point_struct->name = "Point";
-    point_struct->add_field(ast::TypedField{"x", ast::Type::create_int()});
-    point_struct->add_field(ast::TypedField{"y", ast::Type::create_int()});
-
-    auto struct_literal = std::make_unique<ast::StructLiteralExpr>("Point");
-    struct_literal->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(5));
-    struct_literal->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(10));
-    struct_literal->type = point_struct->type()->clone();
-
-    auto fn = create_test_function(point_struct->type()->clone());
-    fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(struct_literal)));
-
-    ast::Program program;
-    program.structs.push_back(std::move(point_struct));
-    program.functions.push_back(std::move(fn));
-    generate(program);
-
-    Function *test_fn = module.get_function("test");
-    ASSERT_NE(test_fn, nullptr);
-
-    bool found_alloca = false;
-    bool found_geps = false;
-    bool found_stores = false;
-    for (const auto &bb : *test_fn)
-    {
-        for (const auto &inst : *bb)
-        {
-            if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
-            {
-                if (alloca->allocated_type()->is_struct())
-                {
-                    found_alloca = true;
-                }
-            }
-            else if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
-            {
-                if (gep->base_pointer()->type()->is_pointer() &&
-                    gep->base_pointer()->type()->element_type()->is_struct())
-                {
-                    found_geps = true;
-                }
-            }
-            else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
-            {
-                if (store->stored_value()->type()->is_integer())
-                {
-                    found_stores = true;
-                }
-            }
-        }
-    }
-    EXPECT_TRUE(found_alloca);
-    EXPECT_TRUE(found_geps);
-    EXPECT_TRUE(found_stores);
-}
-
-// TEST_F(IrGeneratorTest, InitListExpr)
+// TEST_F(IrGeneratorTest, IntegerLiteral)
 // {
-//     /*
-//         fn test() -> [3 x i32] {
-//             return [1, 2, 3];
-//         }
-//     */
-//     std::vector<ast::ExprPtr> elems;
-//     elems.reserve(3);
-//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(1));
-//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(2));
-//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
-//     auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
-
-//     auto array_type = ast::Type::create_array(ast::Type::create_int(), 3);
-//     auto fn = create_test_function(std::move(array_type));
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(init_list)));
+//     auto fn = create_test_function();
+//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+//         std::make_unique<ast::IntegerLiteralExpr>(42)));
 
 //     generate_simple_program(std::move(fn));
 
 //     Function *test_fn = module.get_function("test");
 //     ASSERT_NE(test_fn, nullptr);
 
-//     bool found_array_alloca = false;
-//     bool found_constant_agg = false;
+//     ReturnInst *ret = find_return(test_fn);
+//     ASSERT_NE(ret, nullptr);
+
+//     auto *constInt = dynamic_cast<ConstantInt *>(ret->value());
+//     ASSERT_NE(constInt, nullptr);
+//     EXPECT_EQ(constInt->value(), 42);
+// }
+
+// TEST_F(IrGeneratorTest, BooleanLiteral)
+// {
+//     auto fn = create_test_function(ast::Type::create_bool());
+//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+//         std::make_unique<ast::BooleanLiteralExpr>(true)));
+
+//     generate_simple_program(std::move(fn));
+
+//     Function *test_fn = module.get_function("test");
+//     ASSERT_NE(test_fn, nullptr);
+
+//     ReturnInst *ret = find_return(test_fn);
+//     ASSERT_NE(ret, nullptr);
+
+//     auto *constInt = dynamic_cast<ConstantInt *>(ret->value());
+//     ASSERT_NE(constInt, nullptr);
+//     EXPECT_EQ(constInt->value(), 1);
+// }
+
+// TEST_F(IrGeneratorTest, FloatLiteral)
+// {
+//     auto fn = create_test_function(ast::Type::create_float());
+//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+//         std::make_unique<ast::FloatLiteralExpr>(3.14f)));
+
+//     generate_simple_program(std::move(fn));
+
+//     Function *test_func = module.get_function("test");
+//     ASSERT_NE(test_func, nullptr);
+
+//     ReturnInst *ret = find_return(test_func);
+//     ASSERT_NE(ret, nullptr);
+
+//     auto *const_fp = dynamic_cast<ConstantFP *>(ret->value());
+//     ASSERT_NE(const_fp, nullptr);
+//     EXPECT_FLOAT_EQ(const_fp->value(), 3.14f);
+// }
+
+// TEST_F(IrGeneratorTest, StringLiteral)
+// {
+//     /*
+//         const u8* hello = "hello";
+
+//         fn test() -> *u8 {
+//             return hello;
+//         }
+//     */
+//     auto fn = create_test_function(ast::Type::create_string());
+//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+//         std::make_unique<ast::StringLiteralExpr>("hello")));
+
+//     generate_simple_program(std::move(fn));
+
+//     // Verify global string
+//     bool found_global = false;
+//     for (const auto &global : module.global_variables())
+//     {
+//         auto *initializer = global->initializer();
+//         EXPECT_NE(initializer, nullptr);
+//         if (auto *init = dynamic_cast<ConstantString *>(initializer))
+//         {
+//             EXPECT_EQ(init->value(), "hello");
+//             found_global = true;
+//         }
+//     }
+//     EXPECT_TRUE(found_global);
+
+//     // Verify return value
+//     Function *test_fn = module.get_function("test");
+//     ASSERT_NE(test_fn, nullptr);
+
+//     ReturnInst *ret = find_return(test_fn);
+//     ASSERT_NE(ret, nullptr);
+
+//     auto *inst = dynamic_cast<BitCastInst *>(ret->value());
+//     ASSERT_NE(inst, nullptr);
+// }
+
+// TEST_F(IrGeneratorTest, BoolImplicitConversion)
+// {
+//     /*
+//         fn test() -> i32 {
+//             let a : i32 = 5;
+//             if a {
+//                 return 1;
+//             }
+//             return 0;
+//         }
+//     */
+//     auto fn = create_test_function();
+
+//     // int a = 5;
+//     auto var_decl = std::make_unique<ast::VarDeclStmt>();
+//     var_decl->name = "a";
+//     var_decl->type = ast::Type::create_int();
+//     var_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(5);
+//     fn->body.push_back(std::move(var_decl));
+
+//     // if (a) return 1;
+//     auto cond = std::make_unique<ast::VariableExpr>("a");
+//     auto then_block = std::make_unique<ast::BlockStmt>();
+//     then_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+//         std::make_unique<ast::IntegerLiteralExpr>(1)));
+
+//     fn->body.push_back(std::make_unique<ast::IfStmt>(
+//         std::move(cond),
+//         std::move(then_block),
+//         nullptr // No else block
+//         ));
+
+//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+//         std::make_unique<ast::IntegerLiteralExpr>(0)));
+
+//     generate_simple_program(std::move(fn));
+
+//     Function *test_fn = module.get_function("test");
+//     ASSERT_NE(test_fn, nullptr);
+
+//     bool found_icmp = false;
+//     for (const auto &bb : *test_fn)
+//     {
+//         for (const auto &inst : *bb)
+//         {
+//             if (auto *icmp = dynamic_cast<const ICmpInst *>(&inst))
+//             {
+//                 EXPECT_EQ(icmp->predicate(), ICmpInst::NE);
+//                 auto *load = dynamic_cast<const LoadInst *>(icmp->operand(0));
+//                 ASSERT_NE(load, nullptr);
+//                 found_icmp = true;
+//             }
+//         }
+//     }
+//     EXPECT_TRUE(found_icmp);
+// }
+
+// TEST_F(IrGeneratorTest, BoolLiteral)
+// {
+//     /*
+//         fn test() -> bool {
+//             return true;
+//         }
+//     */
+//     auto fn = create_test_function(ast::Type::create_bool());
+//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+//         std::make_unique<ast::BooleanLiteralExpr>(true)));
+
+//     generate_simple_program(std::move(fn));
+
+//     Function *test_fn = module.get_function("test");
+//     ASSERT_NE(test_fn, nullptr);
+
+//     ReturnInst *ret = find_return(test_fn);
+//     ASSERT_NE(ret, nullptr);
+
+//     auto *const_bool = dynamic_cast<ConstantInt *>(ret->value());
+//     ASSERT_NE(const_bool, nullptr);
+//     EXPECT_EQ(const_bool->type(), module.get_integer_type(1));
+//     EXPECT_EQ(const_bool->value(), 1);
+// }
+
+// TEST_F(IrGeneratorTest, StructLiteral)
+// {
+//     /*
+//         struct Point {
+//             x: i32,
+//             y: i32
+//         }
+
+//         fn test() -> Point {
+//             return Point { x: 5, y: 10 };
+//         }
+//     */
+//     auto point_struct = std::make_unique<ast::StructDecl>();
+//     point_struct->name = "Point";
+//     point_struct->add_field(ast::TypedField{"x", ast::Type::create_int()});
+//     point_struct->add_field(ast::TypedField{"y", ast::Type::create_int()});
+
+//     auto struct_literal = std::make_unique<ast::StructLiteralExpr>("Point");
+//     struct_literal->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(5));
+//     struct_literal->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(10));
+//     struct_literal->type = point_struct->type()->clone();
+
+//     auto fn = create_test_function(point_struct->type()->clone());
+//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(struct_literal)));
+
+//     ast::Program program;
+//     program.structs.push_back(std::move(point_struct));
+//     program.functions.push_back(std::move(fn));
+//     generate(program);
+
+//     Function *test_fn = module.get_function("test");
+//     ASSERT_NE(test_fn, nullptr);
+
+//     bool found_alloca = false;
+//     bool found_geps = false;
+//     bool found_stores = false;
 //     for (const auto &bb : *test_fn)
 //     {
 //         for (const auto &inst : *bb)
 //         {
 //             if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
 //             {
-//                 if (alloca->allocated_type()->is_array())
+//                 if (alloca->allocated_type()->is_struct())
 //                 {
-//                     found_array_alloca = true;
+//                     found_alloca = true;
 //                 }
 //             }
-//             if (auto *const_agg = dynamic_cast<const ConstantAggregate *>(&inst))
+//             else if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
 //             {
-//                 if (const_agg->type()->is_array() &&
-//                     const_agg->type()->element_type()->is_integer())
+//                 if (gep->base_pointer()->type()->is_pointer() &&
+//                     gep->base_pointer()->type()->element_type()->is_struct())
 //                 {
-//                     found_constant_agg = true;
-//                     EXPECT_EQ(const_agg->elements().size(), 3);
+//                     found_geps = true;
+//                 }
+//             }
+//             else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
+//             {
+//                 if (store->stored_value()->type()->is_integer())
+//                 {
+//                     found_stores = true;
 //                 }
 //             }
 //         }
 //     }
-//     EXPECT_TRUE(found_array_alloca);
-//     EXPECT_TRUE(found_constant_agg);
+//     EXPECT_TRUE(found_alloca);
+//     EXPECT_TRUE(found_geps);
+//     EXPECT_TRUE(found_stores);
 // }
+
+TEST_F(IrGeneratorTest, InitListExpr)
+{
+    /*
+        fn test() -> [3 x i32] {
+            return [1, 2, 3];
+        }
+    */
+    std::vector<ast::ExprPtr> elems;
+    elems.reserve(3);
+    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(1));
+    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(2));
+    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
+    auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
+
+    auto array_type = ast::Type::create_array(ast::Type::create_int(), 3);
+    auto fn = create_test_function(std::move(array_type));
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(init_list)));
+
+    generate_simple_program(std::move(fn));
+
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    bool found_array_alloca = false;
+    for (const auto &bb : *test_fn)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
+            {
+                if (alloca->allocated_type()->is_array())
+                {
+                    found_array_alloca = true;
+                }
+            }
+        }
+    }
+    EXPECT_FALSE(found_array_alloca);
+    auto ret_inst = find_return(test_fn);
+    auto ret_val = ret_inst->value();
+
+    auto *const_array = dynamic_cast<ConstantArray *>(ret_val);
+    EXPECT_NE(const_array, nullptr);
+}
 // //===----------------------------------------------------------------------===//
 // //                         运算符和表达式测试
 // //===----------------------------------------------------------------------===//

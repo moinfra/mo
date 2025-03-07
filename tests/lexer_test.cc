@@ -40,7 +40,7 @@ TEST(LexerTest, TestIntegerLiterals)
 TEST(LexerTest, TestBooleanLiterals)
 {
     Lexer lexer("true false");
-    EXPECT_EQ(lexer_to_string(lexer), "<boolean> <boolean>");
+    EXPECT_EQ(lexer_to_string(lexer), "<boolean> <boolean> <eof>");
     EXPECT_TRUE(no_errors(lexer));
 }
 
