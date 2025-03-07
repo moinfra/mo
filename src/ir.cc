@@ -24,8 +24,6 @@ Type *Type::get_void_type(Module *m)
     return m->get_void_type();
 }
 
-bool Type::is_tuple() const { return tid_ == StructTy && as_struct()->is_tuple(); }
-
 Type *Type::element_type() const
 {
     if (is_array())
@@ -1121,9 +1119,10 @@ BasicBlock *PhiInst::get_incoming_block(unsigned i) const
 //                           ICmpInst Implementations
 // ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 ICmpInst::ICmpInst(BasicBlock *parent, std::vector<Value *> ops)
-    : Instruction(Opcode::ICmp, parent->parent_function()->parent_module()->get_integer_type(1),
-                  parent, ops),
-      pred_(EQ) {}
+    : BinaryInst(Opcode::ICmp, parent->parent_function()->parent_module()->get_integer_type(1), parent, ops, ""),
+          pred_(EQ)
+{
+}
 
 ICmpInst *ICmpInst::create(Predicate pred, Value *lhs, Value *rhs,
                            BasicBlock *parent)
@@ -1138,7 +1137,7 @@ ICmpInst *ICmpInst::create(Predicate pred, Value *lhs, Value *rhs,
 //                           FCmpInst Implementations
 // ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 FCmpInst::FCmpInst(Predicate pred, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
-    : Instruction(Opcode::FCmp, parent->parent_function()->parent_module()->get_integer_type(1), parent, operands, name), pred_(pred) {}
+    : BinaryInst(Opcode::FCmp, parent->parent_function()->parent_module()->get_integer_type(1), parent, operands, name), pred_(pred) {}
 
 FCmpInst *FCmpInst::create(Predicate pred, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
 {
@@ -1274,7 +1273,7 @@ GetElementPtrInst *GetElementPtrInst::create(Value *ptr, std::vector<Value *> in
 BinaryInst::BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
     : Instruction(op, type, parent, operands, name) {}
 
-bool BinaryInst::isBinaryOp(Opcode op)
+bool BinaryInst::is_binary_op(Opcode op)
 {
     switch (op)
     {
@@ -1301,7 +1300,7 @@ bool BinaryInst::isBinaryOp(Opcode op)
 
 BinaryInst *BinaryInst::create(Opcode op, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
 {
-    assert(isBinaryOp(op) && "Invalid binary opcode");
+    assert(is_binary_op(op) && "Invalid binary opcode");
     return new BinaryInst(op, lhs->type(), parent, {lhs, rhs}, name);
 }
 

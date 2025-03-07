@@ -136,10 +136,10 @@ public:
         {
             auto binary_inst = static_cast<const BinaryInst &>(inst);
             os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
-               << binary_inst.get_lhs()->type()->name() << " ";
-            os << format_value(binary_inst.get_lhs());
+               << binary_inst.left()->type()->name() << " ";
+            os << format_value(binary_inst.left());
             os << ", ";
-            os << format_value(binary_inst.get_rhs());
+            os << format_value(binary_inst.right());
             os << "\n";
             break;
         }
@@ -215,10 +215,10 @@ public:
         {
             auto binary_inst = static_cast<const BinaryInst &>(inst);
             os << "  " << format_value(&inst) << " = " << get_opcode_str(inst.opcode()) << " "
-               << binary_inst.get_lhs()->type()->name() << " ";
-            os << format_value(binary_inst.get_lhs());
+               << binary_inst.left()->type()->name() << " ";
+            os << format_value(binary_inst.left());
             os << ", ";
-            os << format_value(binary_inst.get_rhs());
+            os << format_value(binary_inst.right());
             os << "\n";
             break;
         }

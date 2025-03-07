@@ -172,16 +172,16 @@ public:
 
     static Type *get_void_type(Module *m);
 
-    bool is_void() const { return tid_ == VoidTy; }
-    bool is_float() const { return tid_ == FpTy; }
-    bool is_integer() const { return tid_ == IntTy; }
-    bool is_pointer() const { return tid_ == PtrTy; }
-    bool is_function() const { return tid_ == FuncTy; }
-    bool is_array() const { return tid_ == ArrayTy; }
-    bool is_struct() const { return tid_ == StructTy; }
-    bool is_tuple() const;
-    bool is_vector() const { return tid_ == VecTy; }
-    bool is_qualified() const { return tid_ == QualifierTy; }
+    virtual bool is_void() const { return false; }
+    virtual bool is_float() const { return false; }
+    virtual bool is_integer() const { return false; }
+    virtual bool is_pointer() const { return false; }
+    virtual bool is_function() const { return false; }
+    virtual bool is_array() const { return false; }
+    virtual bool is_struct() const { return false; }
+    virtual bool is_tuple() const { return false; }
+    virtual bool is_vector() const { return false; }
+    virtual bool is_qualified() const { return false; }
 
     virtual bool is_scalar() const noexcept { return false; }
     virtual bool is_numeric() const noexcept { return false; }
@@ -277,7 +277,7 @@ protected:
     AggregateType(TypeID tid, Module *m) : Type(tid, m) {}
 };
 
-class IntegerType : public NumericType
+class IntegerType final : public NumericType
 {
 public:
     size_t size() const override { return (bits_ + 7) / 8; }
@@ -287,6 +287,11 @@ public:
 
     IntegerType *as_integer() noexcept override { return this; }
     const IntegerType *as_integer() const noexcept override { return this; }
+
+    bool is_integer() const noexcept override
+    {
+        return true;
+    }
 
     std::string to_string() const override
     {
@@ -311,7 +316,7 @@ protected:
     }
 };
 
-class FloatType : public NumericType
+class FloatType final : public NumericType
 {
 public:
     enum Precision
@@ -329,6 +334,10 @@ public:
 
     FloatType *as_float() noexcept override { return this; }
     const FloatType *as_float() const noexcept override { return this; }
+    bool is_float() const noexcept override
+    {
+        return true;
+    }
 
     std::string to_string() const override
     {
@@ -353,12 +362,17 @@ protected:
     }
 };
 
-class VoidType : public Type
+class VoidType final : public Type
 {
 public:
     size_t size() const override { return 0; }
     std::string name() const override { return "void"; }
     unsigned bits() const override { return 0; }
+
+    bool is_void() const noexcept override
+    {
+        return true;
+    }
 
     std::string to_string() const override
     {
@@ -379,7 +393,7 @@ protected:
     }
 };
 
-class PointerType : public Type
+class PointerType final : public Type
 {
 public:
     Type *element_type() const { return element_type_; }
@@ -391,6 +405,10 @@ public:
 
     PointerType *as_pointer() noexcept override { return this; }
     const PointerType *as_pointer() const noexcept override { return this; }
+    bool is_pointer() const noexcept override
+    {
+        return true;
+    }
 
     std::string to_string() const override
     {
@@ -416,7 +434,7 @@ protected:
     }
 };
 
-class FunctionType : public Type
+class FunctionType final : public Type
 {
 public:
     Type *return_type() const { return return_type_; }
@@ -454,6 +472,10 @@ public:
 
     FunctionType *as_function() noexcept override { return this; }
     const FunctionType *as_function() const noexcept override { return this; }
+    bool is_function() const noexcept override
+    {
+        return true;
+    }
 
     std::string to_string() const override
     {
@@ -513,7 +535,7 @@ protected:
     }
 };
 
-class ArrayType : public AggregateType
+class ArrayType final : public AggregateType
 {
 public:
     Type *element_type() const { return element_type_; }
@@ -528,6 +550,10 @@ public:
 
     ArrayType *as_array() noexcept override { return this; }
     const ArrayType *as_array() const noexcept override { return this; }
+    bool is_array() const noexcept override
+    {
+        return true;
+    }
 
     std::string to_string() const override
     {
@@ -571,7 +597,7 @@ struct MemberInfo
     }
 };
 
-class StructType : public AggregateType
+class StructType final : public AggregateType
 {
 public:
     friend class Module;
@@ -619,6 +645,10 @@ public:
 
     StructType *as_struct() noexcept override { return this; }
     const StructType *as_struct() const noexcept override { return this; }
+    bool is_struct() const noexcept override
+    {
+        return true;
+    }
 
     std::string to_string() const override
     {
@@ -678,7 +708,7 @@ protected:
     }
 };
 
-class VectorType : public AggregateType
+class VectorType final : public AggregateType
 {
 public:
     Type *element_type() const { return element_type_; }
@@ -702,6 +732,10 @@ public:
 
     VectorType *as_vector() noexcept override { return this; }
     const VectorType *as_vector() const noexcept override { return this; }
+    bool is_vector() const noexcept override
+    {
+        return true;
+    }
 
     std::string to_string() const override
     {
@@ -728,7 +762,7 @@ protected:
     }
 };
 
-class QualifiedType : public Type
+class QualifiedType final : public Type
 {
 public:
     QualifiedType(Qualifier q, Type *base)
@@ -746,6 +780,17 @@ public:
 
     QualifiedType *as_qualified() noexcept override { return this; }
     const QualifiedType *as_qualified() const noexcept override { return this; }
+
+    bool is_void() const noexcept override { return base_->is_void(); }
+    bool is_float() const noexcept override { return base_->is_float(); }
+    bool is_integer() const noexcept override { return base_->is_integer(); }
+    bool is_pointer() const noexcept override { return base_->is_pointer(); }
+    bool is_function() const noexcept override { return base_->is_function(); }
+    bool is_array() const noexcept override { return base_->is_array(); }
+    bool is_struct() const noexcept override { return base_->is_struct(); }
+    bool is_tuple() const noexcept override { return base_->is_tuple(); }
+    bool is_vector() const noexcept override { return base_->is_vector(); }
+    bool is_qualified() const noexcept override { return is_qualified(); }
 
     std::string to_string() const override
     {
@@ -1409,6 +1454,32 @@ private:
 //===----------------------------------------------------------------------===//
 //                           Instruction Subclasses
 //===----------------------------------------------------------------------===//
+
+class BinaryInst : public Instruction
+{
+public:
+    static BinaryInst *create(Opcode op, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name = "");
+    Value *left() const { return operand(0); }
+    Value *right() const { return operand(1); }
+
+protected:
+    BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
+
+private:
+    static bool is_binary_op(Opcode op);
+};
+
+class UnaryInst : public Instruction
+{
+public:
+    static UnaryInst *create(Opcode op, Value *operand, BasicBlock *parent, const std::string &name = "");
+    Value *get_operand() const { return operand(0); }
+
+private:
+    UnaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
+    static bool isUnaryOp(Opcode op);
+};
+
 class BranchInst : public Instruction
 {
 public:
@@ -1464,7 +1535,7 @@ private:
     PhiInst(Type *type, BasicBlock *parent);
 };
 
-class ICmpInst : public Instruction
+class ICmpInst : public BinaryInst
 {
 public:
     enum Predicate
@@ -1492,7 +1563,7 @@ private:
     Predicate pred_;
 };
 
-class FCmpInst : public Instruction
+class FCmpInst : public BinaryInst
 {
 public:
     enum Predicate
@@ -1578,29 +1649,6 @@ private:
 
     GetElementPtrInst(Type *result_type, BasicBlock *parent,
                       Value *ptr, std::vector<Value *> indices);
-};
-
-class BinaryInst : public Instruction
-{
-public:
-    static BinaryInst *create(Opcode op, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name = "");
-    Value *get_lhs() const { return operand(0); }
-    Value *get_rhs() const { return operand(1); }
-
-private:
-    BinaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
-    static bool isBinaryOp(Opcode op);
-};
-
-class UnaryInst : public Instruction
-{
-public:
-    static UnaryInst *create(Opcode op, Value *operand, BasicBlock *parent, const std::string &name = "");
-    Value *get_operand() const { return operand(0); }
-
-private:
-    UnaryInst(Opcode op, Type *type, BasicBlock *parent, std::vector<Value *> operands, const std::string &name);
-    static bool isUnaryOp(Opcode op);
 };
 
 // FIXME: Deprecated use CastInst instead
