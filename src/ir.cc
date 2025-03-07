@@ -655,7 +655,9 @@ StructType *Module::get_struct_type(const std::string &name, const std::vector<M
             }
             return st;
         }
-    } else {
+    }
+    else
+    {
         // Anonymous struct, search by match all members
         for (auto &st : struct_types_)
         {
@@ -827,7 +829,7 @@ ConstantStruct *Module::get_constant_struct(StructType *type, const std::vector<
 {
     for (auto &constant : constant_structs_)
     {
-        if (*constant->type() == *type && constant->members() == members)
+        if (*constant->type() == *type && constant->elements() == members)
         {
             return constant.get();
         }
@@ -888,7 +890,9 @@ std::string ConstantInt::as_string() const
 std::string ConstantFP::as_string() const
 {
     std::stringstream ss;
-    ss << type()->name() << " " << std::fixed << value_;
+    ss
+        // << type()->name()
+        << " " << std::fixed << value_;
     return ss.str();
 }
 
@@ -901,7 +905,9 @@ ConstantFP::ConstantFP(FloatType *type, double value)
 std::string ConstantArray::as_string() const
 {
     std::stringstream ss;
-    ss << type()->name() << " [";
+    ss
+        // << type()->name()
+        << " [";
     for (size_t i = 0; i < elements_.size(); ++i)
     {
         if (i > 0)
@@ -962,12 +968,14 @@ std::string ConstantString::escape_string(const std::string &input)
 std::string ConstantStruct::as_string() const
 {
     std::stringstream ss;
-    ss << type()->name() << " {";
-    for (size_t i = 0; i < members_.size(); ++i)
+    ss
+        // << type()->name()
+        << " {";
+    for (size_t i = 0; i < elements_.size(); ++i)
     {
         if (i > 0)
             ss << ", ";
-        ss << members_[i]->as_string();
+        ss << elements_[i]->as_string();
     }
     ss << "}";
     return ss.str();
@@ -1004,7 +1012,9 @@ std::string ConstantAggregateZero::as_string() const
 std::string ConstantAggregate::as_string() const
 {
     std::stringstream ss;
-    ss << type()->name() << " {";
+    ss
+        // << type()->name()
+        << " {";
     for (size_t i = 0; i < elements_.size(); ++i)
     {
         if (i > 0)

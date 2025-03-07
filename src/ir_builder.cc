@@ -212,6 +212,7 @@ ReturnInst *IRBuilder::create_ret(Value *value)
     }
 
     auto *inst = ReturnInst::create(value, insert_block_);
+
     insert(inst);
     return inst;
 }

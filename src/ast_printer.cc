@@ -141,10 +141,10 @@ std::string ASTPrinter::print(const Type& type) {
         auto bw = static_cast<uint8_t>(f->precision());
         return "f" + std::to_string(bw); 
     }
-    if (const BoolType* b = type.as_bool()) {
+    if (type.is_bool()) {
         return "bool";
     }
-    if (const StringType* s = type.as_string()) {
+    if (type.is_string()) {
         return "string";
     }
 

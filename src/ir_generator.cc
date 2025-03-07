@@ -2097,23 +2097,19 @@ Constant *IRGenerator::generate_constant_initializer(const ast::Expr &expr)
             module_->get_integer_type(32),
             int_lit->value);
     }
-
-    if (auto int_lit = dynamic_cast<const ast::BooleanLiteralExpr *>(&expr))
+    else if (auto int_lit = dynamic_cast<const ast::BooleanLiteralExpr *>(&expr))
     {
         return module_->get_constant_int(
             module_->get_integer_type(1),
             int_lit->value);
     }
-
-
-    if (auto float_lit = dynamic_cast<const ast::FloatLiteralExpr *>(&expr))
+    else if (auto float_lit = dynamic_cast<const ast::FloatLiteralExpr *>(&expr))
     {
         return module_->get_constant_fp(
             module_->get_float_type(FloatType::Single),
             float_lit->value);
     }
-
-    if (auto struct_lit = dynamic_cast<const ast::StructLiteralExpr *>(&expr))
+    else if (auto struct_lit = dynamic_cast<const ast::StructLiteralExpr *>(&expr))
     {
         std::vector<Constant *> members;
         for (const auto &member : struct_lit->members)
@@ -2124,8 +2120,7 @@ Constant *IRGenerator::generate_constant_initializer(const ast::Expr &expr)
             static_cast<StructType *>(convert_type(*struct_lit->type)),
             members);
     }
-
-    if (auto init_list = dynamic_cast<const ast::InitListExpr *>(&expr))
+    else if (auto init_list = dynamic_cast<const ast::InitListExpr *>(&expr))
     {
         Type *target_type = convert_type(*init_list->type);
 
@@ -2136,19 +2131,20 @@ Constant *IRGenerator::generate_constant_initializer(const ast::Expr &expr)
             for (const auto &member : init_list->members)
             {
                 // Verify array size matches initialization list
-                MO_ASSERT(elements.size() < array_type->size(),
+                MO_ASSERT(elements.size() < array_type->num_elements(),
                           "Too many elements in array initializer");
 
                 elements.push_back(generate_constant_initializer(*member));
             }
 
             // Fill remaining elements with zeros
-            while (elements.size() < array_type->size())
+            while (elements.size() < array_type->num_elements())
             {
                 elements.push_back(module_->get_constant_zero(array_type->element_type()));
             }
 
-            return module_->get_constant_array(array_type, elements);
+            auto ret = module_->get_constant_array(array_type, elements);
+            return ret;
         }
         // Handle struct initialization
         else if (auto struct_type = dynamic_cast<StructType *>(target_type))
@@ -2160,11 +2156,16 @@ Constant *IRGenerator::generate_constant_initializer(const ast::Expr &expr)
             }
             return module_->get_constant_struct(struct_type, members);
         }
+        else
+        {
 
-        MO_ASSERT(false, "Unsupported init list type: %s",
-                  target_type->name().c_str());
+            MO_ASSERT(false, "Unsupported init list type: %s",
+                      target_type->name().c_str());
+        }
     }
-
-    MO_ASSERT(false, "Unsupported constant initializer for '%s'", expr.name().c_str());
-    return nullptr;
+    else
+    {
+        MO_ASSERT(false, "Unsupported constant initializer for '%s'", expr.name().c_str());
+        return nullptr;
+    }
 }

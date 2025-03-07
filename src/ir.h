@@ -39,6 +39,7 @@ class Module;
 class Constant;
 class ConstantInt;
 class ConstantFP;
+class ConstantAggregate;
 class ConstantArray;
 class ConstantString;
 class ConstantStruct;
@@ -1304,19 +1305,31 @@ private:
     friend class Module;
 };
 
-// Array constant
-class ConstantArray : public Constant
+class ConstantAggregate : public Constant
 {
 public:
     const std::vector<Constant *> &elements() const { return elements_; }
 
     std::string as_string() const override;
 
-private:
-    ConstantArray(ArrayType *type, const std::vector<Constant *> &elements)
+protected:
+    ConstantAggregate(Type *type, const std::vector<Constant *> &elements)
         : Constant(type), elements_(elements) {}
 
     std::vector<Constant *> elements_;
+    friend class Module;
+};
+
+// Array constant
+class ConstantArray : public ConstantAggregate
+{
+public:
+    std::string as_string() const override;
+
+private:
+    ConstantArray(ArrayType *type, const std::vector<Constant *> &elements)
+        : ConstantAggregate(type, elements) {}
+
     friend class Module;
 };
 
@@ -1336,18 +1349,15 @@ private:
 };
 
 // Structure constant
-class ConstantStruct : public Constant
+class ConstantStruct : public ConstantAggregate
 {
 public:
-    const std::vector<Constant *> &members() const { return members_; }
-
     std::string as_string() const override;
 
 private:
-    ConstantStruct(StructType *type, const std::vector<Constant *> &members)
-        : Constant(type), members_(members) {}
+    ConstantStruct(StructType *type, const std::vector<Constant *> &elements)
+        : ConstantAggregate(type, elements) {}
 
-    std::vector<Constant *> members_;
     friend class Module;
 };
 
@@ -1393,21 +1403,6 @@ private:
     ConstantAggregateZero(Type *type)
         : Constant(type) {}
 
-    friend class Module;
-};
-
-class ConstantAggregate : public Constant
-{
-public:
-    const std::vector<Constant *> &elements() const { return elements_; }
-
-    std::string as_string() const override;
-
-private:
-    ConstantAggregate(Type *type, const std::vector<Constant *> &elements)
-        : Constant(type), elements_(elements) {}
-
-    std::vector<Constant *> elements_;
     friend class Module;
 };
 
