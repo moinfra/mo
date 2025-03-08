@@ -597,17 +597,7 @@ public:
     void set_name(const std::string &name) { name_ = name; }
     std::string name() const override
     {
-        if (is_opaque_)
-            return "opaque";
-        std::string result = "{ ";
-        for (size_t i = 0; i < members_.size(); ++i)
-        {
-            if (i != 0)
-                result += ", ";
-            result += members_[i].type->name(); // 使用成员类型的名称
-        }
-        result += " }";
-        return result;
+        return name_;
     }
     uint8_t bit_width() const override { return size() * 8; }
     size_t alignment() const override
@@ -1243,7 +1233,7 @@ public:
     }
 
     StructType *get_struct_type_anonymous(const std::vector<MemberInfo> &members);
-    StructType *try_get_named_struct_type(const std::string &name);
+    StructType *try_get_named_global_type(const std::string &name);
     ArrayType *get_array_type(Type *element_type, uint64_t num_elements);
     StructType *get_struct_type(const std::string &name, const std::vector<MemberInfo> &members);
     VectorType *get_vector_type(Type *element_type, uint64_t num_elements);

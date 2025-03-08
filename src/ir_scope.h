@@ -20,6 +20,7 @@ public:
 
     Scope *parent() const { return parent_; }
     size_t depth() const { return depth_; }
+    bool is_global() const { return depth_ == 0; }
 
 private:
     Scope *parent_ = nullptr;

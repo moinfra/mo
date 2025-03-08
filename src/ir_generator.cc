@@ -236,7 +236,7 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
             idx = idx + 1;
         }
         // Tuple as anynomous struct
-        ir_type = module_->get_struct_type("", member_infos);
+        ir_type = module_->get_struct_type_anonymous(member_infos);
         break;
     }
     case ast::Type::Kind::Alias:
@@ -270,7 +270,7 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
         auto &struct_type = static_cast<const ast::StructType &>(ast_type);
         const std::string &struct_name = struct_type.name();
 
-        if (auto existing = module_->try_get_named_struct_type(struct_name))
+        if (auto existing = module_->try_get_named_global_type(struct_name))
         {
             if (existing->is_opaque())
             {
@@ -286,7 +286,6 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
             }
             else
             {
-                // 检查现有结构体成员是否一致
                 if (!struct_matches_ir(existing, struct_type))
                 {
                     MO_ASSERT(false, "Conflicting struct definition for %s", struct_name.c_str());
@@ -296,14 +295,13 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
         }
         else
         {
-            // 先收集成员信息
             std::vector<MemberInfo> member_infos;
             for (size_t i = 0; i < struct_type.member_count(); ++i)
             {
                 const auto &member = struct_type.get_member(i);
                 member_infos.push_back(MemberInfo(member.name, convert_type(*member.type)));
             }
-            // 创建并缓存结构体
+             // register new struct type
             StructType *st = module_->get_struct_type(struct_name, member_infos);
             type_cache_[&ast_type] = st;
             ir_type = st;

@@ -65,46 +65,70 @@ size_t ArrayType::size() const
 {
     assert(element_type_ && "Invalid element type");
     auto size_ = element_type_->size() * num_elements_;
-    return size_ != 0 ? size_ : 1;
+    return size_; // Allow ZST
 }
 
 StructLayout calculate_aligned_layout(const std::vector<Type *> &members)
 {
     StructLayout layout;
-    size_t offset = 0;
-    size_t max_alignment = 1;
+    size_t offset = 0;               // Tracks the current byte offset in the struct
+    size_t max_alignment = 0;        // Tracks the maximum alignment requirement among all members
+    bool has_non_zst_member = false; // Flag to check if the struct has any non-ZST members
 
     for (auto *member_type : members)
     {
-        size_t alignment = member_type->alignment();
+        size_t alignment = member_type->alignment(); // Alignment requirement of the current member
+        size_t size = member_type->size();           // Size of the current member
 
+        // Update the maximum alignment requirement
         if (alignment > max_alignment)
         {
             max_alignment = alignment;
         }
 
-        if (offset % alignment != 0)
+        // Process non-ZST members
+        if (size > 0)
         {
-            offset += alignment - (offset % alignment);
+            has_non_zst_member = true; // Mark that the struct has at least one non-ZST member
+
+            // Align the offset to meet the member's alignment requirement
+            if (offset % alignment != 0)
+            {
+                offset += alignment - (offset % alignment);
+            }
+
+            layout.members.push_back({member_type, offset});
+            offset += size;
+        }
+        else
+        {
+            // For ZST members, record the member's type and offset but do not affect the offset
+            layout.members.push_back({member_type, offset});
+        }
+    }
+
+    // Finalize the struct's size and alignment
+    if (has_non_zst_member)
+    {
+        // If the struct has at least one non-ZST member, align the final size to the maximum alignment
+        if (offset % max_alignment != 0)
+        {
+            offset += max_alignment - (offset % max_alignment);
         }
 
-        // 记录成员的偏移量
-        layout.members.push_back({member_type, offset});
-
-        // 更新偏移量
-        offset += member_type->size();
+        layout.size = offset;             // Set the struct's size to the final offset
+        layout.alignment = max_alignment; // Set the struct's alignment to the maximum alignment
     }
-
-    if (offset % max_alignment != 0)
+    else
     {
-        offset += max_alignment - (offset % max_alignment);
+        // If the struct has only ZST members or no members, its size is 0, and alignment is the maximum alignment
+        layout.size = 0;
+        layout.alignment = max_alignment;
     }
-
-    layout.size = offset;
-    layout.alignment = max_alignment;
 
     return layout;
 }
+
 StructType::StructType(Module *m, const std::string &name, const std::vector<MemberInfo> &members)
     : AggregateType(StructTy, m), name_(name), module_(m), is_opaque_(false), size_(0)
 {
@@ -129,19 +153,19 @@ void StructType::set_body(const std::vector<MemberInfo> &members)
     members_ = members;
     is_opaque_ = false;
 
-    // 提取成员类型以计算布局
     std::vector<Type *> member_types;
     for (const auto &member : members)
     {
         member_types.push_back(member.type);
     }
 
-    // 计算对齐布局
     StructLayout layout = calculate_aligned_layout(member_types);
+
     size_ = layout.size;
     offsets_.clear();
+
     for (const auto &offset_entry : layout.members)
-    { // 假设 layout.members 包含偏移信息
+    {
         offsets_.push_back(offset_entry.offset);
     }
 }
@@ -188,7 +212,7 @@ bool StructType::has_member(const std::string &name) const
 size_t StructType::size() const
 {
     assert(!is_opaque_ && "Opaque struct has no size");
-    return size_ != 0 ? size_ : 1;
+    return size_;
 }
 
 //===----------------------------------------------------------------------===//
@@ -580,7 +604,7 @@ ArrayType *Module::get_array_type(Type *element_type, uint64_t num_elements)
     }
 
     auto ty = new ArrayType(this, element_type, num_elements);
-    MO_DEBUG("Registering new array type, element type: '%s', num elements: %lu", element_type->name().c_str(), num_elements);
+    MO_DEBUG("Registering new array type, element type: '%s', num elements: %zu", element_type->name().c_str(), num_elements);
     array_types_.emplace(key, std::unique_ptr<ArrayType>(ty));
     return ty;
 }
@@ -604,16 +628,20 @@ StructType *Module::get_struct_type_anonymous(const std::vector<MemberInfo> &mem
     return st;
 }
 
-StructType *Module::try_get_named_struct_type(const std::string &name)
+StructType *Module::try_get_named_global_type(const std::string &name)
 {
     assert(!name.empty() && "Invalid struct name");
-
+    MO_DEBUG("Searching for named global type, name: '%s'", name.c_str());
     // Check existing struct types
     for (auto &st : struct_types_)
     {
         if (st->name() == name)
         {
             return st.get();
+        }
+        else
+        {
+            MO_DEBUG("Mismatch name: '%s' vs '%s'", st->name().c_str(), name.c_str());
         }
     }
 
@@ -625,7 +653,7 @@ StructType *Module::get_struct_type(const std::string &name, const std::vector<M
     if (!name.empty())
     {
         // Check existing struct types
-        if (auto st = try_get_named_struct_type(name); st)
+        if (auto st = try_get_named_global_type(name); st)
         {
             // Check if the struct has the same members
             if (st->members() != members)
@@ -664,7 +692,7 @@ VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements)
     }
 
     auto vt = new VectorType(this, element_type, num_elements);
-    MO_DEBUG("Registering new vector type, element type: '%s', num elements: %lu", element_type->name().c_str(), num_elements);
+    MO_DEBUG("Registering new vector type, element type: '%s', num elements: %zu", element_type->name().c_str(), num_elements);
     auto vector_type = std::unique_ptr<VectorType>(vt);
     auto *result = vector_type.get();
     vector_types_[key] = std::move(vector_type);

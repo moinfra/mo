@@ -123,7 +123,7 @@ public:
     //                               Types
     //===--------------------------------------------------------------------===//
     ArrayType *get_array_type(Type *elem_ty, uint64_t num);
-    StructType *get_struct_type(const std::vector<MemberInfo> &members);
+    StructType *get_struct_type_anonymous(const std::vector<MemberInfo> &members);
 
 private:
     void insert(Instruction *inst);

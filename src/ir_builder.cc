@@ -253,7 +253,10 @@ ConstantFP *IRBuilder::get_float(double val)
 
 AllocaInst *IRBuilder::create_alloca(Type *type, const std::string &name)
 {
-    assert(type->size() > 0 && "Cannot allocate zero-sized type");
+    if (type->size() == 0)
+    {
+        MO_WARN("Trying to allocat zero size memory");
+    }
 
     auto *inst = AllocaInst::create(type, insert_block_);
     inst->set_name(name);
@@ -263,7 +266,10 @@ AllocaInst *IRBuilder::create_alloca(Type *type, const std::string &name)
 
 AllocaInst *IRBuilder::create_entry_alloca(Type *type, const std::string &name)
 {
-    assert(type->size() > 0 && "Cannot allocate zero-sized type");
+    if (type->size() == 0)
+    {
+        MO_WARN("Trying to allocat zero size memory");
+    }
     assert(insert_block_ && "Insert block must be set for entry alloca");
 
     Function *cur_func = insert_block_->parent_function();
@@ -297,7 +303,10 @@ LoadInst *IRBuilder::create_load(Value *ptr, const std::string &name)
               "Load operand must be pointer, actually `%s`", ptr->type()->to_string().c_str());
 
     auto *loaded_type = static_cast<PointerType *>(ptr->type())->element_type();
-    MO_ASSERT(loaded_type->size() > 0, "Cannot load zero-sized type");
+    if (loaded_type->size() == 0)
+    {
+        MO_WARN("Trying to load zero size memory");
+    }
     auto *inst = LoadInst::create(ptr, insert_block_);
     inst->set_name(name);
     insert(inst);
@@ -408,7 +417,7 @@ ArrayType *IRBuilder::get_array_type(Type *elem_ty, uint64_t num)
     return module_->get_array_type(elem_ty, num);
 }
 
-StructType *IRBuilder::get_struct_type(const std::vector<MemberInfo> &members)
+StructType *IRBuilder::get_struct_type_anonymous(const std::vector<MemberInfo> &members)
 {
     return module_->get_struct_type_anonymous(members);
 }
