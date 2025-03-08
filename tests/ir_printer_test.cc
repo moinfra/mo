@@ -184,10 +184,11 @@ TEST(IRPrinterTest, GEPAndStruct)
   IRPrinter::print_module(module, os);
   std::cout << os.str();
 
-  std::string expected = R"(define void @struct_ops() {
+  std::string expected = R"(%MyStruct = type { i32, f32 }
+define void @struct_ops() {
 entry:
-  %struct_var = alloca { i32, f32 }
-  %gep_result = getelementptr { i32, f32 }*, { i32, f32 }* %struct_var, i32 0, i32 0
+  %struct_var = alloca %MyStruct
+  %gep_result = getelementptr %MyStruct, %MyStruct* %struct_var, i32 0, i32 0
   ret void
 }
 )";

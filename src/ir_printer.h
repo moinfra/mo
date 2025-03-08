@@ -8,6 +8,10 @@ class IRPrinter
 public:
     static void print_module(const Module &module, std::ostream &os)
     {
+        for (const auto &struct_ty : module.struct_types())
+        {
+            print_struct_type(*struct_ty, os);
+        }
         for (const auto &global_var : module.global_variables())
         {
             print_global_variable(*global_var, os);
@@ -16,6 +20,21 @@ public:
         {
             print_function(*function, os);
         }
+    }
+
+    static void print_struct_type(const StructType &struct_ty, std::ostream &os)
+    {
+        os << struct_ty.name() << " = type { ";
+        const auto &members = struct_ty.members();
+        for (size_t i = 0; i < members.size(); ++i)
+        {
+            if (i != 0)
+            {
+                os << ", ";
+            }
+            os << members[i].type->name();
+        }
+        os << " }\n";
     }
 
     static void print_global_variable(const GlobalVariable &global_var, std::ostream &os)
@@ -160,8 +179,10 @@ public:
         case Opcode::GetElementPtr:
         {
             auto gep_inst = static_cast<const GetElementPtrInst &>(inst);
-            os << "  " << format_value(&inst) << " = getelementptr " << gep_inst.base_pointer()->type()->name() << ", "
-               << gep_inst.base_pointer()->type()->name() << " " << format_value(gep_inst.base_pointer()) << ", ";
+            auto *ptr_type = gep_inst.base_pointer()->type()->as_pointer();
+            Type *element_type = ptr_type->element_type();
+            os << "  " << format_value(&inst) << " = getelementptr " << element_type->name() << ", "
+               << ptr_type->name() << " " << format_value(gep_inst.base_pointer()) << ", ";
             for (size_t i = 0; i < gep_inst.indices().size(); ++i)
             {
                 if (i != 0)

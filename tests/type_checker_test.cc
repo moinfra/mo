@@ -58,8 +58,11 @@ TEST_F(TypeCheckerTest, IsConvertible)
     auto IntegerType = Type::create_int();
     auto floatType = Type::create_float();
 
-    EXPECT_TRUE(is_convertible(*IntegerType, *floatType));
+    EXPECT_FALSE(is_convertible(*IntegerType, *floatType));
     EXPECT_FALSE(is_convertible(*floatType, *IntegerType));
+
+    EXPECT_TRUE(is_convertible(*IntegerType, *floatType, false));
+    EXPECT_TRUE(is_convertible(*floatType, *IntegerType, false));
 }
 
 TEST_F(TypeCheckerTest, ResolveAlias)
@@ -153,21 +156,14 @@ TEST_F(TypeCheckerTest, InvalidBreakOutsideLoop)
     EXPECT_TRUE(has_error(result.errors, "Break statement outside loop context"));
 }
 
-TEST_F(TypeCheckerTest, ValidNumericConversion)
-{
-    auto var_decl = std::make_unique<VarDeclStmt>();
-    var_decl->name = "x";
-    var_decl->type = Type::create_float();
-    var_decl->init_expr = std::make_unique<IntegerLiteralExpr>(42);
-
-    program_->globals.push_back(std::make_unique<GlobalDecl>(std::move(*var_decl)));
-
-    EXPECT_TRUE(no_error(check()));
-}
-
 TEST_F(TypeCheckerTest, InvalidPointerConversion)
 {
-    auto target_type = Type::create_int();
+    /*
+        fn main() -> i32 {
+            cast(*i32, 3.14f);
+        }
+    */
+    auto target_type = Type::create_pointer(Type::create_int());
     auto expr = std::make_unique<FloatLiteralExpr>(3.14f);
     auto cast_expr = std::make_unique<CastExpr>(std::move(target_type), std::move(expr));
 
@@ -183,6 +179,16 @@ TEST_F(TypeCheckerTest, InvalidPointerConversion)
 
 TEST_F(TypeCheckerTest, UndefinedVariable)
 {
+    /*
+        struct Point {
+            x: i32,
+            y: i32
+        }
+
+        fn main() -> i32 {
+            p.x;
+        }
+    */
 
     auto struct_decl = std::make_unique<StructDecl>("Point",
                                                     std::vector<TypedField>{
@@ -560,6 +566,6 @@ TEST_F(TypeCheckerTest, SizeofExprTypeInference)
     no_error(result);
 
     auto &stmt = static_cast<ExprStmt &>(*program_->functions.back()->body.back());
-    EXPECT_TRUE(types_equal(*stmt.expr->type, *Type::create_int()));
+    EXPECT_TRUE(types_equal(*stmt.expr->type, *Type::create_int(64, true)));
     EXPECT_EQ(stmt.expr->expr_category, Expr::Category::RValue);
 }

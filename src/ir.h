@@ -87,10 +87,12 @@ namespace std
             return hash<Type *>{}(p.first) ^ (hash<uint64_t>{}(p.second) << 1);
         }
     };
-    
+
     template <>
-    struct hash<std::pair<uint8_t, bool>> {
-        std::size_t operator()(const std::pair<uint8_t, bool>& k) const {
+    struct hash<std::pair<uint8_t, bool>>
+    {
+        std::size_t operator()(const std::pair<uint8_t, bool> &k) const
+        {
             return ((hash<uint8_t>()(k.first) ^ (hash<bool>()(k.second) << 1)));
         }
     };
@@ -604,8 +606,10 @@ public:
     void set_name(const std::string &name) { name_ = name; }
     std::string name() const override
     {
-        return name_;
+        return "%" + name_;
     }
+    std::string identifier() const { return name_; }
+
     uint8_t bit_width() const override { return size() * 8; }
     size_t alignment() const override
     {
@@ -1240,6 +1244,15 @@ public:
             result.push_back(gv.get());
         return result;
     }
+    
+    std::vector<StructType *> struct_types() const
+    {
+        std::vector<StructType *> result;
+        result.reserve(struct_types_.size());
+        for (auto &s : struct_types_)
+            result.push_back(s.get());
+        return result;
+    }
 
     StructType *get_struct_type_anonymous(const std::vector<MemberInfo> &members);
     StructType *try_get_named_global_type(const std::string &name);
@@ -1269,6 +1282,7 @@ private:
 
     std::vector<std::unique_ptr<Function>> functions_;
     std::vector<std::unique_ptr<GlobalVariable>> global_variables_;
+
     std::vector<std::unique_ptr<ConstantStruct>> constant_structs_;
     std::vector<std::unique_ptr<ConstantArray>> constant_arrays_;
     std::vector<std::unique_ptr<ConstantString>> constant_strings_;

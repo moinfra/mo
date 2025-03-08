@@ -640,7 +640,7 @@ StructType *Module::try_get_named_global_type(const std::string &name)
     // Check existing struct types
     for (auto &st : struct_types_)
     {
-        if (st->name() == name)
+        if (st->identifier() == name)
         {
             return st.get();
         }

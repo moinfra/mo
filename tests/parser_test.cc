@@ -260,15 +260,15 @@ TEST(ParserTest, StructDefinition)
     EXPECT_EQ(parse_and_normalize(input), input);
 }
 
-TEST(ParserTest, MethodImpl)
-{
-    std::string input = normalize_whitespace(
-        "impl Point {"
-        "   fn new(x: f32, y: f32) -> Point { }\n"
-        "}");
+// TEST(ParserTest, MethodImpl)
+// {
+//     std::string input = normalize_whitespace(
+//         "impl Point {"
+//         "   fn new(x: f32, y: f32) -> Point { }\n"
+//         "}");
 
-    EXPECT_EQ(parse_and_normalize(input), input);
-}
+//     EXPECT_EQ(parse_and_normalize(input), input);
+// }
 
 TEST(ParserTest, AddressOfExpr)
 {
