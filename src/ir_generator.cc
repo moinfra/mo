@@ -199,29 +199,13 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
     case ast::Type::Kind::Int:
     {
         auto &int_type = static_cast<const ast::IntegerType &>(ast_type);
-        ir_type = module_->get_integer_type(int_type.bit_width());
+        ir_type = module_->get_integer_type(int_type.bit_width(), !int_type.is_signed());
         break;
     }
     case ast::Type::Kind::Float:
     {
         auto &float_type = static_cast<const ast::FloatType &>(ast_type);
-        switch (float_type.precision())
-        {
-        case ast::FloatType::Precision::Half:
-            ir_type = module_->get_float_type(FloatType::Half);
-            break;
-        case ast::FloatType::Precision::Single:
-            ir_type = module_->get_float_type(FloatType::Single);
-            break;
-        case ast::FloatType::Precision::Double:
-            ir_type = module_->get_float_type(FloatType::Double);
-            break;
-        case ast::FloatType::Precision::Quad:
-            ir_type = module_->get_float_type(FloatType::Quad);
-            break;
-        default:
-            assert(false && "Unsupported float precision");
-        }
+        ir_type = module_->get_float_type(float_type.bit_width());
         break;
     }
     case ast::Type::Kind::Bool:
@@ -231,7 +215,7 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
     }
     case ast::Type::Kind::String:
     {
-        ir_type = module_->get_pointer_type(module_->get_integer_type(8)); // Represent string as i8*
+        ir_type = module_->get_pointer_type(module_->get_integer_type(8, true)); // Represent string as u8*
         break;
     }
     case ast::Type::Kind::Array:
@@ -245,7 +229,7 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
     {
         auto &tuple_type = static_cast<const ast::TupleType &>(ast_type);
         std::vector<MemberInfo> member_infos;
-        unsigned int idx = 0;
+        uint8_t idx = 0;
         for (const auto &elem_type : tuple_type.element_types())
         {
             member_infos.push_back(MemberInfo(std::to_string(idx), convert_type(*elem_type)));
@@ -389,7 +373,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
     // ---------------------------
     if (auto dst_bool = dynamic_cast<IntegerType *>(target_type))
     {
-        if (dst_bool->bits() == 1)
+        if (dst_bool->bit_width() == 1)
         {
             // Pointer -> Boolean (including null pointer check)
             if (source_type->is_pointer())
@@ -401,14 +385,14 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
             // Float -> Boolean
             if (source_type->is_float())
             {
-                Value *zero_fp = module_->get_constant_fp(source_type->as_float()->precision(), 0.0);
+                Value *zero_fp = module_->get_constant_fp(source_type->as_float()->bit_width(), 0.0);
                 return builder_.create_fcmp(FCmpInst::Predicate::ONE, val, zero_fp, "floatbool");
             }
 
             // Integer -> Boolean
             if (source_type->is_integer())
             {
-                Value *zero_int = module_->get_constant_int(source_type->as_integer()->bits(), 0);
+                Value *zero_int = module_->get_constant_int(source_type->as_integer()->bit_width(), 0);
                 return builder_.create_icmp(ICmpInst::Predicate::NE, val, zero_int, "intbool");
             }
         }
@@ -450,7 +434,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
     if (source_type->is_pointer() && target_type->is_integer())
     {
         // Only allow conversion to uintptr_t (assuming it's defined)
-        // if (target_type->bits() != module_->get_data_layout().pointer_size_bits()) TODO: support this
+        // if (target_type->bit_width() != module_->get_data_layout().pointer_size_bit_width()) TODO: support this
         // {
         //     std::cerr << "Error: pointer to integer conversion requires exact size match (uintptr_t)\n";
         //     assert(false && "Invalid pointer conversion");
@@ -466,7 +450,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
         if (auto dst_int = dynamic_cast<IntegerType *>(target_type))
         {
             // Signedness handling strategy
-            if (src_int->bits() < dst_int->bits())
+            if (src_int->bit_width() < dst_int->bit_width())
             {
                 // Sign extension only if source and destination types are signed
                 if (src_int->is_signed() && dst_int->is_signed())
@@ -481,11 +465,11 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
             }
 
             // Narrowing conversion (may lose data)
-            if (src_int->bits() > dst_int->bits() && strict_mode && !is_explicit)
+            if (src_int->bit_width() > dst_int->bit_width() && strict_mode && !is_explicit)
             {
                 std::cerr << "Warning: implicit truncation from "
-                          << src_int->bits() << " bits to "
-                          << dst_int->bits() << " bits\n";
+                          << src_int->bit_width() << " bit_width to "
+                          << dst_int->bit_width() << " bit_width\n";
             }
             return builder_.create_trunc(val, target_type, "trunc");
         }
@@ -496,7 +480,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
     // ---------------------------
     if (source_type->is_float() && target_type->is_float())
     {
-        if (source_type->bits() < target_type->bits())
+        if (source_type->bit_width() < target_type->bit_width())
         {
             return builder_.create_fpext(val, target_type, "fpext");
         }
@@ -554,11 +538,11 @@ Type *IRGenerator::dominant_type(Type *t1, Type *t2)
 
     if (t1->is_integer() && t2->is_integer())
     {
-        return t1->bits() > t2->bits() ? t1 : t2;
+        return t1->bit_width() > t2->bit_width() ? t1 : t2;
     }
     if (t1->is_float() && t2->is_float())
     {
-        return t1->bits() > t2->bits() ? t1 : t2;
+        return t1->bit_width() > t2->bit_width() ? t1 : t2;
     }
     if (t1->is_integer() && t2->is_float())
         return t2;
@@ -1385,7 +1369,7 @@ Value *IRGenerator::handle_unary(const ast::UnaryExpr &expr)
     {
         if (operand->type()->is_integer())
         {
-            unsigned bitwidth = operand->type()->as_integer()->bits();
+            unsigned bitwidth = operand->type()->as_integer()->bit_width();
             // Value *all_ones = ConstantInt::get(operand->type(), -1);
             Value *all_ones = module_->get_constant_int(bitwidth, -1);
             return builder_.create_bitxor(operand, all_ones, "bitnot");
@@ -1436,12 +1420,12 @@ Value *IRGenerator::handle_sizeof(const ast::SizeofExpr &expr)
     if (expr.kind == ast::SizeofExpr::Kind::Type)
     {
         Type *ty = convert_type(*expr.target_type);
-        return builder_.get_int32(ty->size());
+        return module_->get_constant_int(64, ty->size(), true);
     }
     else if (expr.kind == ast::SizeofExpr::Kind::Expr)
     {
         Type *target_expr_type = convert_type(*expr.target_expr->type);
-        return builder_.get_int32(target_expr_type->size());
+        return module_->get_constant_int(64, target_expr_type->size(), true);
     }
     else
     {
@@ -1615,7 +1599,7 @@ void IRGenerator::generate_function_body(const ast::FunctionDecl &func)
         AllocaInst *this_alloca = builder_.create_alloca(
             this_arg->type(), "this.addr");
         builder_.create_store(this_arg, this_alloca);
-        declare_symbol(func.params[0].name, this_alloca);
+        declare_symbol("this", this_alloca);
     }
 
     // 3c. Handle regular parameters
@@ -2106,7 +2090,7 @@ Constant *IRGenerator::generate_constant_initializer(const ast::Expr &expr)
     else if (auto float_lit = dynamic_cast<const ast::FloatLiteralExpr *>(&expr))
     {
         return module_->get_constant_fp(
-            module_->get_float_type(FloatType::Single),
+            module_->get_float_type(32),
             float_lit->value);
     }
     else if (auto struct_lit = dynamic_cast<const ast::StructLiteralExpr *>(&expr))

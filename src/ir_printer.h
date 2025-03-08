@@ -89,7 +89,7 @@ public:
         case Opcode::Store:
         {
             auto store_inst = static_cast<const StoreInst &>(inst);
-            os << "  store " << store_inst.stored_value()->type()->name() << " " << format_value(store_inst.stored_value()) << ", "
+            os << "  store " << store_inst.value()->type()->name() << " " << format_value(store_inst.value()) << ", "
                << store_inst.pointer()->type()->name() << " " << format_value(store_inst.pointer()) << "\n";
             break;
         }
@@ -409,6 +409,7 @@ public:
 
     static std::string format_value(const Value *value)
     {
+        MO_ASSERT(value, "Invalid value");
         if (auto *constant = dynamic_cast<const Constant *>(value))
         {
             return constant->as_string();

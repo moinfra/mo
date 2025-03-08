@@ -61,26 +61,15 @@ namespace ast
     {
         if (bit_width == 1)
         {
+            MO_WARN("Use create_bool() instead of create_int(1, false)");
             return std::make_unique<BoolType>();
         }
         return std::make_unique<IntegerType>(bit_width, unsigned_);
     }
 
-    TypePtr Type::create_float(uint8_t precision_bits)
+    TypePtr Type::create_float(uint8_t bit_width)
     {
-        FloatType::Precision prec;
-        switch (precision_bits)
-        {
-        case 16:
-        case 32:
-        case 64:
-        case 128:
-            prec = static_cast<FloatType::Precision>(precision_bits);
-            break;
-        default:
-            throw std::invalid_argument("Unsupported float precision");
-        }
-        return std::make_unique<FloatType>(prec);
+        return std::make_unique<FloatType>(bit_width);
     }
 
     TypePtr Type::create_string()
@@ -144,19 +133,7 @@ namespace ast
 
     std::string FloatType::to_string() const
     {
-        switch (precision_)
-        {
-        case Precision::Half:
-            return "f16";
-        case Precision::Single:
-            return "f32";
-        case Precision::Double:
-            return "f64";
-        case Precision::Quad:
-            return "f128";
-        default:
-            return "f32"; // Default case, should not happen
-        }
+        return "f" + std::to_string(bit_width_);
     }
 
     std::string BoolType::to_string() const
@@ -180,12 +157,12 @@ namespace ast
             }
             else
             {
-                return "*mut " + q->base_type().to_string();
+                return "*" + q->base_type().to_string();
             }
         }
         else
         {
-            return "*mut " + pointee_type->to_string();
+            return "*" + pointee_type->to_string();
         }
     }
 

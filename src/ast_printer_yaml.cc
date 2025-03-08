@@ -147,22 +147,8 @@ std::string ASTPrinter::print_type(const Type &type)
     {
         auto &float_type = static_cast<const FloatType &>(type);
         oss << "Float\n";
-        oss << indent() << "precision: ";
-        switch (float_type.precision())
-        {
-        case FloatType::Precision::Half:
-            oss << "Half";
-            break;
-        case FloatType::Precision::Single:
-            oss << "Single";
-            break;
-        case FloatType::Precision::Double:
-            oss << "Double";
-            break;
-        case FloatType::Precision::Quad:
-            oss << "Quad";
-            break;
-        }
+        oss << indent() << "bit_width: ";
+        oss << float_type.bit_width();
         break;
     }
     case Type::Kind::Bool:

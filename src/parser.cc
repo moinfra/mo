@@ -1036,6 +1036,8 @@ VarDeclStmt Parser::parse_var_decl()
 
 FunctionDecl Parser::parse_function_decl(StructType *receiver_type)
 {
+    auto is_static = try_consume(TokenType::Static);
+
     consume(TokenType::Fn, "Expected 'fn'");
 
     std::string name = current_.lexeme;
@@ -1046,14 +1048,9 @@ FunctionDecl Parser::parse_function_decl(StructType *receiver_type)
     std::vector<TypedField> params;
 
     // receiver
-    bool is_static = true;
     TypePtr receiver_type_ptr;
     if (receiver_type != nullptr)
     {
-        if (try_consume(TokenType::This))
-        {
-            is_static = false;
-        }
         receiver_type_ptr = receiver_type->clone();
         name = receiver_type->name() + "::" + name;
     }
@@ -1091,13 +1088,14 @@ FunctionDecl Parser::parse_function_decl(StructType *receiver_type)
         error("Expected block statement after function body");
     }
 
-    return FunctionDecl(
+    auto decl = FunctionDecl(
         std::move(name),
         std::move(return_type),
         std::move(params),
         std::move(body_statements),
         std::move(receiver_type_ptr),
         is_static);
+    return decl;
 }
 
 void Parser::error(const std::string &message) const
@@ -1176,9 +1174,9 @@ Program Parser::parse()
     return program;
 }
 
-FunctionDecl Parser::parse_method(ast::Type *target_type)
+FunctionDecl Parser::parse_method(ast::StructType *target_type)
 {
-    FunctionDecl method = parse_function_decl();
+    FunctionDecl method = parse_function_decl(target_type);
     method.is_method = true;
     return method;
 }
@@ -1194,7 +1192,12 @@ ImplBlock Parser::parse_impl_block()
 
     while (!match(TokenType::RBrace))
     {
-        impl.methods.push_back(std::make_unique<FunctionDecl>(parse_method(impl.target_type.get())));
+        auto ty = impl.target_type.get()->as_struct();
+        if (ty == nullptr)
+        {
+            error("Impl block can only be used for struct types");
+        }
+        impl.methods.push_back(std::make_unique<FunctionDecl>(parse_method(ty)));
     }
 
     consume(TokenType::RBrace, "Expected '}' to close impl block");

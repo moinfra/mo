@@ -246,8 +246,8 @@ ConstantInt *IRBuilder::get_int1(bool val)
 
 ConstantFP *IRBuilder::get_float(double val)
 {
-    // Assume single-precision floating-point type
-    auto *f_type = module_->get_float_type(FloatType::Single);
+    // Assume single-bit_width floating-point type
+    auto *f_type = module_->get_float_type(32);
     return module_->get_constant_fp(f_type, val);
 }
 
@@ -691,7 +691,7 @@ Value *IRBuilder::create_cast(Value *src_val, Type *target_type,
     const auto tgt_fp = dynamic_cast<FloatType *>(target_type);
 
     /*-------------------- Special handling for boolean type --------------------*/
-    if (tgt_int && tgt_int->bits() == 1)
+    if (tgt_int && tgt_int->bit_width() == 1)
     {
         // Any type conversion to boolean requires explicit comparison with zero.
         Value *zero = nullptr;
@@ -722,16 +722,16 @@ Value *IRBuilder::create_cast(Value *src_val, Type *target_type,
     if (src_int && tgt_int)
     {
         // Get the bit widths of the source and target integer types.
-        const unsigned src_bits = src_int->bits();
-        const unsigned tgt_bits = tgt_int->bits();
+        const uint8_t src_bit_width = src_int->bit_width();
+        const uint8_t tgt_bit_width = tgt_int->bit_width();
 
-        if (src_bits < tgt_bits)
+        if (src_bit_width < tgt_bit_width)
         {
             // If the source bit width is less than the target bit width, perform either sign extension or zero extension.
             // The decision depends on whether the source integer type is signed or unsigned.
             inst = src_int->is_signed() ? static_cast<Instruction *>(create_sext(src_val, target_type, name)) : static_cast<Instruction *>(create_zext(src_val, target_type, name));
         }
-        else if (src_bits > tgt_bits)
+        else if (src_bit_width > tgt_bit_width)
         {
             // If the source bit width is greater than the target bit width, perform truncation.
             inst = create_trunc(src_val, target_type, name);
@@ -762,13 +762,13 @@ Value *IRBuilder::create_cast(Value *src_val, Type *target_type,
         inst = src_int->is_signed() ? static_cast<Instruction *>(create_sitofp(src_val, target_type, name)) : static_cast<Instruction *>(create_uitofp(src_val, target_type, name));
     }
 
-    /*-------------------- Floating-point precision adjustment --------------------*/
+    /*-------------------- Floating-point bit_width adjustment --------------------*/
     else if (src_fp && tgt_fp)
     {
-        // If converting between floating-point types, adjust the precision.
-        if (src_fp->bits() < tgt_fp->bits())
+        // If converting between floating-point types, adjust the bit_width.
+        if (src_fp->bit_width() < tgt_fp->bit_width())
         {
-            // If the source floating-point type has lower precision than the target, perform floating-point extension.
+            // If the source floating-point type has lower bit_width than the target, perform floating-point extension.
             inst = create_fpext(src_val, target_type, name);
         }
         else

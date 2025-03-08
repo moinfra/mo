@@ -138,7 +138,7 @@ std::string ASTPrinter::print(const Type& type) {
         return "i" + std::to_string(bw);
     }
     if (const FloatType* f = type.as_float()) {
-        auto bw = static_cast<uint8_t>(f->precision());
+        auto bw = static_cast<uint8_t>(f->bit_width());
         return "f" + std::to_string(bw); 
     }
     if (type.is_bool()) {
