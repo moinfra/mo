@@ -535,12 +535,17 @@ GlobalVariable *Module::create_global_variable(Type *type, bool is_constant, Con
 
 IntegerType *Module::get_integer_type(uint8_t bit_width, bool unsigned_)
 {
-    auto &type = integer_types_[bit_width];
+    auto &type = integer_types_[std::make_pair(bit_width, unsigned_)];
     if (!type)
     {
         type = std::unique_ptr<IntegerType>(new IntegerType(this, bit_width, unsigned_));
     }
     return type.get();
+}
+
+IntegerType *Module::get_boolean_type()
+{
+    return get_integer_type(1, false); // i1
 }
 
 FloatType *Module::get_float_type(uint8_t bit_width)
@@ -704,7 +709,7 @@ static bool is_supported_bit_width(uint8_t bit_width)
     return bit_width == 1 || bit_width == 8 || bit_width == 16 || bit_width == 32 || bit_width == 64;
 }
 
-uint64_t truncate_value(uint64_t value, uint8_t bit_width, bool is_signed)
+uint64_t truncate_value(uint64_t value, uint8_t bit_width, bool is_unsigned)
 {
     const uint64_t mask = (bit_width == 64) ? 0xFFFFFFFFFFFFFFFF : (1ULL << bit_width) - 1;
     if (bit_width > 0)
@@ -712,7 +717,7 @@ uint64_t truncate_value(uint64_t value, uint8_t bit_width, bool is_signed)
         value &= mask; // Truncate high bit_width only if bit_width > 0
     }
 
-    if (is_signed && bit_width > 0)
+    if (!is_unsigned && bit_width > 0)
     {
         // Check for any non-zero bit_width to handle sign extension
         const uint64_t sign_bit = 1ULL << (bit_width - 1);
@@ -728,9 +733,9 @@ ConstantInt *Module::get_constant_int(IntegerType *type, uint64_t value)
 {
     MO_ASSERT(type != nullptr, "Invalid integer type");
 
-    const bool is_signed = type->is_signed();
-    const uint64_t processed_value = truncate_value(value, type->bit_width(), is_signed);
-    MO_DEBUG("Creating constant int, type: '%s', value: %zu", type->name().c_str(), processed_value);
+    const bool is_unsigned = type->is_unsigned();
+    const uint64_t processed_value = truncate_value(value, type->bit_width(), is_unsigned);
+    MO_DEBUG("Creating %s constant int, type: '%s', value: %zu", is_unsigned ? "unsigned" : "signed", type->name().c_str(), processed_value);
     const auto key = std::make_pair(type, processed_value);
     if (auto it = constant_ints_.find(key); it != constant_ints_.end())
     {
@@ -748,6 +753,10 @@ ConstantInt *Module::get_constant_int(uint8_t bit_width, uint64_t value, bool un
 {
     MO_ASSERT(is_supported_bit_width(bit_width), "Bits must be 1/8/16/32/64");
     return get_constant_int(get_integer_type(bit_width, unsigned_), value);
+}
+
+ConstantInt *Module::get_constant_bool(bool value) {
+    return get_constant_int(1, value ? 1 : 0, false);
 }
 
 ConstantFP *Module::get_constant_fp(FloatType *type, double value)
@@ -795,6 +804,9 @@ Constant *Module::get_constant_zero(Type *type)
     }
     else if (type->is_integer())
     {
+        if(type->bit_width() == 1) {
+            return get_constant_bool(false);
+        }
         return get_constant_int(type->as_integer(), 0);
     }
     else if (type->is_float())
@@ -1131,7 +1143,7 @@ BasicBlock *PhiInst::get_incoming_block(unsigned i) const
 //                           ICmpInst Implementations
 // ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 ICmpInst::ICmpInst(BasicBlock *parent, std::vector<Value *> ops)
-    : BinaryInst(Opcode::ICmp, parent->parent_function()->parent_module()->get_integer_type(1), parent, ops, ""),
+    : BinaryInst(Opcode::ICmp, parent->parent_function()->parent_module()->get_boolean_type(), parent, ops, ""),
       pred_(EQ)
 {
 }
@@ -1149,7 +1161,7 @@ ICmpInst *ICmpInst::create(Predicate pred, Value *lhs, Value *rhs,
 //                           FCmpInst Implementations
 // ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 FCmpInst::FCmpInst(Predicate pred, BasicBlock *parent, std::vector<Value *> operands, const std::string &name)
-    : BinaryInst(Opcode::FCmp, parent->parent_function()->parent_module()->get_integer_type(1), parent, operands, name), pred_(pred) {}
+    : BinaryInst(Opcode::FCmp, parent->parent_function()->parent_module()->get_boolean_type(), parent, operands, name), pred_(pred) {}
 
 FCmpInst *FCmpInst::create(Predicate pred, Value *lhs, Value *rhs, BasicBlock *parent, const std::string &name)
 {

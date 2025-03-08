@@ -72,7 +72,7 @@ struct Member;
 struct StructLayout;
 
 StructLayout calculate_aligned_layout(const std::vector<Type *> &members);
-uint64_t truncate_value(uint64_t value, uint8_t bit_width, bool is_signed);
+uint64_t truncate_value(uint64_t value, uint8_t bit_width, bool is_unsigned);
 
 //===----------------------------------------------------------------------===//
 //                              Utility Classes
@@ -87,7 +87,14 @@ namespace std
             return hash<Type *>{}(p.first) ^ (hash<uint64_t>{}(p.second) << 1);
         }
     };
-}
+    
+    template <>
+    struct hash<std::pair<uint8_t, bool>> {
+        std::size_t operator()(const std::pair<uint8_t, bool>& k) const {
+            return ((hash<uint8_t>()(k.first) ^ (hash<bool>()(k.second) << 1)));
+        }
+    };
+};
 
 enum class Qualifier : uint8_t
 {
@@ -187,7 +194,7 @@ public:
     virtual bool is_scalar() const noexcept { return false; }
     virtual bool is_numeric() const noexcept { return false; }
     virtual bool is_aggregate() const noexcept { return false; }
-    virtual bool is_signed() const noexcept { return false; }
+    virtual bool is_unsigned() const noexcept { return false; }
 
     // Type conversion methods
     virtual IntegerType *as_integer() noexcept { return nullptr; }
@@ -282,9 +289,9 @@ class IntegerType final : public NumericType
 {
 public:
     size_t size() const override { return (bit_width_ + 7) / 8; }
-    std::string name() const override { return "i" + std::to_string(bit_width_); }
+    std::string name() const override { return (unsigned_ ? "u" : "i") + std::to_string(bit_width_); }
     uint8_t bit_width() const override { return bit_width_; }
-    bool is_signed() const noexcept override { return !unsigned_; }
+    bool is_unsigned() const noexcept override { return unsigned_; }
 
     IntegerType *as_integer() noexcept override { return this; }
     const IntegerType *as_integer() const noexcept override { return this; }
@@ -1184,6 +1191,7 @@ public:
 
     Type *get_void_type();
     IntegerType *get_integer_type(uint8_t bit_width, bool unsigned_ = false);
+    IntegerType *get_boolean_type();
     FloatType *get_float_type(uint8_t bit_width);
 
     PointerType *get_pointer_type(Type *element_type);
@@ -1191,6 +1199,7 @@ public:
 
     ConstantInt *get_constant_int(IntegerType *type, uint64_t value);
     ConstantInt *get_constant_int(uint8_t bit_width, uint64_t value, bool unsigned_ = false);
+    ConstantInt *get_constant_bool(bool value);
 
     ConstantFP *get_constant_fp(FloatType *type, double value);
     ConstantFP *get_constant_fp(uint8_t bit_width, double value);
@@ -1241,7 +1250,8 @@ public:
 private:
     std::string name_;
     std::unique_ptr<VoidType> void_type_;
-    std::unordered_map<uint8_t, std::unique_ptr<IntegerType>> integer_types_;
+    // (bit_width, unsigned) -> integer_type
+    std::unordered_map<std::pair<uint8_t, bool>, std::unique_ptr<IntegerType>> integer_types_;
     std::unordered_map<uint8_t, std::unique_ptr<FloatType>> float_types_;
     // (element_type) -> pointer_type
     std::unordered_map<Type *, std::unique_ptr<PointerType>> pointer_types_;

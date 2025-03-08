@@ -143,7 +143,8 @@ ICmpInst *IRBuilder::create_icmp(ICmpInst::Predicate pred, Value *lhs,
     assert(lhs->type()->type_id() == Type::IntTy &&
            rhs->type()->type_id() == Type::IntTy &&
            "ICmp requires integer operands");
-    assert(*lhs->type() == *rhs->type() && "Operand type mismatch");
+    MO_ASSERT(*lhs->type() == *rhs->type(), "Operand type mismatch: %s vs %s",
+              lhs->type()->to_string().c_str(), rhs->type()->to_string().c_str());
 
     auto *inst = ICmpInst::create(pred, lhs, rhs, insert_block_);
     inst->set_name(name);
@@ -176,7 +177,7 @@ BranchInst *IRBuilder::create_cond_br(Value *cond, BasicBlock *true_bb,
                                       BasicBlock *false_bb)
 {
     // Condition must be i1 type
-    assert(*cond->type() == *module_->get_integer_type(1) &&
+    assert(*cond->type() == *module_->get_boolean_type() &&
            "Condition must be i1 type");
 
     auto *inst = BranchInst::create_cond(cond, true_bb, false_bb, insert_block_);
@@ -241,7 +242,7 @@ ConstantInt *IRBuilder::get_int64(int64_t val)
 
 ConstantInt *IRBuilder::get_int1(bool val)
 {
-    return module_->get_constant_int(1, val ? 1 : 0);
+    return module_->get_constant_bool(val);
 }
 
 ConstantFP *IRBuilder::get_float(double val)
@@ -738,7 +739,7 @@ Value *IRBuilder::create_cast(Value *src_val, Type *target_type,
         {
             // If the source bit width is less than the target bit width, perform either sign extension or zero extension.
             // The decision depends on whether the source integer type is signed or unsigned.
-            inst = src_int->is_signed() ? static_cast<Instruction *>(create_sext(src_val, target_type, name)) : static_cast<Instruction *>(create_zext(src_val, target_type, name));
+            inst = src_int->is_unsigned() ? static_cast<Instruction *>(create_zext(src_val, target_type, name)) : static_cast<Instruction *>(create_sext(src_val, target_type, name));
         }
         else if (src_bit_width > tgt_bit_width)
         {
@@ -762,13 +763,13 @@ Value *IRBuilder::create_cast(Value *src_val, Type *target_type,
         }
         // Perform either floating-point to signed integer conversion or floating-point to unsigned integer conversion.
         // The decision depends on whether the target integer type is signed or unsigned.
-        inst = tgt_int->is_signed() ? static_cast<Instruction *>(create_fptosi(src_val, target_type, name)) : static_cast<Instruction *>(create_fptoui(src_val, target_type, name));
+        inst = tgt_int->is_unsigned() ? static_cast<Instruction *>(create_fptoui(src_val, target_type, name)) : static_cast<Instruction *>(create_fptosi(src_val, target_type, name));
     }
     else if (src_int && tgt_fp)
     {
         // Perform either signed integer to floating-point conversion or unsigned integer to floating-point conversion.
         // The decision depends on whether the source integer type is signed or unsigned.
-        inst = src_int->is_signed() ? static_cast<Instruction *>(create_sitofp(src_val, target_type, name)) : static_cast<Instruction *>(create_uitofp(src_val, target_type, name));
+        inst = src_int->is_unsigned() ? static_cast<Instruction *>(create_uitofp(src_val, target_type, name)) : static_cast<Instruction *>(create_sitofp(src_val, target_type, name));
     }
 
     /*-------------------- Floating-point bit_width adjustment --------------------*/

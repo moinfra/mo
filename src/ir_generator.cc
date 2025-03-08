@@ -199,7 +199,7 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
     case ast::Type::Kind::Int:
     {
         auto &int_type = static_cast<const ast::IntegerType &>(ast_type);
-        ir_type = module_->get_integer_type(int_type.bit_width(), !int_type.is_signed());
+        ir_type = module_->get_integer_type(int_type.bit_width(), int_type.is_unsigned());
         break;
     }
     case ast::Type::Kind::Float:
@@ -210,7 +210,7 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
     }
     case ast::Type::Kind::Bool:
     {
-        ir_type = module_->get_integer_type(1); // Represent bool as i1
+        ir_type = module_->get_boolean_type(); // Represent bool as i1
         break;
     }
     case ast::Type::Kind::String:
@@ -301,7 +301,7 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
                 const auto &member = struct_type.get_member(i);
                 member_infos.push_back(MemberInfo(member.name, convert_type(*member.type)));
             }
-             // register new struct type
+            // register new struct type
             StructType *st = module_->get_struct_type(struct_name, member_infos);
             type_cache_[&ast_type] = st;
             ir_type = st;
@@ -321,7 +321,7 @@ Type *IRGenerator::convert_type(const ast::Type &ast_type)
         break;
     }
     default:
-        assert(false && "Unsupported type kind");
+        MO_ASSERT(false, "Unsupported type kind");
     }
 
     type_cache_[&ast_type] = ir_type;
@@ -354,7 +354,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
     if (val->type()->is_struct() && !target_type->is_struct())
     {
         // error("Cannot implicitly convert tuple to scalar type");
-        assert(false && "Invalid conversion");
+        MO_ASSERT(false, "Invalid conversion");
     }
 
     if (val->type()->is_struct() && target_type->is_struct())
@@ -362,7 +362,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
         if (*val->type() != *target_type)
         {
             // error("Tuple type mismatch in conversion");
-            assert(false && "Invalid conversion");
+            MO_ASSERT(false, "Invalid conversion");
         }
         return val;
     }
@@ -383,14 +383,14 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
             // Float -> Boolean
             if (source_type->is_float())
             {
-                Value *zero_fp = module_->get_constant_fp(source_type->as_float()->bit_width(), 0.0);
+                Value *zero_fp = module_->get_constant_zero(source_type->as_float());
                 return builder_.create_fcmp(FCmpInst::Predicate::ONE, val, zero_fp, "floatbool");
             }
 
             // Integer -> Boolean
             if (source_type->is_integer())
             {
-                Value *zero_int = module_->get_constant_int(source_type->as_integer()->bit_width(), 0);
+                Value *zero_int = module_->get_constant_zero(source_type->as_integer()); // unsigned
                 return builder_.create_icmp(ICmpInst::Predicate::NE, val, zero_int, "intbool");
             }
         }
@@ -420,7 +420,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
             if (!is_explicit && strict_mode)
             {
                 std::cerr << "Error: invalid implicit conversion from integer to pointer\n";
-                assert(false && "Cast required");
+                MO_ASSERT(false, "Cast required");
             }
             return builder_.create_inttoptr(val, target_type, "int2ptr");
         }
@@ -435,7 +435,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
         // if (target_type->bit_width() != module_->get_data_layout().pointer_size_bit_width()) TODO: support this
         // {
         //     std::cerr << "Error: pointer to integer conversion requires exact size match (uintptr_t)\n";
-        //     assert(false && "Invalid pointer conversion");
+        //     MO_ASSERT(false, "Invalid pointer conversion");
         // }
         return builder_.create_ptrtoint(val, target_type, "ptr2int");
     }
@@ -451,7 +451,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
             if (src_int->bit_width() < dst_int->bit_width())
             {
                 // Sign extension only if source and destination types are signed
-                if (src_int->is_signed() && dst_int->is_signed())
+                if (!src_int->is_unsigned() && !dst_int->is_unsigned())
                 {
                     return builder_.create_sext(val, target_type, "sext");
                 }
@@ -502,18 +502,18 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
         {
             std::cerr << "Warning: implicit conversion from floating to integer\n";
         }
-        CastInst *cast = target_int_type->is_signed()
-                             ? static_cast<CastInst *>(builder_.create_fptosi(val, target_type, "fptosi"))
-                             : static_cast<CastInst *>(builder_.create_fptoui(val, target_type, "fptoui"));
+        CastInst *cast = target_int_type->is_unsigned()
+                             ? static_cast<CastInst *>(builder_.create_fptoui(val, target_type, "fptoui"))
+                             : static_cast<CastInst *>(builder_.create_fptosi(val, target_type, "fptosi"));
         return cast;
     }
 
     if (source_type->is_integer() && target_type->is_float())
     {
         IntegerType *source_int_type = source_type->as_integer();
-        CastInst *cast = source_int_type->is_signed()
-                             ? static_cast<CastInst *>(builder_.create_sitofp(val, target_type, "sitofp"))
-                             : static_cast<CastInst *>(builder_.create_uitofp(val, target_type, "uitofp"));
+        CastInst *cast = source_int_type->is_unsigned()
+                             ? static_cast<CastInst *>(builder_.create_uitofp(val, target_type, "uitofp"))
+                             : static_cast<CastInst *>(builder_.create_sitofp(val, target_type, "sitofp"));
         return cast;
     }
 
@@ -523,7 +523,7 @@ Value *IRGenerator::handle_conversion(Value *val, Type *target_type, bool is_exp
     std::cerr << "Error: no viable conversion from "
               << source_type->name() << " to "
               << target_type->name() << "\n";
-    assert(false && "Invalid implicit conversion");
+    MO_ASSERT(false, "Invalid implicit conversion");
     return nullptr;
 }
 
@@ -546,7 +546,7 @@ Type *IRGenerator::dominant_type(Type *t1, Type *t2)
         return t2;
     if (t1->is_float() && t2->is_integer())
         return t1;
-    assert(false && "Type mismatch in binary operation");
+    MO_ASSERT(false, "Type mismatch in binary operation");
     return nullptr;
 }
 
@@ -610,7 +610,7 @@ void IRGenerator::generate_stmt(const ast::Statement &stmt)
     }
     else
     {
-        assert(false && "Unsupported statement type");
+        MO_ASSERT(false, "Unsupported statement type");
     }
 }
 
@@ -753,7 +753,7 @@ void IRGenerator::handle_if(const ast::IfStmt &if_stmt)
     BasicBlock *merge_bb = current_func_->create_basic_block("if.merge");
 
     // Branch based on condition
-    Value *cond = handle_conversion(cond_val, module_->get_integer_type(1));
+    Value *cond = handle_conversion(cond_val, module_->get_boolean_type());
     builder_.create_cond_br(cond, then_bb, else_bb ? else_bb : merge_bb);
 
     // Generate then block
@@ -819,7 +819,7 @@ void IRGenerator::handle_loop(const ast::WhileStmt &loop)
     // Condition block
     builder_.set_insert_point(cond_bb);
     Value *cond_val = generate_expr(*loop.condition);
-    Value *cond = handle_conversion(cond_val, module_->get_integer_type(1));
+    Value *cond = handle_conversion(cond_val, module_->get_boolean_type());
     builder_.create_cond_br(cond, body_bb, end_bb);
 
     // Body block
@@ -1023,7 +1023,7 @@ void IRGenerator::generate_array_init(AllocaInst *array_ptr, const ast::Expr &in
     }
     else
     {
-        assert(false && "Unsupported array initializer");
+        MO_ASSERT(false, "Unsupported array initializer");
     }
 }
 
@@ -1154,23 +1154,16 @@ Value *IRGenerator::handle_binary(const ast::BinaryExpr &bin)
     case TokenType::Modulo:
         if (lhs_type->is_integer())
         {
-            return lhs_type->is_signed() ? builder_.create_srem(lhs, rhs, "srem") : builder_.create_urem(lhs, rhs, "urem");
+            return lhs_type->is_unsigned() ? builder_.create_urem(lhs, rhs, "urem") : builder_.create_srem(lhs, rhs, "srem");
         }
-        assert(false && "Modulo on non-integer type");
+        MO_ASSERT(false, "Modulo on non-integer type");
         break;
 
     case TokenType::LShift:
         return builder_.create_shl(lhs, rhs, "shl");
 
     case TokenType::RShift:
-        if (lhs_type->is_signed())
-        {
-            return builder_.create_ashr(lhs, rhs, "ashr");
-        }
-        else
-        {
-            return builder_.create_lshr(lhs, rhs, "lshr");
-        }
+        return lhs_type->is_unsigned() ? builder_.create_lshr(lhs, rhs, "lshr") : builder_.create_ashr(lhs, rhs, "ashr");
     default:
         MO_ASSERT(false, "Unexpected binary operator");
         return nullptr;
@@ -1202,16 +1195,16 @@ Value *IRGenerator::handle_compound_assign(const ast::BinaryExpr &bin)
         result = builder_.create_mul(loaded_val, rhs, "mul_tmp");
         break;
     case TokenType::DivAssign:
-        result = loaded_val->type()->is_signed() ? builder_.create_sdiv(loaded_val, rhs, "sdiv_tmp") : builder_.create_udiv(loaded_val, rhs, "udiv_tmp");
+        result = loaded_val->type()->is_unsigned() ? builder_.create_udiv(loaded_val, rhs, "udiv_tmp") : builder_.create_sdiv(loaded_val, rhs, "sdiv_tmp");
         break;
     case TokenType::ModAssign:
-        result = loaded_val->type()->is_signed() ? builder_.create_srem(loaded_val, rhs, "srem_tmp") : builder_.create_urem(loaded_val, rhs, "urem_tmp");
+        result = loaded_val->type()->is_unsigned() ? builder_.create_urem(loaded_val, rhs, "urem_tmp") : builder_.create_srem(loaded_val, rhs, "srem_tmp");
         break;
     case TokenType::LSAssign:
         result = builder_.create_shl(loaded_val, rhs, "shl_tmp");
         break;
     case TokenType::RSAssign:
-        result = loaded_val->type()->is_signed() ? builder_.create_ashr(loaded_val, rhs, "ashr_tmp") : builder_.create_lshr(loaded_val, rhs, "lshr_tmp");
+        result = loaded_val->type()->is_unsigned() ? builder_.create_lshr(loaded_val, rhs, "lshr_tmp") : builder_.create_ashr(loaded_val, rhs, "ashr_tmp");
         break;
     case TokenType::AndAssign:
         result = builder_.create_bitand(loaded_val, rhs, "and_tmp");
@@ -1240,19 +1233,19 @@ Value *IRGenerator::handle_logical_and(const ast::BinaryExpr &and_expr)
     BasicBlock *merge_bb = current_func_->create_basic_block("and.merge");
 
     Value *lhs_val = generate_expr(*and_expr.left);
-    Value *cond = handle_conversion(lhs_val, module_->get_integer_type(1));
+    Value *cond = handle_conversion(lhs_val, module_->get_boolean_type());
     builder_.create_cond_br(cond, rhs_bb, merge_bb);
 
     // Generate RHS in new block
     BasicBlock *save_block = current_block();
     builder_.set_insert_point(rhs_bb);
     Value *rhs_val = generate_expr(*and_expr.right);
-    Value *rhs_cond = handle_conversion(rhs_val, module_->get_integer_type(1));
+    Value *rhs_cond = handle_conversion(rhs_val, module_->get_boolean_type());
     builder_.create_br(merge_bb);
 
     // Create PHI node
     builder_.set_insert_point(merge_bb);
-    PhiInst *phi = builder_.create_phi(module_->get_integer_type(1), "and.result");
+    PhiInst *phi = builder_.create_phi(module_->get_boolean_type(), "and.result");
     phi->add_incoming(builder_.get_int1(false), save_block);
     phi->add_incoming(rhs_cond, rhs_bb);
     return phi;
@@ -1264,19 +1257,19 @@ Value *IRGenerator::handle_logical_or(const ast::BinaryExpr &or_expr)
     BasicBlock *merge_bb = current_func_->create_basic_block("or.merge");
 
     Value *lhs_val = generate_expr(*or_expr.left);
-    Value *cond = handle_conversion(lhs_val, module_->get_integer_type(1));
+    Value *cond = handle_conversion(lhs_val, module_->get_boolean_type());
     builder_.create_cond_br(cond, merge_bb, rhs_bb);
 
     // Generate RHS in new block
     BasicBlock *save_block = current_block();
     builder_.set_insert_point(rhs_bb);
     Value *rhs_val = generate_expr(*or_expr.right);
-    Value *rhs_cond = handle_conversion(rhs_val, module_->get_integer_type(1));
+    Value *rhs_cond = handle_conversion(rhs_val, module_->get_boolean_type());
     builder_.create_br(merge_bb);
 
     // Create PHI node
     builder_.set_insert_point(merge_bb);
-    PhiInst *phi = builder_.create_phi(module_->get_integer_type(1), "or.result");
+    PhiInst *phi = builder_.create_phi(module_->get_boolean_type(), "or.result");
     phi->add_incoming(builder_.get_int1(true), save_block);
     phi->add_incoming(rhs_cond, rhs_bb);
     return phi;
@@ -1427,7 +1420,7 @@ Value *IRGenerator::handle_sizeof(const ast::SizeofExpr &expr)
     }
     else
     {
-        assert(false && "Invalid sizeof expression");
+        MO_ASSERT(false, "Invalid sizeof expression");
         return nullptr;
     }
 }
@@ -1440,7 +1433,7 @@ Value *IRGenerator::handle_address_of(const ast::AddressOfExpr &expr)
     {
         return load->pointer();
     }
-    assert(false && "Can't take address of non-lvalue");
+    MO_ASSERT(false, "Can't take address of non-lvalue");
     return nullptr;
 }
 
@@ -1815,7 +1808,7 @@ Value *IRGenerator::handle_method_invocation(const ast::MemberAccessExpr &expr)
         }
         else
         {
-            assert(false && "Invalid function type");
+            MO_ASSERT(false, "Invalid function type");
         }
     }
     else
@@ -1852,7 +1845,7 @@ Value *IRGenerator::handle_this_pointer(Value *base, TokenType accessor)
     case TokenType::Dot:
         return base; // 直接使用对象地址
     default:
-        assert(false && "Invalid accessor for method call");
+        MO_ASSERT(false, "Invalid accessor for method call");
     }
 }
 
@@ -2082,7 +2075,7 @@ Constant *IRGenerator::generate_constant_initializer(const ast::Expr &expr)
     else if (auto int_lit = dynamic_cast<const ast::BooleanLiteralExpr *>(&expr))
     {
         return module_->get_constant_int(
-            module_->get_integer_type(1),
+            module_->get_boolean_type(),
             int_lit->value);
     }
     else if (auto float_lit = dynamic_cast<const ast::FloatLiteralExpr *>(&expr))

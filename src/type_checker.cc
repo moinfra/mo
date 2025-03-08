@@ -268,7 +268,7 @@ void TypeChecker::visit(IntegerLiteralExpr &expr)
 
 void TypeChecker::visit(BooleanLiteralExpr &expr)
 {
-    expr.type = Type::create_int(1);
+    expr.type = Type::create_bool();
     expr.expr_category = Expr::Category::RValue;
 }
 

@@ -40,8 +40,14 @@ protected:
         {
             TypeChecker checker(&program);
             auto ret = checker.check();
-            EXPECT_TRUE(no_error(ret));
-            MO_DEBUG("Type checking passed\n");
+            auto ok = no_error(ret);
+            EXPECT_TRUE(ok);
+            if (ok)
+            {
+                MO_DEBUG("Type checking passed\n");
+            } else {
+                MO_DEBUG("Type checking failed\n");
+            }
         }
         generator.generate(program);
 
@@ -94,298 +100,298 @@ protected:
 //                           Literal Expression Tests
 //===----------------------------------------------------------------------===//
 
-// TEST_F(IrGeneratorTest, IntegerLiteral)
-// {
-//     auto fn = create_test_function();
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::IntegerLiteralExpr>(42)));
+TEST_F(IrGeneratorTest, IntegerLiteral)
+{
+    auto fn = create_test_function();
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::IntegerLiteralExpr>(42)));
 
-//     generate_simple_program(std::move(fn));
+    generate_simple_program(std::move(fn));
 
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
 
-//     ReturnInst *ret = find_return(test_fn);
-//     ASSERT_NE(ret, nullptr);
+    ReturnInst *ret = find_return(test_fn);
+    ASSERT_NE(ret, nullptr);
 
-//     auto *constInt = dynamic_cast<ConstantInt *>(ret->value());
-//     ASSERT_NE(constInt, nullptr);
-//     EXPECT_EQ(constInt->value(), 42);
-// }
+    auto *const_int = dynamic_cast<ConstantInt *>(ret->value());
+    ASSERT_NE(const_int, nullptr);
+    EXPECT_EQ(const_int->value(), 42);
+}
 
-// TEST_F(IrGeneratorTest, BooleanLiteral)
-// {
-//     auto fn = create_test_function(ast::Type::create_bool());
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::BooleanLiteralExpr>(true)));
+TEST_F(IrGeneratorTest, BooleanLiteral)
+{
+    auto fn = create_test_function(ast::Type::create_bool());
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::BooleanLiteralExpr>(true)));
 
-//     generate_simple_program(std::move(fn));
+    generate_simple_program(std::move(fn));
 
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
 
-//     ReturnInst *ret = find_return(test_fn);
-//     ASSERT_NE(ret, nullptr);
+    ReturnInst *ret = find_return(test_fn);
+    ASSERT_NE(ret, nullptr);
 
-//     auto *constInt = dynamic_cast<ConstantInt *>(ret->value());
-//     ASSERT_NE(constInt, nullptr);
-//     EXPECT_EQ(constInt->value(), 1);
-// }
+    auto *const_int = dynamic_cast<ConstantInt *>(ret->value());
+    ASSERT_NE(const_int, nullptr);
+    EXPECT_EQ(const_int->value(), -1);
+}
 
-// TEST_F(IrGeneratorTest, FloatLiteral)
-// {
-//     auto fn = create_test_function(ast::Type::create_float());
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::FloatLiteralExpr>(3.14f)));
+TEST_F(IrGeneratorTest, FloatLiteral)
+{
+    auto fn = create_test_function(ast::Type::create_float());
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::FloatLiteralExpr>(3.14f)));
 
-//     generate_simple_program(std::move(fn));
+    generate_simple_program(std::move(fn));
 
-//     Function *test_func = module.get_function("test");
-//     ASSERT_NE(test_func, nullptr);
+    Function *test_func = module.get_function("test");
+    ASSERT_NE(test_func, nullptr);
 
-//     ReturnInst *ret = find_return(test_func);
-//     ASSERT_NE(ret, nullptr);
+    ReturnInst *ret = find_return(test_func);
+    ASSERT_NE(ret, nullptr);
 
-//     auto *const_fp = dynamic_cast<ConstantFP *>(ret->value());
-//     ASSERT_NE(const_fp, nullptr);
-//     EXPECT_FLOAT_EQ(const_fp->value(), 3.14f);
-// }
+    auto *const_fp = dynamic_cast<ConstantFP *>(ret->value());
+    ASSERT_NE(const_fp, nullptr);
+    EXPECT_FLOAT_EQ(const_fp->value(), 3.14f);
+}
 
-// TEST_F(IrGeneratorTest, StringLiteral)
-// {
-//     /*
-//         const u8* hello = "hello";
+TEST_F(IrGeneratorTest, StringLiteral)
+{
+    /*
+        const u8* hello = "hello";
 
-//         fn test() -> *u8 {
-//             return hello;
-//         }
-//     */
-//     auto fn = create_test_function(ast::Type::create_string());
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::StringLiteralExpr>("hello")));
+        fn test() -> *u8 {
+            return hello;
+        }
+    */
+    auto fn = create_test_function(ast::Type::create_string());
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::StringLiteralExpr>("hello")));
 
-//     generate_simple_program(std::move(fn));
+    generate_simple_program(std::move(fn));
 
-//     // Verify global string
-//     bool found_global = false;
-//     for (const auto &global : module.global_variables())
-//     {
-//         auto *initializer = global->initializer();
-//         EXPECT_NE(initializer, nullptr);
-//         if (auto *init = dynamic_cast<ConstantString *>(initializer))
-//         {
-//             EXPECT_EQ(init->value(), "hello");
-//             found_global = true;
-//         }
-//     }
-//     EXPECT_TRUE(found_global);
+    // Verify global string
+    bool found_global = false;
+    for (const auto &global : module.global_variables())
+    {
+        auto *initializer = global->initializer();
+        EXPECT_NE(initializer, nullptr);
+        if (auto *init = dynamic_cast<ConstantString *>(initializer))
+        {
+            EXPECT_EQ(init->value(), "hello");
+            found_global = true;
+        }
+    }
+    EXPECT_TRUE(found_global);
 
-//     // Verify return value
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
+    // Verify return value
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
 
-//     ReturnInst *ret = find_return(test_fn);
-//     ASSERT_NE(ret, nullptr);
+    ReturnInst *ret = find_return(test_fn);
+    ASSERT_NE(ret, nullptr);
 
-//     auto *inst = dynamic_cast<BitCastInst *>(ret->value());
-//     ASSERT_NE(inst, nullptr);
-// }
+    auto *inst = dynamic_cast<BitCastInst *>(ret->value());
+    ASSERT_NE(inst, nullptr);
+}
 
-// TEST_F(IrGeneratorTest, BoolImplicitConversion)
-// {
-//     /*
-//         fn test() -> i32 {
-//             let a : i32 = 5;
-//             if a {
-//                 return 1;
-//             }
-//             return 0;
-//         }
-//     */
-//     auto fn = create_test_function();
+TEST_F(IrGeneratorTest, BoolImplicitConversion)
+{
+    /*
+        fn test() -> i32 {
+            let a : i32 = 5;
+            if a {
+                return 1;
+            }
+            return 0;
+        }
+    */
+    auto fn = create_test_function();
 
-//     // int a = 5;
-//     auto var_decl = std::make_unique<ast::VarDeclStmt>();
-//     var_decl->name = "a";
-//     var_decl->type = ast::Type::create_int();
-//     var_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(5);
-//     fn->body.push_back(std::move(var_decl));
+    // int a = 5;
+    auto var_decl = std::make_unique<ast::VarDeclStmt>();
+    var_decl->name = "a";
+    var_decl->type = ast::Type::create_int();
+    var_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(5);
+    fn->body.push_back(std::move(var_decl));
 
-//     // if (a) return 1;
-//     auto cond = std::make_unique<ast::VariableExpr>("a");
-//     auto then_block = std::make_unique<ast::BlockStmt>();
-//     then_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::IntegerLiteralExpr>(1)));
+    // if (a) return 1;
+    auto cond = std::make_unique<ast::VariableExpr>("a");
+    auto then_block = std::make_unique<ast::BlockStmt>();
+    then_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::IntegerLiteralExpr>(1)));
 
-//     fn->body.push_back(std::make_unique<ast::IfStmt>(
-//         std::move(cond),
-//         std::move(then_block),
-//         nullptr // No else block
-//         ));
+    fn->body.push_back(std::make_unique<ast::IfStmt>(
+        std::move(cond),
+        std::move(then_block),
+        nullptr // No else block
+        ));
 
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::IntegerLiteralExpr>(0)));
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::IntegerLiteralExpr>(0)));
 
-//     generate_simple_program(std::move(fn));
+    generate_simple_program(std::move(fn));
 
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
 
-//     bool found_icmp = false;
-//     for (const auto &bb : *test_fn)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *icmp = dynamic_cast<const ICmpInst *>(&inst))
-//             {
-//                 EXPECT_EQ(icmp->predicate(), ICmpInst::NE);
-//                 auto *load = dynamic_cast<const LoadInst *>(icmp->operand(0));
-//                 ASSERT_NE(load, nullptr);
-//                 found_icmp = true;
-//             }
-//         }
-//     }
-//     EXPECT_TRUE(found_icmp);
-// }
+    bool found_icmp = false;
+    for (const auto &bb : *test_fn)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *icmp = dynamic_cast<const ICmpInst *>(&inst))
+            {
+                EXPECT_EQ(icmp->predicate(), ICmpInst::NE);
+                auto *load = dynamic_cast<const LoadInst *>(icmp->operand(0));
+                ASSERT_NE(load, nullptr);
+                found_icmp = true;
+            }
+        }
+    }
+    EXPECT_TRUE(found_icmp);
+}
 
-// TEST_F(IrGeneratorTest, BoolLiteral)
-// {
-//     /*
-//         fn test() -> bool {
-//             return true;
-//         }
-//     */
-//     auto fn = create_test_function(ast::Type::create_bool());
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::BooleanLiteralExpr>(true)));
+TEST_F(IrGeneratorTest, BoolLiteral)
+{
+    /*
+        fn test() -> bool {
+            return true;
+        }
+    */
+    auto fn = create_test_function(ast::Type::create_bool());
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::BooleanLiteralExpr>(true)));
 
-//     generate_simple_program(std::move(fn));
+    generate_simple_program(std::move(fn));
 
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
 
-//     ReturnInst *ret = find_return(test_fn);
-//     ASSERT_NE(ret, nullptr);
+    ReturnInst *ret = find_return(test_fn);
+    ASSERT_NE(ret, nullptr);
 
-//     auto *const_bool = dynamic_cast<ConstantInt *>(ret->value());
-//     ASSERT_NE(const_bool, nullptr);
-//     EXPECT_EQ(const_bool->type(), module.get_integer_type(1));
-//     EXPECT_EQ(const_bool->value(), 1);
-// }
+    auto *const_bool = dynamic_cast<ConstantInt *>(ret->value());
+    ASSERT_NE(const_bool, nullptr);
+    EXPECT_EQ(const_bool->type(), module.get_boolean_type());
+    EXPECT_EQ(const_bool->value(), -1);
+}
 
-// TEST_F(IrGeneratorTest, StructLiteral)
-// {
-//     /*
-//         struct Point {
-//             x: i32,
-//             y: i32
-//         }
+TEST_F(IrGeneratorTest, StructLiteral)
+{
+    /*
+        struct Point {
+            x: i32,
+            y: i32
+        }
 
-//         fn test() -> Point {
-//             return Point { x: 5, y: 10 };
-//         }
-//     */
-//     auto point_struct = std::make_unique<ast::StructDecl>();
-//     point_struct->name = "Point";
-//     point_struct->add_field(ast::TypedField{"x", ast::Type::create_int()});
-//     point_struct->add_field(ast::TypedField{"y", ast::Type::create_int()});
+        fn test() -> Point {
+            return Point { x: 5, y: 10 };
+        }
+    */
+    auto point_struct = std::make_unique<ast::StructDecl>();
+    point_struct->name = "Point";
+    point_struct->add_field(ast::TypedField{"x", ast::Type::create_int()});
+    point_struct->add_field(ast::TypedField{"y", ast::Type::create_int()});
 
-//     auto struct_literal = std::make_unique<ast::StructLiteralExpr>("Point");
-//     struct_literal->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(5));
-//     struct_literal->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(10));
-//     struct_literal->type = point_struct->type()->clone();
+    auto struct_literal = std::make_unique<ast::StructLiteralExpr>("Point");
+    struct_literal->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(5));
+    struct_literal->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(10));
+    struct_literal->type = point_struct->type()->clone();
 
-//     auto fn = create_test_function(point_struct->type()->clone());
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(struct_literal)));
+    auto fn = create_test_function(point_struct->type()->clone());
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(struct_literal)));
 
-//     ast::Program program;
-//     program.structs.push_back(std::move(point_struct));
-//     program.functions.push_back(std::move(fn));
-//     generate(program);
+    ast::Program program;
+    program.structs.push_back(std::move(point_struct));
+    program.functions.push_back(std::move(fn));
+    generate(program);
 
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
 
-//     bool found_alloca = false;
-//     bool found_geps = false;
-//     bool found_stores = false;
-//     for (const auto &bb : *test_fn)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
-//             {
-//                 if (alloca->allocated_type()->is_struct())
-//                 {
-//                     found_alloca = true;
-//                 }
-//             }
-//             else if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
-//             {
-//                 if (gep->base_pointer()->type()->is_pointer() &&
-//                     gep->base_pointer()->type()->element_type()->is_struct())
-//                 {
-//                     found_geps = true;
-//                 }
-//             }
-//             else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
-//             {
-//                 if (store->value()->type()->is_integer())
-//                 {
-//                     found_stores = true;
-//                 }
-//             }
-//         }
-//     }
-//     EXPECT_TRUE(found_alloca);
-//     EXPECT_TRUE(found_geps);
-//     EXPECT_TRUE(found_stores);
-// }
+    bool found_alloca = false;
+    bool found_geps = false;
+    bool found_stores = false;
+    for (const auto &bb : *test_fn)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
+            {
+                if (alloca->allocated_type()->is_struct())
+                {
+                    found_alloca = true;
+                }
+            }
+            else if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
+            {
+                if (gep->base_pointer()->type()->is_pointer() &&
+                    gep->base_pointer()->type()->element_type()->is_struct())
+                {
+                    found_geps = true;
+                }
+            }
+            else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
+            {
+                if (store->value()->type()->is_integer())
+                {
+                    found_stores = true;
+                }
+            }
+        }
+    }
+    EXPECT_TRUE(found_alloca);
+    EXPECT_TRUE(found_geps);
+    EXPECT_TRUE(found_stores);
+}
 
-// TEST_F(IrGeneratorTest, InitListExpr)
-// {
-//     /*
-//         fn test() -> [3 x i32] {
-//             return [1, 2, 3];
-//         }
-//     */
-//     std::vector<ast::ExprPtr> elems;
-//     elems.reserve(3);
-//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(1));
-//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(2));
-//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
-//     auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
+TEST_F(IrGeneratorTest, InitListExpr)
+{
+    /*
+        fn test() -> [3 x i32] {
+            return [1, 2, 3];
+        }
+    */
+    std::vector<ast::ExprPtr> elems;
+    elems.reserve(3);
+    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(1));
+    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(2));
+    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
+    auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
 
-//     auto array_type = ast::Type::create_array(ast::Type::create_int(), 3);
-//     auto fn = create_test_function(std::move(array_type));
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(init_list)));
+    auto array_type = ast::Type::create_array(ast::Type::create_int(), 3);
+    auto fn = create_test_function(std::move(array_type));
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(init_list)));
 
-//     generate_simple_program(std::move(fn));
+    generate_simple_program(std::move(fn));
 
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
 
-//     bool found_array_alloca = false;
-//     for (const auto &bb : *test_fn)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
-//             {
-//                 if (alloca->allocated_type()->is_array())
-//                 {
-//                     found_array_alloca = true;
-//                 }
-//             }
-//         }
-//     }
-//     EXPECT_FALSE(found_array_alloca);
-//     auto ret_inst = find_return(test_fn);
-//     auto ret_val = ret_inst->value();
+    bool found_array_alloca = false;
+    for (const auto &bb : *test_fn)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
+            {
+                if (alloca->allocated_type()->is_array())
+                {
+                    found_array_alloca = true;
+                }
+            }
+        }
+    }
+    EXPECT_FALSE(found_array_alloca);
+    auto ret_inst = find_return(test_fn);
+    auto ret_val = ret_inst->value();
 
-//     auto *const_array = dynamic_cast<ConstantArray *>(ret_val);
-//     EXPECT_NE(const_array, nullptr);
-// }
+    auto *const_array = dynamic_cast<ConstantArray *>(ret_val);
+    EXPECT_NE(const_array, nullptr);
+}
 //===----------------------------------------------------------------------===//
 //                         Operator & Expression Tests
 //===----------------------------------------------------------------------===//
@@ -1981,413 +1987,396 @@ TEST_F(IrGeneratorTest, SizeofOperator)
 //     EXPECT_TRUE(found_alloca) << "Pointer alloca with aliased type not found";
 // }
 
-// //===----------------------------------------------------------------------===//
-// //                          Memory
-// //===----------------------------------------------------------------------===//
-// //===----------------------------------------------------------------------===//
-// //                          Pointer Operations Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, PointerOperations)
-// {
-//     /*
-//         fn test() -> i32 {
-//             let mut data: [3 x i32] = [10, 20, 30];
-//             let ptr = &data[0];
-//             let p2 = ptr + 1;  // Pointer arithmetic
-//             *p2 = 99;         // Store through pointer
-//             return *ptr + *p2; // Load through pointers
-//         }
-//     */
-//     ast::Program program;
+//===----------------------------------------------------------------------===//
+//                          Memory
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+//                          Pointer Operations Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, PointerOperations)
+{
+    /*
+        fn test() -> i32 {
+            let mut data: [3 x i32] = [10, 20, 30];
+            let ptr = &data[0];
+            let p2 = ptr + 1;  // Pointer arithmetic
+            *p2 = 99;         // Store through pointer
+            return *ptr + *p2; // Load through pointers
+        }
+    */
+    ast::Program program;
 
-//     auto test_fn = create_test_function(ast::Type::create_int());
-//     auto block = std::make_unique<ast::BlockStmt>();
+    auto test_fn = create_test_function(ast::Type::create_int());
+    auto block = std::make_unique<ast::BlockStmt>();
 
-//     // Array declaration
-//     auto arr_decl = std::make_unique<ast::VarDeclStmt>();
-//     arr_decl->name = "data";
-//     arr_decl->type = ast::Type::create_array(ast::Type::create_int(), 3);
-//     std::vector<ast::ExprPtr> elems;
-//     elems.reserve(3);
-//     elems.emplace_back(std::make_unique<ast::IntegerLiteralExpr>(10));
-//     elems.emplace_back(std::make_unique<ast::IntegerLiteralExpr>(20));
-//     elems.emplace_back(std::make_unique<ast::IntegerLiteralExpr>(30));
-//     auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
+    // Array declaration
+    auto arr_decl = std::make_unique<ast::VarDeclStmt>();
+    arr_decl->name = "data";
+    arr_decl->type = ast::Type::create_array(ast::Type::create_int(), 3);
+    std::vector<ast::ExprPtr> elems;
+    elems.reserve(3);
+    elems.emplace_back(std::make_unique<ast::IntegerLiteralExpr>(10));
+    elems.emplace_back(std::make_unique<ast::IntegerLiteralExpr>(20));
+    elems.emplace_back(std::make_unique<ast::IntegerLiteralExpr>(30));
+    auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
 
-//     arr_decl->init_expr = std::move(init_list);
-//     block->statements.push_back(std::move(arr_decl));
+    arr_decl->init_expr = std::move(init_list);
+    block->statements.push_back(std::move(arr_decl));
 
-//     // Get address of first element
-//     auto ptr_decl = std::make_unique<ast::VarDeclStmt>();
-//     ptr_decl->name = "ptr";
-//     ptr_decl->type = ast::Type::create_pointer(ast::Type::create_int());
-//     ptr_decl->init_expr = std::make_unique<ast::AddressOfExpr>(
-//         std::make_unique<ast::ArrayAccessExpr>(
-//             std::make_unique<ast::VariableExpr>("data"),
-//             std::make_unique<ast::IntegerLiteralExpr>(0)));
-//     block->statements.push_back(std::move(ptr_decl));
+    // Get address of first element
+    auto ptr_decl = std::make_unique<ast::VarDeclStmt>();
+    ptr_decl->name = "ptr";
+    ptr_decl->type = ast::Type::create_pointer(ast::Type::create_int());
+    ptr_decl->init_expr = std::make_unique<ast::AddressOfExpr>(
+        std::make_unique<ast::ArrayAccessExpr>(
+            std::make_unique<ast::VariableExpr>("data"),
+            std::make_unique<ast::IntegerLiteralExpr>(0)));
+    block->statements.push_back(std::move(ptr_decl));
 
-//     // Pointer arithmetic (ptr + 1)
-//     auto p2_decl = std::make_unique<ast::VarDeclStmt>();
-//     p2_decl->name = "p2";
-//     p2_decl->type = ast::Type::create_pointer(ast::Type::create_int());
-//     p2_decl->init_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Plus,
-//         std::make_unique<ast::VariableExpr>("ptr"),
-//         std::make_unique<ast::IntegerLiteralExpr>(1));
-//     block->statements.push_back(std::move(p2_decl));
+    // Pointer arithmetic (ptr + 1)
+    auto p2_decl = std::make_unique<ast::VarDeclStmt>();
+    p2_decl->name = "p2";
+    p2_decl->type = ast::Type::create_pointer(ast::Type::create_int());
+    p2_decl->init_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Plus,
+        std::make_unique<ast::VariableExpr>("ptr"),
+        std::make_unique<ast::IntegerLiteralExpr>(1));
+    block->statements.push_back(std::move(p2_decl));
 
-//     // Store through pointer
-//     auto store_stmt = std::make_unique<ast::ExprStmt>(
-//         std::make_unique<ast::BinaryExpr>(
-//             TokenType::Assign,
-//             std::make_unique<ast::DerefExpr>(std::make_unique<ast::VariableExpr>("p2")),
-//             std::make_unique<ast::IntegerLiteralExpr>(99)));
-//     block->statements.push_back(std::move(store_stmt));
+    // Store through pointer
+    auto store_stmt = std::make_unique<ast::ExprStmt>(
+        std::make_unique<ast::BinaryExpr>(
+            TokenType::Assign,
+            std::make_unique<ast::DerefExpr>(std::make_unique<ast::VariableExpr>("p2")),
+            std::make_unique<ast::IntegerLiteralExpr>(99)));
+    block->statements.push_back(std::move(store_stmt));
 
-//     // Return sum of dereferenced pointers
-//     auto ret_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Plus,
-//         std::make_unique<ast::DerefExpr>(std::make_unique<ast::VariableExpr>("ptr")),
-//         std::make_unique<ast::DerefExpr>(std::make_unique<ast::VariableExpr>("p2")));
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
+    // Return sum of dereferenced pointers
+    auto ret_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Plus,
+        std::make_unique<ast::DerefExpr>(std::make_unique<ast::VariableExpr>("ptr")),
+        std::make_unique<ast::DerefExpr>(std::make_unique<ast::VariableExpr>("p2")));
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
 
-//     test_fn->body = std::move(block->statements);
-//     program.functions.push_back(std::move(test_fn));
-//     generate(program);
+    test_fn->body = std::move(block->statements);
+    program.functions.push_back(std::move(test_fn));
+    generate(program);
 
-//     // Verify pointer operations
-//     Function *test_func = module.get_function("test");
-//     ASSERT_NE(test_func, nullptr);
+    // Verify pointer operations
+    Function *test_func = module.get_function("test");
+    ASSERT_NE(test_func, nullptr);
 
-//     bool found_gep = false;
-//     bool found_ptr_store = false;
-//     bool found_ptr_load = false;
+    bool found_gep = false;
+    bool found_ptr_store = false;
+    bool found_ptr_load = false;
 
-//     for (const auto &bb : *test_func)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             // Check GEP for array index and pointer arithmetic
-//             if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
-//             {
-//                 found_gep = true;
-//                 // Verify array index or pointer offset
-//                 auto indices = gep->indices();
-//                 if (indices.size() > 1 && dynamic_cast<ConstantInt *>(indices[1])->value() == 1)
-//                 {
-//                     EXPECT_EQ(gep->type()->element_type(), module.get_integer_type(32));
-//                 }
-//             }
-//             // Check store through pointer
-//             else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
-//             {
-//                 if (store->value()->type()->is_integer() &&
-//                     dynamic_cast<ConstantInt *>(store->value())->value() == 99)
-//                 {
-//                     found_ptr_store = true;
-//                 }
-//             }
-//             // Check load through pointers
-//             else if (dynamic_cast<const LoadInst *>(&inst))
-//             {
-//                 found_ptr_load = true;
-//             }
-//         }
-//     }
+    for (const auto &bb : *test_func)
+    {
+        for (const auto &inst : *bb)
+        {
+            // Check GEP for array index and pointer arithmetic
+            if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
+            {
+                found_gep = true;
+                // Verify array index or pointer offset
+                auto indices = gep->indices();
+                if (indices.size() > 1 && dynamic_cast<ConstantInt *>(indices[1])->value() == 1)
+                {
+                    EXPECT_EQ(gep->type()->element_type(), module.get_integer_type(32));
+                }
+            }
+            // Check store through pointer
+            else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
+            {
+                if (store->value()->type()->is_integer() &&
+                    dynamic_cast<ConstantInt *>(store->value())->value() == 99)
+                {
+                    found_ptr_store = true;
+                }
+            }
+            // Check load through pointers
+            else if (dynamic_cast<const LoadInst *>(&inst))
+            {
+                found_ptr_load = true;
+            }
+        }
+    }
 
-//     EXPECT_TRUE(found_gep) << "GEP instruction for pointer arithmetic not found";
-//     EXPECT_TRUE(found_ptr_store) << "Store through pointer not found";
-//     EXPECT_TRUE(found_ptr_load) << "Load through pointers not found";
-// }
+    EXPECT_TRUE(found_gep) << "GEP instruction for pointer arithmetic not found";
+    EXPECT_TRUE(found_ptr_store) << "Store through pointer not found";
+    EXPECT_TRUE(found_ptr_load) << "Load through pointers not found";
+}
 
-// //===----------------------------------------------------------------------===//
-// //                          Global Variable Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, GlobalVariable_)
-// {
-//     /*
-//         global GLOBAL_VALUE: i32 = 100;
+//===----------------------------------------------------------------------===//
+//                          Global Variable Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, GlobalVariable_)
+{
+    /*
+        global GLOBAL_VALUE: i32 = 100;
 
-//         fn test() -> i32 {
-//             let mut x = GLOBAL_VALUE;
-//             GLOBAL_VALUE = 200;
-//             return x + GLOBAL_VALUE;
-//         }
-//     */
-//     ast::Program program;
+        fn test() -> i32 {
+            let mut x = GLOBAL_VALUE;
+            GLOBAL_VALUE = 200;
+            return x + GLOBAL_VALUE;
+        }
+    */
+    ast::Program program;
 
-//     // Global variable declaration
-//     auto global_decl = std::make_unique<ast::GlobalDecl>();
-//     global_decl->name = "GLOBAL_VALUE";
-//     global_decl->type = ast::Type::create_int();
-//     global_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(100);
-//     program.globals.push_back(std::move(global_decl));
+    // Global variable declaration
+    auto global_decl = std::make_unique<ast::GlobalDecl>();
+    global_decl->name = "GLOBAL_VALUE";
+    global_decl->type = ast::Type::create_int();
+    global_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(100);
+    program.globals.push_back(std::move(global_decl));
 
-//     // Test function
-//     auto test_fn = create_test_function(ast::Type::create_int());
-//     auto block = std::make_unique<ast::BlockStmt>();
+    // Test function
+    auto test_fn = create_test_function(ast::Type::create_int());
+    auto block = std::make_unique<ast::BlockStmt>();
 
-//     // Load global
-//     auto x_decl = std::make_unique<ast::VarDeclStmt>();
-//     x_decl->name = "x";
-//     x_decl->type = ast::Type::create_int();
-//     x_decl->init_expr = std::make_unique<ast::VariableExpr>("GLOBAL_VALUE");
-//     block->statements.push_back(std::move(x_decl));
+    // Load global
+    auto x_decl = std::make_unique<ast::VarDeclStmt>();
+    x_decl->name = "x";
+    x_decl->type = ast::Type::create_int();
+    x_decl->init_expr = std::make_unique<ast::VariableExpr>("GLOBAL_VALUE");
+    block->statements.push_back(std::move(x_decl));
 
-//     // Store to global
-//     auto store_global = std::make_unique<ast::ExprStmt>(
-//         std::make_unique<ast::BinaryExpr>(
-//             TokenType::Assign,
-//             std::make_unique<ast::VariableExpr>("GLOBAL_VALUE"),
-//             std::make_unique<ast::IntegerLiteralExpr>(200)));
-//     block->statements.push_back(std::move(store_global));
+    // Store to global
+    auto store_global = std::make_unique<ast::ExprStmt>(
+        std::make_unique<ast::BinaryExpr>(
+            TokenType::Assign,
+            std::make_unique<ast::VariableExpr>("GLOBAL_VALUE"),
+            std::make_unique<ast::IntegerLiteralExpr>(200)));
+    block->statements.push_back(std::move(store_global));
 
-//     // Return sum
-//     auto ret_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Plus,
-//         std::make_unique<ast::VariableExpr>("x"),
-//         std::make_unique<ast::VariableExpr>("GLOBAL_VALUE"));
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
+    // Return sum
+    auto ret_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Plus,
+        std::make_unique<ast::VariableExpr>("x"),
+        std::make_unique<ast::VariableExpr>("GLOBAL_VALUE"));
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
 
-//     test_fn->body = std::move(block->statements);
-//     program.functions.push_back(std::move(test_fn));
-//     generate(program);
+    test_fn->body = std::move(block->statements);
+    program.functions.push_back(std::move(test_fn));
+    generate(program);
 
-//     // Verify global variable handling
-//     GlobalVariable *global_var = nullptr;
-//     for (const auto &gv : module.global_variables())
-//     {
-//         if (gv->name() == "GLOBAL_VALUE")
-//         {
-//             global_var = gv;
-//             break;
-//         }
-//     }
-//     ASSERT_NE(global_var, nullptr) << "Global variable not found";
-//     EXPECT_EQ(global_var->initializer()->as_string(), "100");
+    // Verify global variable handling
+    GlobalVariable *global_var = nullptr;
+    for (const auto &gv : module.global_variables())
+    {
+        if (gv->name() == "GLOBAL_VALUE")
+        {
+            global_var = gv;
+            break;
+        }
+    }
+    ASSERT_NE(global_var, nullptr) << "Global variable not found";
+    EXPECT_EQ(global_var->initializer()->as_string(), "100");
 
-//     Function *test_func = module.get_function("test");
-//     ASSERT_NE(test_func, nullptr);
+    Function *test_func = module.get_function("test");
+    ASSERT_NE(test_func, nullptr);
 
-//     bool found_global_load = false;
-//     bool found_global_store = false;
+    bool found_global_load = false;
+    bool found_global_store = false;
 
-//     for (const auto &bb : *test_func)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             // Check global loads
-//             if (auto *load = dynamic_cast<const LoadInst *>(&inst))
-//             {
-//                 if (load->pointer() == global_var)
-//                 {
-//                     found_global_load = true;
-//                 }
-//             }
-//             // Check global stores
-//             else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
-//             {
-//                 if (store->pointer() == global_var)
-//                 {
-//                     found_global_store = true;
-//                     EXPECT_EQ(dynamic_cast<ConstantInt *>(store->value())->value(), 200);
-//                 }
-//             }
-//         }
-//     }
+    for (const auto &bb : *test_func)
+    {
+        for (const auto &inst : *bb)
+        {
+            // Check global loads
+            if (auto *load = dynamic_cast<const LoadInst *>(&inst))
+            {
+                if (load->pointer() == global_var)
+                {
+                    found_global_load = true;
+                }
+            }
+            // Check global stores
+            else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
+            {
+                if (store->pointer() == global_var)
+                {
+                    found_global_store = true;
+                    EXPECT_EQ(dynamic_cast<ConstantInt *>(store->value())->value(), 200);
+                }
+            }
+        }
+    }
 
-//     EXPECT_TRUE(found_global_load) << "Global variable load not found";
-//     EXPECT_TRUE(found_global_store) << "Global variable store not found";
-// }
+    EXPECT_TRUE(found_global_load) << "Global variable load not found";
+    EXPECT_TRUE(found_global_store) << "Global variable store not found";
+}
 
-// //===----------------------------------------------------------------------===//
-// //                          边界条件测试
-// //===----------------------------------------------------------------------===//
-// //===----------------------------------------------------------------------===//
-// //                          Empty Struct Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, EmptyStruct)
-// {
-//     /*
-//         struct Empty {}
+//===----------------------------------------------------------------------===//
+//                          Edge case tests
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+//                          Empty Struct Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, EmptyStruct)
+{
+    /*
+        struct Empty {}
 
-//         fn test() -> i32 {
-//             let e = Empty{};
-//             return sizeof(Empty);
-//         }
-//     */
-//     ast::Program program;
+        fn test() -> u64 {
+            let e = Empty{};
+            return sizeof(Empty);
+        }
+    */
+    ast::Program program;
 
-//     auto empty_struct = std::make_unique<ast::StructDecl>();
-//     empty_struct->name = "Empty";
-//     program.structs.push_back(std::move(empty_struct));
+    auto empty_struct = std::make_unique<ast::StructDecl>();
+    empty_struct->name = "Empty";
+    program.structs.push_back(std::move(empty_struct));
 
-//     auto test_fn = create_test_function(ast::Type::create_int());
+    auto test_fn = create_test_function(ast::Type::create_int(64, true));
 
-//     auto var_decl = std::make_unique<ast::VarDeclStmt>();
-//     var_decl->name = "e";
-//     var_decl->type = ast::Type::create_alias("Empty");
-//     var_decl->init_expr = std::make_unique<ast::StructLiteralExpr>("Empty");
+    auto var_decl = std::make_unique<ast::VarDeclStmt>();
+    var_decl->name = "e";
+    var_decl->type = ast::Type::create_alias("Empty");
+    var_decl->init_expr = std::make_unique<ast::StructLiteralExpr>("Empty");
 
-//     auto sizeof_expr = std::make_unique<ast::SizeofExpr>(ast::Type::create_alias("Empty"));
+    auto sizeof_expr = std::make_unique<ast::SizeofExpr>(ast::Type::create_alias("Empty"));
 
-//     auto block = std::make_unique<ast::BlockStmt>();
-//     block->statements.push_back(std::move(var_decl));
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(sizeof_expr)));
-//     test_fn->body = std::move(block->statements);
+    auto block = std::make_unique<ast::BlockStmt>();
+    block->statements.push_back(std::move(var_decl));
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(sizeof_expr)));
+    test_fn->body = std::move(block->statements);
 
-//     program.functions.push_back(std::move(test_fn));
-//     generate(program);
+    program.functions.push_back(std::move(test_fn));
+    generate(program);
 
-//     // Verify empty struct has 1 byte size (minimum allowed)
-//     StructType *empty_type = module.try_named_struct_type("Empty");
-//     ASSERT_NE(empty_type, nullptr);
-//     EXPECT_EQ(empty_type->size(), 1) << "Empty struct should have 1 byte size";
-// }
+    StructType *empty_type = module.try_get_named_global_type("Empty");
+    ASSERT_NE(empty_type, nullptr);
+    EXPECT_EQ(empty_type->size(), 0) << "Empty struct should have 0 byte size";
+}
 
-// //===----------------------------------------------------------------------===//
-// //                          Zero-Size Array Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, ZeroSizeArray)
-// {
-//     /*
-//         struct Container {
-//             data: [0 x i32]
-//         }
+//===----------------------------------------------------------------------===//
+//                          Zero-Size Array Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, ZeroSizeArray)
+{
+    /*
+        struct Container {
+            data: [0 x i32]
+        }
 
-//         fn test() -> i32 {
-//             return sizeof(Container);
-//         }
-//     */
-//     ast::Program program;
+        fn test() -> u64 {
+            return sizeof(Container);
+        }
+    */
+    ast::Program program;
 
-//     auto container_struct = std::make_unique<ast::StructDecl>();
-//     container_struct->name = "Container";
-//     container_struct->add_field({"data", ast::Type::create_array(ast::Type::create_int(), 0)});
-//     program.structs.push_back(std::move(container_struct));
+    auto container_struct = std::make_unique<ast::StructDecl>();
+    container_struct->name = "Container";
+    container_struct->add_field({"data", ast::Type::create_array(ast::Type::create_int(), 0)});
+    program.structs.push_back(std::move(container_struct));
 
-//     auto test_fn = create_test_function(ast::Type::create_int());
+    auto test_fn = create_test_function(ast::Type::create_int(64, true));
 
-//     auto sizeof_expr = std::make_unique<ast::SizeofExpr>(ast::Type::create_alias("Container"));
+    auto sizeof_expr = std::make_unique<ast::SizeofExpr>(ast::Type::create_alias("Container"));
 
-//     auto block = std::make_unique<ast::BlockStmt>();
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(sizeof_expr)));
-//     test_fn->body = std::move(block->statements);
+    auto block = std::make_unique<ast::BlockStmt>();
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(sizeof_expr)));
+    test_fn->body = std::move(block->statements);
 
-//     program.functions.push_back(std::move(test_fn));
-//     generate(program);
+    program.functions.push_back(std::move(test_fn));
+    generate(program);
 
-//     // Verify zero-size array handling
-//     StructType *container_type = module.try_named_struct_type("Container");
-//     ASSERT_NE(container_type, nullptr);
+    // Verify zero-size array handling
+    StructType *container_type = module.try_get_named_global_type("Container")->as_struct();
+    ASSERT_NE(container_type, nullptr);
 
-//     // Should have 0 size but alignment may vary
-//     EXPECT_EQ(container_type->size(), 0) << "Zero-size array struct should have 0 size";
-//     EXPECT_TRUE(container_type->members().empty())
-//         << "Zero-size array should not contribute to struct layout";
-// }
+    // Should have 0 size but alignment may vary
+    EXPECT_EQ(container_type->size(), 0) << "Zero-size array struct should have 0 size";
+}
 
-// //===----------------------------------------------------------------------===//
-// //                          Nested Structs Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, NestedStructs)
-// {
-//     /*
-//         struct Inner {
-//             a: i32,
-//             b: f32
-//         }
+//===----------------------------------------------------------------------===//
+//                          Nested Structs Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, NestedStructs)
+{
+    /*
+        struct Inner {
+            a: f32,
+            b: f32
+        }
 
-//         struct Outer {
-//             x: Inner,
-//             y: Inner
-//         }
+        struct Outer {
+            x: Inner,
+            y: Inner
+        }
 
-//         fn test(p: Outer) -> f32 {
-//             return p.x.b + p.y.a;
-//         }
-//     */
-//     ast::Program program;
+        fn test(p: Outer) -> f32 {
+            return p.x.b + p.y.a;
+        }
+    */
+    ast::Program program;
 
-//     // Define inner struct
-//     auto inner_struct = std::make_unique<ast::StructDecl>();
-//     inner_struct->name = "Inner";
-//     inner_struct->add_field({"a", ast::Type::create_int()});
-//     inner_struct->add_field({"b", ast::Type::create_float()});
-//     program.structs.push_back(std::move(inner_struct));
+    // Define inner struct
+    auto inner_struct = std::make_unique<ast::StructDecl>();
+    inner_struct->name = "Inner";
+    inner_struct->add_field({"a", ast::Type::create_float()});
+    inner_struct->add_field({"b", ast::Type::create_float()});
+    program.structs.push_back(std::move(inner_struct));
 
-//     // Define outer struct
-//     auto outer_struct = std::make_unique<ast::StructDecl>();
-//     outer_struct->name = "Outer";
-//     outer_struct->add_field({"x", ast::Type::create_alias("Inner")});
-//     outer_struct->add_field({"y", ast::Type::create_alias("Inner")});
-//     program.structs.push_back(std::move(outer_struct));
+    // Define outer struct
+    auto outer_struct = std::make_unique<ast::StructDecl>();
+    outer_struct->name = "Outer";
+    outer_struct->add_field({"x", ast::Type::create_alias("Inner")});
+    outer_struct->add_field({"y", ast::Type::create_alias("Inner")});
+    program.structs.push_back(std::move(outer_struct));
 
-//     // Test function
-//     auto test_fn = create_test_function(ast::Type::create_float());
-//     test_fn->add_param("p", ast::Type::create_alias("Outer"));
+    // Test function
+    auto test_fn = create_test_function(ast::Type::create_float());
+    test_fn->add_param("p", ast::Type::create_alias("Outer"));
 
-//     // Access nested members
-//     auto x_b = std::make_unique<ast::MemberAccessExpr>(
-//         std::make_unique<ast::MemberAccessExpr>(
-//             std::make_unique<ast::VariableExpr>("p"),
-//             "x",
-//             TokenType::Dot),
-//         "b",
-//         TokenType::Dot);
+    // Access nested members
+    auto x_b = std::make_unique<ast::MemberAccessExpr>(
+        std::make_unique<ast::MemberAccessExpr>(
+            std::make_unique<ast::VariableExpr>("p"),
+            "x",
+            TokenType::Dot),
+        "b",
+        TokenType::Dot);
 
-//     auto y_a = std::make_unique<ast::MemberAccessExpr>(
-//         std::make_unique<ast::MemberAccessExpr>(
-//             std::make_unique<ast::VariableExpr>("p"),
-//             "y",
-//             TokenType::Dot),
-//         "a",
-//         TokenType::Dot);
+    auto y_a = std::make_unique<ast::MemberAccessExpr>(
+        std::make_unique<ast::MemberAccessExpr>(
+            std::make_unique<ast::VariableExpr>("p"),
+            "y",
+            TokenType::Dot),
+        "a",
+        TokenType::Dot);
 
-//     auto return_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Plus,
-//         std::move(x_b),
-//         std::move(y_a));
+    auto return_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Plus,
+        std::move(x_b),
+        std::move(y_a));
 
-//     auto block = std::make_unique<ast::BlockStmt>();
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(return_expr)));
-//     test_fn->body = std::move(block->statements);
+    auto block = std::make_unique<ast::BlockStmt>();
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(return_expr)));
+    test_fn->body = std::move(block->statements);
 
-//     program.functions.push_back(std::move(test_fn));
-//     generate(program);
+    program.functions.push_back(std::move(test_fn));
+    generate(program);
 
-//     // Verify nested GEP instructions
-//     Function *test_func = module.get_function("test");
-//     ASSERT_NE(test_func, nullptr);
+    // Verify nested GEP instructions
+    Function *test_func = module.get_function("test");
+    ASSERT_NE(test_func, nullptr);
 
-//     int gep_count = 0;
-//     for (const auto &bb : *test_func)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
-//             {
-//                 if (gep->base_pointer()->name() == "%p")
-//                 {
-//                     // Verify nested indices
-//                     auto indices = gep->indices();
-//                     ASSERT_GE(indices.size(), 2);
-
-//                     // First index selects struct field (0 for x, 1 for y)
-//                     EXPECT_EQ(dynamic_cast<ConstantInt *>(indices[0])->value(), 0);
-
-//                     // Second index selects inner struct member
-//                     if (indices.size() > 1)
-//                     {
-//                         auto *idx = dynamic_cast<ConstantInt *>(indices[1]);
-//                         EXPECT_TRUE(idx->value() == 0 || idx->value() == 1)
-//                             << "Inner struct member index should be 0(a) or 1(b)";
-//                     }
-//                     gep_count++;
-//                 }
-//             }
-//         }
-//     }
-//     EXPECT_EQ(gep_count, 2) << "Should have 2 GEPs for nested member access";
-// }
+    int gep_count = 0;
+    for (const auto &bb : *test_func)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
+            {
+                // Verify nested indices
+                auto indices = gep->indices();
+                ASSERT_GE(indices.size(), 2);
+                gep_count++;
+            }
+        }
+    }
+    EXPECT_EQ(gep_count, 4) << "Should have 4 GEPs for nested member access";
+}

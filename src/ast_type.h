@@ -130,7 +130,7 @@ namespace ast
         virtual bool is_scalar() const noexcept { return false; }
         virtual bool is_numeric() const noexcept { return false; }
         virtual bool is_aggregate() const noexcept { return false; }
-        virtual bool is_signed() const noexcept { return false; }
+        virtual bool is_unsigned() const noexcept { return false; }
 
         virtual bool is_integer() const noexcept { return false; }
         virtual bool is_float() const noexcept { return false; }
@@ -222,8 +222,9 @@ namespace ast
     public:
         bool is_aggregate() const noexcept override { return true; }
 
-        bool is_signed() const noexcept override
+        bool is_unsigned() const noexcept override
         {
+            MO_UNREACHABLE();
             return false;
         }
 
@@ -264,9 +265,9 @@ namespace ast
             return bit_width_ == static_cast<const IntegerType *>(other)->bit_width_;
         }
 
-        bool is_signed() const noexcept override
+        bool is_unsigned() const noexcept override
         {
-            return !unsigned_;
+            return unsigned_;
         }
 
         std::string to_string() const override;
@@ -305,7 +306,7 @@ namespace ast
             return bit_width_ == static_cast<const FloatType *>(other)->bit_width_;
         }
 
-        bool is_signed() const noexcept override
+        bool is_unsigned() const noexcept override
         {
             return false;
         }
@@ -341,9 +342,9 @@ namespace ast
             return other->kind() == Kind::Bool;
         }
 
-        bool is_signed() const noexcept override
+        bool is_unsigned() const noexcept override
         {
-            return false;
+            return true;
         }
 
         std::string to_string() const override;
@@ -372,8 +373,9 @@ namespace ast
             return other->kind() == Kind::String;
         }
 
-        bool is_signed() const noexcept override
+        bool is_unsigned() const noexcept override
         {
+            MO_UNREACHABLE();
             return false;
         }
 
@@ -412,9 +414,9 @@ namespace ast
 
         std::string to_string() const override;
 
-        bool is_signed() const noexcept override
+        bool is_unsigned() const noexcept override
         {
-            return false;
+            return true;
         }
 
     private:
@@ -551,10 +553,7 @@ namespace ast
     class StructType : public AggregateType
     {
     public:
-        ~StructType()
-        {
-            MO_DEBUG("deleting struct type: %s with %zu members", name_.c_str(), members_.size());
-        }
+        ~StructType() {}
         StructType(std::string name, std::vector<TypedField> members)
             : name_(std::move(name)), members_(std::move(members))
         {
