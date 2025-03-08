@@ -297,7 +297,7 @@ void TypeChecker::visit(StructDecl &decl)
             }
         }
 
-        if (field.type->kind() == Type::Kind::Struct)
+        if (field.type->is_struct())
         {
             if (!find_struct(static_cast<StructType *>(field.type.get())->name()))
             {
@@ -329,7 +329,7 @@ void TypeChecker::visit(StructDecl &decl)
 
 void TypeChecker::visit(GlobalDecl &decl)
 {
-    if (decl.type->kind() == Type::Kind::Struct)
+    if (decl.type->is_struct())
     {
         if (!find_struct(static_cast<StructType *>(decl.type.get())->name()))
         {
@@ -383,7 +383,7 @@ void TypeChecker::visit(GlobalDecl &decl)
 void TypeChecker::visit(ImplBlock &impl)
 {
     // Verify target type exists
-    if (impl.target_type->kind() == Type::Kind::Struct)
+    if (impl.target_type->is_struct())
     {
         if (!find_struct(static_cast<StructType *>(impl.target_type.get())->name()))
         {
@@ -521,27 +521,35 @@ void TypeChecker::visit(BinaryExpr &expr)
     case TokenType::Slash:
     {
         MO_DEBUG("Checking arithmetic op: %s", token_type_to_string(expr.op).c_str());
+
+        auto add_error_numeric = [&]() {
+            std::string err_msg = "Invalid arithmetic operands. Left: ";
+            err_msg += expr.left->type->to_string();
+            err_msg += " right: ";
+            err_msg += expr.right->type->to_string();
+
+            MO_ERROR(err_msg.c_str());
+            add_error(err_msg);
+        };
+
         if (auto lhs_int_ty = expr.left->type->as_integer())
         {
             if (auto rhs_int_ty = expr.right->type->as_integer()) // int +-*/ int = int
             {
                 if (!lhs_int_ty->equals(rhs_int_ty))
                 {
-                    add_error("Operands must have same integer type for arithmetic operation");
-                    MO_WARN("Operands must have same integer type for arithmetic operation");
+                    add_error_numeric();
                 }
                 expr.type = lhs_int_ty->clone();
             }
             else if (auto rhs_float_ty = expr.right->type->as_float()) // int +-*/ float = float
             {
-                add_error("Operands must have same numeric type for arithmetic operation");
-                MO_WARN("Operands must have same numeric type for arithmetic operation");
+                add_error_numeric();
                 expr.type = Type::create_float(static_cast<uint8_t>(rhs_float_ty->bit_width()));
             }
             else
             {
-                add_error("Invalid operands for arithmetic operation");
-                MO_WARN("Invalid operands for arithmetic operation");
+                add_error_numeric();
                 expr.type = lhs_int_ty->clone();
             }
         }
@@ -551,13 +559,13 @@ void TypeChecker::visit(BinaryExpr &expr)
             {
                 if (!lhs_float_ty->equals(rhs_float_ty))
                 {
-                    add_error("Operands must have same float type for arithmetic operation");
+                    add_error_numeric();
                 }
                 expr.type = lhs_float_ty->clone();
             }
             else
             {
-                add_error("Invalid operands for arithmetic operation");
+                add_error_numeric();
                 expr.type = lhs_float_ty->clone();
             }
         }
@@ -571,20 +579,17 @@ void TypeChecker::visit(BinaryExpr &expr)
                 }
                 else
                 {
-                    add_error("Invalid operands for pointer arithmetic operation");
+                    add_error_numeric();
                 }
             }
             else
             {
-                add_error("Invalid operands for pointer arithmetic operation");
+                add_error_numeric();
             }
         }
         else
         {
-            add_error("Invalid operands for arithmetic operation");
-            MO_ASSERT(false, "Invalid operands for arithmetic operation, left: %s, right: %s",
-                      expr.left->type->to_string().c_str(),
-                      expr.right->type->to_string().c_str());
+            add_error_numeric();
         }
         expr.expr_category = Expr::Category::RValue;
         break;
@@ -834,7 +839,7 @@ void TypeChecker::visit(VarDeclStmt &stmt)
     else
     {
         // Verify type validity (e.g., check if user-defined struct exists)
-        if (stmt.type->kind() == Type::Kind::Struct)
+        if (stmt.type->is_struct())
         {
             auto struct_type = static_cast<StructType *>(stmt.type.get());
             if (!find_struct(struct_type->name()))
@@ -848,16 +853,8 @@ void TypeChecker::visit(VarDeclStmt &stmt)
             check_expr(*stmt.init_expr);
             if (stmt.init_expr->type && !is_convertible(*stmt.init_expr->type, *stmt.type))
             {
-                std::string init_type_name = "unknown";
-                if (stmt.init_expr->type->kind() == Type::Kind::Struct)
-                {
-                    init_type_name = static_cast<StructType *>(stmt.init_expr->type.get())->name();
-                }
-                std::string stmt_type_name = "unknown";
-                if (stmt.type->kind() == Type::Kind::Struct)
-                {
-                    stmt_type_name = static_cast<StructType *>(stmt.type.get())->name();
-                }
+                std::string init_type_name = stmt.init_expr->type->to_string();
+                std::string stmt_type_name = stmt.type->to_string();
                 add_error("Type mismatch in variable initialization: " + stmt.name + " (" + stmt_type_name + " vs " + init_type_name + ")");
             }
         }
