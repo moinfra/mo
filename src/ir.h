@@ -72,7 +72,7 @@ struct Member;
 struct StructLayout;
 
 StructLayout calculate_aligned_layout(const std::vector<Type *> &members);
-uint64_t truncate_value(uint64_t value, unsigned bits, bool is_signed);
+uint64_t truncate_value(uint64_t value, uint8_t bit_width, bool is_signed);
 
 //===----------------------------------------------------------------------===//
 //                              Utility Classes
@@ -162,11 +162,11 @@ public:
     TypeID type_id() const { return tid_; }
     virtual size_t size() const = 0;
     virtual std::string name() const = 0;
-    virtual unsigned bits() const = 0;
+    virtual uint8_t bit_width() const = 0;
     // TODO: for different architectures
     virtual size_t alignment() const
     {
-        return (bits() + 7) / 8;
+        return (bit_width() + 7) / 8;
     }
 
     Module *module() const { return module_; }
@@ -281,9 +281,9 @@ protected:
 class IntegerType final : public NumericType
 {
 public:
-    size_t size() const override { return (bits_ + 7) / 8; }
-    std::string name() const override { return "i" + std::to_string(bits_); }
-    unsigned bits() const override { return bits_; }
+    size_t size() const override { return (bit_width_ + 7) / 8; }
+    std::string name() const override { return "i" + std::to_string(bit_width_); }
+    uint8_t bit_width() const override { return bit_width_; }
     bool is_signed() const noexcept override { return !unsigned_; }
 
     IntegerType *as_integer() noexcept override { return this; }
@@ -300,8 +300,8 @@ public:
     }
 
 private:
-    explicit IntegerType(Module *m, unsigned bits, bool unsigned_ = false);
-    unsigned bits_;
+    explicit IntegerType(Module *m, uint8_t bit_width, bool unsigned_ = false);
+    uint8_t bit_width_;
     bool unsigned_ = false;
 
     friend Module;
@@ -311,7 +311,7 @@ protected:
     {
         if (const IntegerType *other_int = dynamic_cast<const IntegerType *>(&other))
         {
-            return bits_ == other_int->bits_ && unsigned_ == other_int->unsigned_;
+            return bit_width_ == other_int->bit_width_ && unsigned_ == other_int->unsigned_;
         }
         return false;
     }
@@ -320,18 +320,9 @@ protected:
 class FloatType final : public NumericType
 {
 public:
-    enum Precision
-    {
-        Half,   // 16-bit
-        Single, // 32-bit
-        Double, // 64-bit
-        Quad    // 128-bit
-    };
-
-    Precision precision() const { return precision_; }
-    unsigned bits() const override { return bits_; }
-    size_t size() const override { return (bits_ + 7) / 8; }
-    std::string name() const override { return "f" + std::to_string(bits_); }
+    uint8_t bit_width() const override { return bit_width_; }
+    size_t size() const override { return (bit_width_ + 7) / 8; }
+    std::string name() const override { return "f" + std::to_string(bit_width_); }
 
     FloatType *as_float() noexcept override { return this; }
     const FloatType *as_float() const noexcept override { return this; }
@@ -346,10 +337,8 @@ public:
     }
 
 private:
-    explicit FloatType(Module *m, Precision precision);
-    unsigned bits_;
-
-    Precision precision_;
+    explicit FloatType(Module *m, uint8_t bit_width);
+    uint8_t bit_width_;
     friend class Module;
 
 protected:
@@ -357,7 +346,7 @@ protected:
     {
         if (const FloatType *other_float = dynamic_cast<const FloatType *>(&other))
         {
-            return precision_ == other_float->precision_;
+            return bit_width_ == other_float->bit_width_;
         }
         return false;
     }
@@ -368,7 +357,7 @@ class VoidType final : public Type
 public:
     size_t size() const override { return 0; }
     std::string name() const override { return "void"; }
-    unsigned bits() const override { return 0; }
+    uint8_t bit_width() const override { return 0; }
 
     bool is_void() const noexcept override
     {
@@ -402,7 +391,7 @@ public:
     // FIXME: Size should be handled through DataLayout instead of hardcoding
     size_t size() const override { return sizeof(void *); }
     std::string name() const override { return element_type_->name() + "*"; }
-    unsigned bits() const override { return sizeof(void *) * 8; }
+    uint8_t bit_width() const override { return sizeof(void *) * 8; }
 
     PointerType *as_pointer() noexcept override { return this; }
     const PointerType *as_pointer() const noexcept override { return this; }
@@ -469,7 +458,7 @@ public:
         return result;
     }
 
-    unsigned bits() const override { return 0; }
+    uint8_t bit_width() const override { return 0; }
 
     FunctionType *as_function() noexcept override { return this; }
     const FunctionType *as_function() const noexcept override { return this; }
@@ -547,7 +536,7 @@ public:
         return "[" + std::to_string(num_elements_) + " x " + element_type_->name() + "]";
     }
 
-    unsigned bits() const override { return size() * 8; }
+    uint8_t bit_width() const override { return size() * 8; }
 
     ArrayType *as_array() noexcept override { return this; }
     const ArrayType *as_array() const noexcept override { return this; }
@@ -620,7 +609,7 @@ public:
         result += " }";
         return result;
     }
-    unsigned bits() const override { return size() * 8; }
+    uint8_t bit_width() const override { return size() * 8; }
     size_t alignment() const override
     {
         return 8; // TODO: handle alignment properly
@@ -726,9 +715,9 @@ public:
         return "<" + std::to_string(num_elements_) + " x " + element_type_->name() + ">";
     }
 
-    unsigned bits() const override
+    uint8_t bit_width() const override
     {
-        return element_type_->bits() * num_elements_;
+        return element_type_->bit_width() * num_elements_;
     }
 
     VectorType *as_vector() noexcept override { return this; }
@@ -777,7 +766,7 @@ public:
     // Type properties
     size_t size() const override { return base_->size(); }
     std::string name() const override { return base_->name(); }
-    unsigned bits() const override { return base_->bits(); }
+    uint8_t bit_width() const override { return base_->bit_width(); }
 
     QualifiedType *as_qualified() noexcept override { return this; }
     const QualifiedType *as_qualified() const noexcept override { return this; }
@@ -1138,19 +1127,19 @@ class Module
             static_assert(sizeof(double) == sizeof(uint64_t), "Unexpected double size");
 
             size_t hash1 = std::hash<T1>{}(p.first);
-            uint64_t bits = 0;
+            uint64_t bit_width = 0;
 
             if constexpr (std::is_same_v<T2, double>)
             {
                 // uint64_t convert double to uint64_t
-                std::memcpy(&bits, &p.second, sizeof(double));
+                std::memcpy(&bit_width, &p.second, sizeof(double));
             }
             else
             {
-                bits = std::hash<T2>{}(p.second);
+                bit_width = std::hash<T2>{}(p.second);
             }
 
-            size_t hash2 = std::hash<uint64_t>{}(bits);
+            size_t hash2 = std::hash<uint64_t>{}(bit_width);
             return hash1 ^ (hash2 << 1);
         }
     };
@@ -1204,17 +1193,17 @@ public:
     GlobalVariable *create_global_variable(Type *type, bool is_constant, Constant *initializer, const std::string &name = "");
 
     Type *get_void_type();
-    IntegerType *get_integer_type(unsigned bits, bool unsigned_ = false);
-    FloatType *get_float_type(FloatType::Precision precision);
+    IntegerType *get_integer_type(uint8_t bit_width, bool unsigned_ = false);
+    FloatType *get_float_type(uint8_t bit_width);
 
     PointerType *get_pointer_type(Type *element_type);
     FunctionType *get_function_type(Type *return_type, const std::vector<Type *> &param_types);
 
     ConstantInt *get_constant_int(IntegerType *type, uint64_t value);
-    ConstantInt *get_constant_int(unsigned bits, uint64_t value, bool unsigned_ = false);
+    ConstantInt *get_constant_int(uint8_t bit_width, uint64_t value, bool unsigned_ = false);
 
     ConstantFP *get_constant_fp(FloatType *type, double value);
-    ConstantFP *get_constant_fp(FloatType::Precision precision, double value);
+    ConstantFP *get_constant_fp(uint8_t bit_width, double value);
 
     ConstantString *get_constant_string(std::string value);
     ConstantPointerNull *get_constant_pointer_null(PointerType *type);
@@ -1262,8 +1251,8 @@ public:
 private:
     std::string name_;
     std::unique_ptr<VoidType> void_type_;
-    std::unordered_map<unsigned, std::unique_ptr<IntegerType>> integer_types_;
-    std::unordered_map<FloatType::Precision, std::unique_ptr<FloatType>> float_types_;
+    std::unordered_map<uint8_t, std::unique_ptr<IntegerType>> integer_types_;
+    std::unordered_map<uint8_t, std::unique_ptr<FloatType>> float_types_;
     // (element_type) -> pointer_type
     std::unordered_map<Type *, std::unique_ptr<PointerType>> pointer_types_;
 
@@ -1638,7 +1627,8 @@ class StoreInst : public Instruction
 public:
     static StoreInst *create(Value *value, Value *ptr, BasicBlock *parent);
 
-    Value *stored_value() const { return operand(0); }
+    // Stored value
+    Value *value() const { return operand(0); }
     Value *pointer() const { return operand(1); }
 
 private:

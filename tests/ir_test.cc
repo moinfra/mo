@@ -9,7 +9,7 @@ TEST(TruncateValueTest, UnsignedTruncation)
     ASSERT_EQ(truncate_value(0x123456789ABCDEF0, 16, false), 0xDEF0);
     ASSERT_EQ(truncate_value(0x123456789ABCDEF0, 32, false), 0x9ABCDEF0);
     ASSERT_EQ(truncate_value(0x123456789ABCDEF0, 64, false), 0x123456789ABCDEF0);
-    ASSERT_EQ(truncate_value(0x123, 0, false), 0x123); // Case where bits = 0
+    ASSERT_EQ(truncate_value(0x123, 0, false), 0x123); // Case where bit_width = 0
 }
 
 TEST(TruncateValueTest, SignedTruncationPositive)
@@ -39,7 +39,7 @@ TEST(TruncateValueTest, SignedTruncationEdgeCases)
 
 TEST(TruncateValueTest, ZeroBits)
 {
-    // Test the case where bits is 0
+    // Test the case where bit_width is 0
     ASSERT_EQ(truncate_value(0x12345678, 0, false), 0x12345678);
     ASSERT_EQ(truncate_value(0x12345678, 0, true), 0x12345678);
 }
@@ -56,7 +56,7 @@ TEST(TruncateValueTest, VariousInputs)
 
 TEST(TruncateValueTest, BitsEqualTo64)
 {
-    // Test the case where bits is equal to 64
+    // Test the case where bit_width is equal to 64
     ASSERT_EQ(truncate_value(0xFFFFFFFFFFFFFFFF, 64, false), 0xFFFFFFFFFFFFFFFF);
     ASSERT_EQ(truncate_value(0x8000000000000000, 64, true), 0x8000000000000000);
     ASSERT_EQ(truncate_value(0x7FFFFFFFFFFFFFFF, 64, true), 0x7FFFFFFFFFFFFFFF);
@@ -75,12 +75,12 @@ TEST(TypeSystem, IntegerType)
 {
     Module m;
     IntegerType *i32 = m.get_integer_type(32);
-    EXPECT_EQ(i32->bits(), 32);
-    EXPECT_EQ(i32->size(), 4); // 32 bits = 4 bytes
+    EXPECT_EQ(i32->bit_width(), 32);
+    EXPECT_EQ(i32->size(), 4); // 32 bit_width = 4 bytes
 
     IntegerType *i8 = m.get_integer_type(8);
-    EXPECT_EQ(i8->bits(), 8);
-    EXPECT_EQ(i8->size(), 1); // 8 bits = 1 byte
+    EXPECT_EQ(i8->bit_width(), 8);
+    EXPECT_EQ(i8->size(), 1); // 8 bit_width = 1 byte
 }
 
 TEST(TypeSystem, PointerType)
@@ -121,20 +121,20 @@ TEST(TypeSystem, VectorType)
 
     std::cout << "Vector type: " << vec4xi32->name() << std::endl;
     std::cout << "Size: " << vec4xi32->size() << " bytes" << std::endl;
-    std::cout << "Bits: " << vec4xi32->bits() << " bits" << std::endl;
+    std::cout << "Bits: " << vec4xi32->bit_width() << " bit_width" << std::endl;
 
     EXPECT_EQ(vec4xi32->num_elements(), 4);
     EXPECT_EQ(vec4xi32->element_type(), i32);
     EXPECT_EQ(vec4xi32->name(), "<4 x i32>");
     EXPECT_EQ(vec4xi32->size(), 16);  // 4 * 4 bytes
-    EXPECT_EQ(vec4xi32->bits(), 128); // 4 * 32 bits
+    EXPECT_EQ(vec4xi32->bit_width(), 128); // 4 * 32 bit_width
 }
 
 TEST(TypeSystem, FunctionType)
 {
     Module m;
     Type *i32 = m.get_integer_type(32);
-    Type *f32 = m.get_float_type(FloatType::Single);
+    Type *f32 = m.get_float_type(32);
 
     std::vector<Type *> param_types = {i32, f32};
     FunctionType *func_type = m.get_function_type(i32, param_types);
@@ -308,8 +308,8 @@ TEST(InstructionSubclasses, MemoryOperations)
     EXPECT_EQ(load->pointer(), alloca);
 
     StoreInst *store = StoreInst::create(m.get_constant_int(i32, 42), alloca, bb);
-    auto stored_value = store->stored_value();
-    ConstantInt *c = dynamic_cast<ConstantInt *>(stored_value);
+    auto value = store->value();
+    ConstantInt *c = dynamic_cast<ConstantInt *>(value);
     EXPECT_EQ(c->value(), 42);
     EXPECT_EQ(store->pointer(), alloca);
 }

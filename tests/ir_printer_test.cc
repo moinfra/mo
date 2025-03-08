@@ -162,7 +162,7 @@ TEST(IRPrinterTest, GEPAndStruct)
   // Create a struct type
   std::vector<MemberInfo> member_infos = {
       {"a", module.get_integer_type(32)},
-      {"b", module.get_float_type(FloatType::Single)},
+      {"b", module.get_float_type(32)},
   };
   auto *struct_type = module.get_struct_type("MyStruct", member_infos);
 

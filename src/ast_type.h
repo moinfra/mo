@@ -149,7 +149,7 @@ namespace ast
         static TypePtr create_void();
         static TypePtr create_bool();
         static TypePtr create_int(uint8_t bit_width = MO_DEFAULT_INT_BITWIDTH, bool unsigned_ = false);
-        static TypePtr create_float(uint8_t precision_bits = MO_DEFAULT_FLOAT_PRECISION);
+        static TypePtr create_float(uint8_t bit_width_bit_width = MO_DEFAULT_FLOAT_PRECISION);
         static TypePtr create_string();
         static TypePtr create_pointer(TypePtr pointee);
         static TypePtr create_array(TypePtr element, int size);
@@ -282,16 +282,8 @@ namespace ast
     class FloatType : public NumericType
     {
     public:
-        enum class Precision : uint8_t
-        {
-            Half = 1 << 4,   // 16-bit
-            Single = 1 << 5, // 32-bit
-            Double = 1 << 6, // 64-bit
-            Quad = 1 << 7    // 128-bit
-        };
-
-        explicit FloatType(Precision prec)
-            : precision_(prec) {}
+        explicit FloatType(uint8_t bit_width)
+            : bit_width_(bit_width) {}
 
         // Type conversion
         FloatType *as_float() noexcept override { return this; }
@@ -299,18 +291,18 @@ namespace ast
         bool is_float() const noexcept override { return true; }
 
         Kind kind() const noexcept override { return Kind::Float; }
-        Precision precision() const noexcept { return precision_; }
+        uint8_t bit_width() const noexcept { return bit_width_; }
 
         TypePtr clone() const override
         {
-            return std::make_unique<FloatType>(precision_);
+            return std::make_unique<FloatType>(bit_width_);
         }
 
         bool equals(const Type *other) const noexcept override
         {
             if (other->kind() != Kind::Float)
                 return false;
-            return precision_ == static_cast<const FloatType *>(other)->precision_;
+            return bit_width_ == static_cast<const FloatType *>(other)->bit_width_;
         }
 
         bool is_signed() const noexcept override
@@ -321,7 +313,7 @@ namespace ast
         std::string to_string() const override;
 
     private:
-        Precision precision_;
+        uint8_t bit_width_;
     };
 
     //===----------------------------------------------------------------------===//

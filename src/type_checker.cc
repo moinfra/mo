@@ -174,9 +174,9 @@ void TypeChecker::visit(CastExpr &expr)
         return;
     }
 
-    if (!is_convertible(*expr.expr->type, *expr.target_type))
+    if (!is_convertible(*expr.expr->type, *expr.target_type, true, true))
     {
-        add_error("Invalid type conversion in cast");
+        add_error("Invalid type conversion in cast: ", expr.expr->type->to_string(), " to ", expr.target_type->to_string());
     }
 
     expr.type = expr.target_type->clone();
@@ -205,7 +205,7 @@ void TypeChecker::visit(SizeofExpr &expr)
     }
 
     // sizeof always returns integer
-    expr.type = Type::create_int();
+    expr.type = Type::create_int(64, true);
     expr.expr_category = Expr::Category::RValue;
 }
 
@@ -536,7 +536,7 @@ void TypeChecker::visit(BinaryExpr &expr)
             {
                 add_error("Operands must have same numeric type for arithmetic operation");
                 MO_WARN("Operands must have same numeric type for arithmetic operation");
-                expr.type = Type::create_float(static_cast<uint8_t>(rhs_float_ty->precision()));
+                expr.type = Type::create_float(static_cast<uint8_t>(rhs_float_ty->bit_width()));
             }
             else
             {
@@ -991,7 +991,6 @@ void TypeChecker::visit(MemberAccessExpr &expr)
     }
 
     // if followed by call, prioritize method call over function pointer member call
-    // FIXME: support method call checking
     // if (expr.is_call)
     // {
     //     // Find method
@@ -1120,33 +1119,74 @@ void TypeChecker::visit(TupleExpr &expr)
     expr.expr_category = Expr::Category::RValue;
 }
 
-// Enhanced type conversion rules
-bool TypeChecker::is_convertible(const Type &from, const Type &to) const
+/**
+ * @brief Determines type conversion validity with strictness and explicit context controls
+ * @param from Source type to convert from
+ * @param to Target type to convert to
+ * @param is_strict Enables strict type safety rules when true
+ * @param is_explicit True when in explicit conversion context (e.g. cast operations)
+ * @return true if conversion is permitted under current rules, false otherwise
+ *
+ * Conversion rule hierarchy:
+ * 1. Type identity (same type) always permitted
+ * 2. Numeric conversions governed by strict/explicit flags
+ * 3. Pointer conversions follow memory safety rules
+ * 4. Type aliases resolve recursively
+ * 5. All other conversions explicitly prohibited
+ */
+bool TypeChecker::is_convertible(const Type &from,
+                                 const Type &to,
+                                 bool is_strict,
+                                 bool is_explicit) const
 {
+    // Rule 1: Type identity check
     if (types_equal(from, to))
         return true;
 
+    // Rule 2: Integer to floating-point conversion
+    // - Permitted implicitly in non-strict mode
+    // - Requires explicit cast in strict mode
     if (from.kind() == Type::Kind::Int && to.kind() == Type::Kind::Float)
     {
-        return true;
+        return is_explicit || !is_strict; // Explicit context or non-strict mode
     }
 
-    // Array to pointer decay
-    if (from.kind() == Type::Kind::Array &&
-        to.kind() == Type::Kind::Pointer)
+    // Rule 3: Floating-point to integer conversion
+    // - Requires matching bit-width AND
+    // - Explicit cast in strict mode
+    if (from.kind() == Type::Kind::Float && to.kind() == Type::Kind::Int)
+    {
+        const auto &from_float = static_cast<const FloatType &>(from);
+        const auto &to_int = static_cast<const IntegerType &>(to);
+        return (from_float.bit_width() == to_int.bit_width()) &&
+               (is_explicit || !is_strict); // Width match + context check
+    }
+
+    // Rule 4: Array-to-pointer decay
+    // - Requires element type match AND
+    // - Explicit cast in strict mode
+    if (from.kind() == Type::Kind::Array && to.kind() == Type::Kind::Pointer)
     {
         auto array_type = static_cast<const ArrayType *>(&from);
         auto pointer_type = static_cast<const PointerType *>(&to);
-        return types_equal(array_type->element_type(), pointer_type->pointee());
+        return types_equal(array_type->element_type(), pointer_type->pointee()) &&
+               (is_explicit || !is_strict); // Type match + decay allowance
     }
 
-    // Null pointer conversion
-    if (from.kind() == Type::Kind::Int && static_cast<const IntegerType &>(from).bit_width() == MO_DEFAULT_INT_BITWIDTH && to.kind() == Type::Kind::Pointer)
+    // Rule 5: Null pointer literal conversion (0 → pointer)
+    // - Permitted implicitly in non-strict mode
+    // - Requires explicit cast in strict mode
+    if (from.kind() == Type::Kind::Int &&
+        static_cast<const IntegerType &>(from).bit_width() == MO_DEFAULT_INT_BITWIDTH &&
+        to.kind() == Type::Kind::Pointer)
     {
-        return true; // Allow 0 to null pointer conversion
+        return is_explicit || !is_strict; // Null literal conversion check
     }
 
-    // Void pointer conversions
+    // Rule 6: Pointer compatibility (including void*)
+    // - Direct match always permitted
+    // - void* conversions require:
+    //   - Non-strict mode OR explicit cast
     if (from.kind() == Type::Kind::Pointer && to.kind() == Type::Kind::Pointer)
     {
         auto from_pointer = static_cast<const PointerType *>(&from);
@@ -1154,27 +1194,30 @@ bool TypeChecker::is_convertible(const Type &from, const Type &to) const
 
         const bool from_void = from_pointer->pointee().kind() == Type::Kind::Void;
         const bool to_void = to_pointer->pointee().kind() == Type::Kind::Void;
-        return from_void || to_void || types_equal(from_pointer->pointee(), to_pointer->pointee());
+
+        return types_equal(from_pointer->pointee(), to_pointer->pointee()) ||
+               ((from_void || to_void) && (is_explicit || !is_strict));
     }
 
-    // Conversion from alias to its target type
+    // Rule 7: Type alias resolution (forward)
+    // Preserves strict/explicit flags during resolution
     if (from.kind() == Type::Kind::Alias)
     {
         auto resolved = resolve_alias(*from.clone());
-        return is_convertible(*resolved, to);
+        return is_convertible(*resolved, to, is_strict, is_explicit);
     }
 
-    // Conversion to alias from its target type
+    // Rule 8: Type alias resolution (reverse)
     if (to.kind() == Type::Kind::Alias)
     {
         auto resolved = resolve_alias(*to.clone());
-        return is_convertible(from, *resolved);
+        return is_convertible(from, *resolved, is_strict, is_explicit);
     }
 
+    // Fallthrough: No conversion path found
     return false;
 }
 
-// type_checker.cpp 续
 // Function pointer handling
 void TypeChecker::visit(FunctionPointerExpr &expr)
 {
@@ -1263,8 +1306,8 @@ void TypeChecker::visit(StructLiteralExpr &expr)
         printf("member ptr: %p\n", &member);
         printf("mem.type ptr: %p\n", &member.type);
         printf("type %s\n", member.type->to_string().c_str()); // Segmentation fault.
-        printf("member %s\n", member.name.c_str()); // Segmentation fault.
-        if (!initialized_members.count(member.name)) // Segmentation fault.
+        printf("member %s\n", member.name.c_str());            // Segmentation fault.
+        if (!initialized_members.count(member.name))           // Segmentation fault.
         {
             add_error("Missing initialization for member '" + member.name + "'");
         }

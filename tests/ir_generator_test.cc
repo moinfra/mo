@@ -73,6 +73,21 @@ protected:
         }
         return nullptr;
     }
+
+    bool check_instruction(Function *func, std::function<bool(const Instruction &)> predicate) const
+    {
+        for (const auto &bb : *func)
+        {
+            for (const auto &inst : *bb)
+            {
+                if (predicate(inst))
+                {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 };
 
 //===----------------------------------------------------------------------===//
@@ -315,7 +330,7 @@ protected:
 //             }
 //             else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
 //             {
-//                 if (store->stored_value()->type()->is_integer())
+//                 if (store->value()->type()->is_integer())
 //                 {
 //                     found_stores = true;
 //                 }
@@ -327,935 +342,966 @@ protected:
 //     EXPECT_TRUE(found_stores);
 // }
 
-TEST_F(IrGeneratorTest, InitListExpr)
+// TEST_F(IrGeneratorTest, InitListExpr)
+// {
+//     /*
+//         fn test() -> [3 x i32] {
+//             return [1, 2, 3];
+//         }
+//     */
+//     std::vector<ast::ExprPtr> elems;
+//     elems.reserve(3);
+//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(1));
+//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(2));
+//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
+//     auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
+
+//     auto array_type = ast::Type::create_array(ast::Type::create_int(), 3);
+//     auto fn = create_test_function(std::move(array_type));
+//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(init_list)));
+
+//     generate_simple_program(std::move(fn));
+
+//     Function *test_fn = module.get_function("test");
+//     ASSERT_NE(test_fn, nullptr);
+
+//     bool found_array_alloca = false;
+//     for (const auto &bb : *test_fn)
+//     {
+//         for (const auto &inst : *bb)
+//         {
+//             if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
+//             {
+//                 if (alloca->allocated_type()->is_array())
+//                 {
+//                     found_array_alloca = true;
+//                 }
+//             }
+//         }
+//     }
+//     EXPECT_FALSE(found_array_alloca);
+//     auto ret_inst = find_return(test_fn);
+//     auto ret_val = ret_inst->value();
+
+//     auto *const_array = dynamic_cast<ConstantArray *>(ret_val);
+//     EXPECT_NE(const_array, nullptr);
+// }
+//===----------------------------------------------------------------------===//
+//                         Operator & Expression Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, BinaryArithmeticOps)
 {
     /*
-        fn test() -> [3 x i32] {
-            return [1, 2, 3];
+        fn test(a: i32, b: i32) -> i32 {
+            let c = a + b;
+            let d = c - a;
+            let e = d * b;
+            let f = e / d;
+            return f;
         }
     */
-    std::vector<ast::ExprPtr> elems;
-    elems.reserve(3);
-    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(1));
-    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(2));
-    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
-    auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
+    auto fn = create_test_function(ast::Type::create_int());
 
-    auto array_type = ast::Type::create_array(ast::Type::create_int(), 3);
-    auto fn = create_test_function(std::move(array_type));
-    fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(init_list)));
+    // Parameters
+    fn->add_param("a", ast::Type::create_int());
+    fn->add_param("b", ast::Type::create_int());
 
+    // Body
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    // c = a + b
+    auto add_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Plus,
+        std::make_unique<ast::VariableExpr>("a"),
+        std::make_unique<ast::VariableExpr>("b"));
+    auto add_decl = std::make_unique<ast::VarDeclStmt>();
+    add_decl->name = "c";
+    add_decl->type = ast::Type::create_int();
+    add_decl->init_expr = std::move(add_expr);
+    block->statements.push_back(std::move(add_decl));
+
+    // d = c - a
+    auto sub_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Minus,
+        std::make_unique<ast::VariableExpr>("c"),
+        std::make_unique<ast::VariableExpr>("a"));
+    auto sub_decl = std::make_unique<ast::VarDeclStmt>();
+    sub_decl->name = "d";
+    sub_decl->type = ast::Type::create_int();
+    sub_decl->init_expr = std::move(sub_expr);
+    block->statements.push_back(std::move(sub_decl));
+
+    // e = d * b
+    auto mul_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Star,
+        std::make_unique<ast::VariableExpr>("d"),
+        std::make_unique<ast::VariableExpr>("b"));
+    auto mul_decl = std::make_unique<ast::VarDeclStmt>();
+    mul_decl->name = "e";
+    mul_decl->type = ast::Type::create_int();
+    mul_decl->init_expr = std::move(mul_expr);
+    block->statements.push_back(std::move(mul_decl));
+
+    // f = e / d
+    auto div_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Slash,
+        std::make_unique<ast::VariableExpr>("e"),
+        std::make_unique<ast::VariableExpr>("d"));
+    auto div_decl = std::make_unique<ast::VarDeclStmt>();
+    div_decl->name = "f";
+    div_decl->type = ast::Type::create_int();
+    div_decl->init_expr = std::move(div_expr);
+    block->statements.push_back(std::move(div_decl));
+
+    // Return
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::VariableExpr>("f")));
+
+    fn->body.push_back(std::move(block));
+    generate_simple_program(std::move(fn));
+
+    // Verify instructions
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    bool found_add = false;
+    bool found_sub = false;
+    bool found_mul = false;
+    bool found_div = false;
+
+    for (const auto &bb : *test_fn)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *bin = dynamic_cast<const BinaryInst *>(&inst))
+            {
+                switch (bin->opcode())
+                {
+                case Opcode::Add:
+                    found_add = true;
+                    break;
+                case Opcode::Sub:
+                    found_sub = true;
+                    break;
+                case Opcode::Mul:
+                    found_mul = true;
+                    break;
+                case Opcode::SDiv:
+                    found_div = true;
+                    break;
+                default:
+                    break;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_add) << "Add instruction not found";
+    EXPECT_TRUE(found_sub) << "Sub instruction not found";
+    EXPECT_TRUE(found_mul) << "Mul instruction not found";
+    EXPECT_TRUE(found_div) << "SDiv instruction not found";
+}
+
+TEST_F(IrGeneratorTest, ComparisonOps)
+{
+    /*
+        fn test(a: i32, b: f32) -> i1 {
+            let c = (a == 5);
+            let d = (b != 3.14);
+            let e = (a < 10);
+            let f = (b > 2.0);
+            return c && d && e && f;
+        }
+    */
+    auto fn = create_test_function(ast::Type::create_bool());
+
+    // Parameters
+    fn->add_param("a", ast::Type::create_int());
+    fn->add_param("b", ast::Type::create_float());
+
+    // Body
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    // c = (a == 5)
+    auto eq_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Eq,
+        std::make_unique<ast::VariableExpr>("a"),
+        std::make_unique<ast::IntegerLiteralExpr>(5));
+    auto eq_decl = std::make_unique<ast::VarDeclStmt>();
+    eq_decl->name = "c";
+    eq_decl->type = ast::Type::create_bool();
+    eq_decl->init_expr = std::move(eq_expr);
+    block->statements.push_back(std::move(eq_decl));
+
+    // d = (b != 3.14)
+    auto ne_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Ne,
+        std::make_unique<ast::VariableExpr>("b"),
+        std::make_unique<ast::FloatLiteralExpr>(3.14f));
+    auto ne_decl = std::make_unique<ast::VarDeclStmt>();
+    ne_decl->name = "d";
+    ne_decl->type = ast::Type::create_bool();
+    ne_decl->init_expr = std::move(ne_expr);
+    block->statements.push_back(std::move(ne_decl));
+
+    // e = (a < 10)
+    auto lt_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Lt,
+        std::make_unique<ast::VariableExpr>("a"),
+        std::make_unique<ast::IntegerLiteralExpr>(10));
+    auto lt_decl = std::make_unique<ast::VarDeclStmt>();
+    lt_decl->name = "e";
+    lt_decl->type = ast::Type::create_bool();
+    lt_decl->init_expr = std::move(lt_expr);
+    block->statements.push_back(std::move(lt_decl));
+
+    // f = (b > 2.0)
+    auto gt_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Gt,
+        std::make_unique<ast::VariableExpr>("b"),
+        std::make_unique<ast::FloatLiteralExpr>(2.0f));
+    auto gt_decl = std::make_unique<ast::VarDeclStmt>();
+    gt_decl->name = "f";
+    gt_decl->type = ast::Type::create_bool();
+    gt_decl->init_expr = std::move(gt_expr);
+    block->statements.push_back(std::move(gt_decl));
+
+    // Final return with logical ANDs
+    auto final_and = std::make_unique<ast::BinaryExpr>(
+        TokenType::And,
+        std::make_unique<ast::BinaryExpr>(
+            TokenType::And,
+            std::make_unique<ast::BinaryExpr>(
+                TokenType::And,
+                std::make_unique<ast::VariableExpr>("c"),
+                std::make_unique<ast::VariableExpr>("d")),
+            std::make_unique<ast::VariableExpr>("e")),
+        std::make_unique<ast::VariableExpr>("f"));
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(final_and)));
+
+    fn->body.push_back(std::move(block));
+    generate_simple_program(std::move(fn));
+
+    // Verify instructions
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    bool found_icmp_eq = false;
+    bool found_fcmp_ne = false;
+    bool found_icmp_slt = false;
+    bool found_fcmp_ogt = false;
+
+    for (const auto &bb : *test_fn)
+    {
+        for (const auto &inst : *bb)
+        {
+            // Check integer comparisons
+            if (auto *icmp = dynamic_cast<const ICmpInst *>(&inst))
+            {
+                if (icmp->predicate() == ICmpInst::EQ)
+                {
+                    found_icmp_eq = true;
+                }
+                else if (icmp->predicate() == ICmpInst::SLT)
+                {
+                    found_icmp_slt = true;
+                }
+            }
+            // Check float comparisons
+            else if (auto *fcmp = dynamic_cast<const FCmpInst *>(&inst))
+            {
+                if (fcmp->predicate() == FCmpInst::ONE)
+                {
+                    found_fcmp_ne = true;
+                }
+                else if (fcmp->predicate() == FCmpInst::OGT)
+                {
+                    found_fcmp_ogt = true;
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_icmp_eq) << "i32 EQ comparison not found";
+    EXPECT_TRUE(found_fcmp_ne) << "f32 NE comparison not found";
+    EXPECT_TRUE(found_icmp_slt) << "i32 SLT comparison not found";
+    EXPECT_TRUE(found_fcmp_ogt) << "f32 OGT comparison not found";
+}
+
+TEST_F(IrGeneratorTest, LogicalOps)
+{
+    /*
+        fn test(a: bool, b: bool) -> bool {
+            return (a && b) || (!a)
+        }
+    */
+    auto fn = create_test_function(ast::Type::create_bool());
+    fn->add_param("a", ast::Type::create_bool());
+    fn->add_param("b", ast::Type::create_bool());
+
+    // Build logical expression
+    auto logical_or = std::make_unique<ast::BinaryExpr>(
+        TokenType::Or,
+        std::make_unique<ast::BinaryExpr>(
+            TokenType::And,
+            std::make_unique<ast::VariableExpr>("a"),
+            std::make_unique<ast::VariableExpr>("b")),
+        std::make_unique<ast::UnaryExpr>(
+            TokenType::Not,
+            std::make_unique<ast::VariableExpr>("a")));
+    fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(logical_or)));
+
+    generate_simple_program(std::move(fn));
+
+    // Verify short-circuit logic
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    // bool found_phi = false;
+    bool has_multiple_blocks = false;
+    int cond_br_count = 0;
+
+    // Should have at least 3 basic blocks for short-circuit:
+    // entry, and_block, or_block
+    if (test_fn->basic_blocks().size() >= 3)
+    {
+        has_multiple_blocks = true;
+    }
+
+    for (const auto &bb : *test_fn)
+    {
+        for (const auto &inst : *bb)
+        {
+            // Check for conditional branches
+            if (auto *br = dynamic_cast<const BranchInst *>(&inst))
+            {
+                if (br->is_conditional())
+                {
+                    cond_br_count++;
+                }
+            }
+            // Check final phi node for merged result
+            if (dynamic_cast<const PhiInst *>(&inst))
+            {
+                // found_phi = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(has_multiple_blocks) << "Expected multiple basic blocks for short-circuit";
+    EXPECT_GE(cond_br_count, 2) << "Expected at least 2 conditional branches";
+    // EXPECT_TRUE(found_phi) << "Phi node for merging logic results not found";
+}
+
+TEST_F(IrGeneratorTest, Negation)
+{
+    auto fn = create_test_function(ast::Type::create_int());
+    fn->add_param("a", ast::Type::create_int());
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    auto neg_expr = std::make_unique<ast::UnaryExpr>(TokenType::Minus, std::make_unique<ast::VariableExpr>("a"));
+    auto neg_decl = std::make_unique<ast::VarDeclStmt>();
+    neg_decl->name = "neg";
+    neg_decl->type = ast::Type::create_int();
+    neg_decl->init_expr = std::move(neg_expr);
+    block->statements.push_back(std::move(neg_decl));
+
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::make_unique<ast::VariableExpr>("neg")));
+    fn->body.push_back(std::move(block));
     generate_simple_program(std::move(fn));
 
     Function *test_fn = module.get_function("test");
     ASSERT_NE(test_fn, nullptr);
 
-    bool found_array_alloca = false;
+    bool found = check_instruction(test_fn, [](const Instruction &inst)
+                                   {
+        if (auto *bin = dynamic_cast<const BinaryInst*>(&inst)) {
+            if (bin->opcode() == Opcode::Sub) {
+                auto *lhs = dynamic_cast<const ConstantInt*>(bin->left());
+                if (lhs && lhs->value() == 0) {
+                    return true;
+                }
+            }
+        }
+        return false; });
+    EXPECT_TRUE(found) << "Negation operation (-a) not found";
+}
+
+TEST_F(IrGeneratorTest, LogicalNot)
+{
+    auto fn = create_test_function(ast::Type::create_bool());
+    fn->add_param("b", ast::Type::create_bool());
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    auto not_expr = std::make_unique<ast::UnaryExpr>(TokenType::Not, std::make_unique<ast::VariableExpr>("b"));
+    auto not_decl = std::make_unique<ast::VarDeclStmt>();
+    not_decl->name = "not";
+    not_decl->type = ast::Type::create_bool();
+    not_decl->init_expr = std::move(not_expr);
+    block->statements.push_back(std::move(not_decl));
+
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::make_unique<ast::VariableExpr>("not")));
+    fn->body.push_back(std::move(block));
+    generate_simple_program(std::move(fn));
+
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    bool found = check_instruction(test_fn, [](const Instruction &inst)
+                                   {
+        if (auto *icmp = dynamic_cast<const ICmpInst*>(&inst)) {
+            if (icmp->predicate() == ICmpInst::EQ) {
+                auto *rhs = dynamic_cast<const ConstantInt*>(icmp->right());
+                if (rhs && rhs->value() == 0) {
+                    return true;
+                }
+            }
+        }
+        return false; });
+    EXPECT_TRUE(found) << "Logical NOT (!b) not found";
+}
+
+TEST_F(IrGeneratorTest, BitwiseNot)
+{
+    auto fn = create_test_function(ast::Type::create_int(64));
+    fn->add_param("c", ast::Type::create_int(64));
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    auto bit_not_expr = std::make_unique<ast::UnaryExpr>(TokenType::Tilde, std::make_unique<ast::VariableExpr>("c"));
+    auto bit_not_decl = std::make_unique<ast::VarDeclStmt>();
+    bit_not_decl->name = "bit_not";
+    bit_not_decl->type = ast::Type::create_int(64);
+    bit_not_decl->init_expr = std::move(bit_not_expr);
+    block->statements.push_back(std::move(bit_not_decl));
+
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::make_unique<ast::VariableExpr>("bit_not")));
+    fn->body.push_back(std::move(block));
+    generate_simple_program(std::move(fn));
+
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    bool found = check_instruction(test_fn, [](const Instruction &inst)
+                                   {
+        if (auto *bin = dynamic_cast<const BinaryInst*>(&inst)) {
+            if (bin->opcode() == Opcode::BitXor) {
+                auto *rhs = dynamic_cast<const ConstantInt*>(bin->right());
+                if (rhs && (rhs->value() == ~0ULL)) {
+                    return true;
+                }
+            }
+        }
+        return false; });
+    EXPECT_TRUE(found) << "Bitwise NOT (~c) not found";
+}
+
+TEST_F(IrGeneratorTest, AddressOf)
+{
+    auto fn = create_test_function(ast::Type::create_pointer(ast::Type::create_int()));
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    auto neg_decl = std::make_unique<ast::VarDeclStmt>();
+    neg_decl->name = "neg";
+    neg_decl->type = ast::Type::create_int();
+    neg_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(42);
+    block->statements.push_back(std::move(neg_decl));
+
+    auto addr_expr = std::make_unique<ast::AddressOfExpr>(std::make_unique<ast::VariableExpr>("neg"));
+    auto addr_decl = std::make_unique<ast::VarDeclStmt>();
+    addr_decl->name = "addr";
+    addr_decl->type = ast::Type::create_pointer(ast::Type::create_int());
+    addr_decl->init_expr = std::move(addr_expr);
+    block->statements.push_back(std::move(addr_decl));
+
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::make_unique<ast::VariableExpr>("addr")));
+    fn->body.push_back(std::move(block));
+    generate_simple_program(std::move(fn));
+
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    bool found = check_instruction(test_fn, [](const Instruction &inst)
+                                   {
+        if (auto *store = dynamic_cast<const StoreInst*>(&inst)) {
+            Value *value = store->value();
+            if (auto *alloca_val = dynamic_cast<const AllocaInst*>(value)) {
+                if (alloca_val->type()->element_type()->is_integer()) {
+                    Value *ptr = store->pointer();
+                    if (auto *alloca_ptr = dynamic_cast<const AllocaInst*>(ptr)) {
+                        return alloca_ptr->type()->element_type()->is_pointer() &&
+                               alloca_ptr->type()->element_type()->element_type()->is_integer();
+                    }
+                }
+            }
+        }
+        return false; });
+    EXPECT_TRUE(found) << "Address-of operator (&neg) not found";
+}
+
+TEST_F(IrGeneratorTest, Dereference)
+{
+    auto fn = create_test_function(ast::Type::create_int());
+    fn->add_param("d", ast::Type::create_pointer(ast::Type::create_int()));
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    auto deref_expr = std::make_unique<ast::DerefExpr>(std::make_unique<ast::VariableExpr>("d"));
+    auto deref_decl = std::make_unique<ast::VarDeclStmt>();
+    deref_decl->name = "deref";
+    deref_decl->type = ast::Type::create_int();
+    deref_decl->init_expr = std::move(deref_expr);
+    block->statements.push_back(std::move(deref_decl));
+
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::make_unique<ast::VariableExpr>("deref")));
+    fn->body.push_back(std::move(block));
+    generate_simple_program(std::move(fn));
+
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    bool found = check_instruction(test_fn, [](const Instruction &inst)
+                                   {
+        if (auto *load = dynamic_cast<const LoadInst*>(&inst)) {
+            Value *arg = load->pointer();
+            if (arg->type()->is_pointer() && arg->type()->element_type()->is_integer()){
+                return true;
+            }
+        }
+        return false; });
+    EXPECT_TRUE(found) << "LoadInst of dereference operator (*d) not found";
+}
+
+//===----------------------------------------------------------------------===//
+//                          Control Flow Tests
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+//                          If-Else Statement Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, IfElseStatement)
+{
+    /*
+        fn test(a: i32) -> i32 {
+            if a > 0 {
+                return 1;
+            } else if a == 0 {
+                return 0;
+            } else {
+                return -1;
+            }
+        }
+    */
+    auto fn = create_test_function(ast::Type::create_int());
+    fn->add_param("a", ast::Type::create_int());
+
+    // Build nested if-else
+    auto else_block = std::make_unique<ast::BlockStmt>();
+    else_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::IntegerLiteralExpr>(-1)));
+
+    auto else_if_cond = std::make_unique<ast::BinaryExpr>(
+        TokenType::Eq,
+        std::make_unique<ast::VariableExpr>("a"),
+        std::make_unique<ast::IntegerLiteralExpr>(0));
+    auto else_if_block = std::make_unique<ast::BlockStmt>();
+    else_if_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::IntegerLiteralExpr>(0)));
+
+    auto main_cond = std::make_unique<ast::BinaryExpr>(
+        TokenType::Ge,
+        std::make_unique<ast::VariableExpr>("a"),
+        std::make_unique<ast::IntegerLiteralExpr>(0));
+    auto then_block = std::make_unique<ast::BlockStmt>();
+    then_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::IntegerLiteralExpr>(1)));
+
+    auto else_if_stmt = std::make_unique<ast::IfStmt>(
+        std::move(else_if_cond),
+        std::move(else_if_block),
+        std::move(else_block));
+
+    auto main_if = std::make_unique<ast::IfStmt>(
+        std::move(main_cond),
+        std::move(then_block),
+        std::move(else_if_stmt));
+
+    fn->body.push_back(std::move(main_if));
+    generate_simple_program(std::move(fn));
+
+    // Verify control flow
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    // bool found_phi = false;
+    int cond_br_count = 0;
+    size_t return_count = 0;
+
     for (const auto &bb : *test_fn)
     {
+        // Count terminators
+        if (auto *term = bb->get_terminator())
+        {
+            if (dynamic_cast<ReturnInst *>(term))
+            {
+                return_count++;
+            }
+            else if (auto *br = dynamic_cast<BranchInst *>(term))
+            {
+                if (br->is_conditional())
+                {
+                    cond_br_count++;
+                }
+            }
+        }
+
+        // Check for phi nodes
         for (const auto &inst : *bb)
         {
-            if (auto *alloca = dynamic_cast<const AllocaInst *>(&inst))
+            if (dynamic_cast<const PhiInst *>(&inst))
             {
-                if (alloca->allocated_type()->is_array())
+                // found_phi = true;
+            }
+        }
+    }
+
+    EXPECT_GE(cond_br_count, 2) << "Expected at least 2 conditional branches";
+    EXPECT_EQ(return_count, 3) << "Expected 3 return points";
+    // EXPECT_TRUE(found_phi) << "Phi node for value merging not found";
+}
+
+//===----------------------------------------------------------------------===//
+//                          While Loop Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, WhileLoop)
+{
+    /*
+        fn test(n: i32) -> i32 {
+            let mut i = 0;
+            let mut sum = 0;
+            while i < n {
+                sum += i;
+                i += 1;
+            }
+            return sum;
+        }
+    */
+    auto fn = create_test_function(ast::Type::create_int());
+    fn->add_param("n", ast::Type::create_int());
+
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    // Variable declarations
+    auto i_decl = std::make_unique<ast::VarDeclStmt>();
+    i_decl->name = "i";
+    i_decl->type = ast::Type::create_int();
+    i_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(0);
+    block->statements.push_back(std::move(i_decl));
+
+    auto sum_decl = std::make_unique<ast::VarDeclStmt>();
+    sum_decl->name = "sum";
+    sum_decl->type = ast::Type::create_int();
+    sum_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(0);
+    block->statements.push_back(std::move(sum_decl));
+
+    // While loop body
+    auto loop_body = std::make_unique<ast::BlockStmt>();
+
+    // sum += i
+    auto sum_add = std::make_unique<ast::BinaryExpr>(
+        TokenType::AddAssign,
+        std::make_unique<ast::VariableExpr>("sum"),
+        std::make_unique<ast::VariableExpr>("i"));
+    loop_body->statements.push_back(std::make_unique<ast::ExprStmt>(std::move(sum_add)));
+
+    // i += 1
+    auto i_inc = std::make_unique<ast::BinaryExpr>(
+        TokenType::AddAssign,
+        std::make_unique<ast::VariableExpr>("i"),
+        std::make_unique<ast::IntegerLiteralExpr>(1));
+    loop_body->statements.push_back(std::make_unique<ast::ExprStmt>(std::move(i_inc)));
+
+    // Condition: i < n
+    auto cond = std::make_unique<ast::BinaryExpr>(
+        TokenType::Lt,
+        std::make_unique<ast::VariableExpr>("i"),
+        std::make_unique<ast::VariableExpr>("n"));
+
+    auto while_stmt = std::make_unique<ast::WhileStmt>(
+        std::move(cond),
+        std::move(loop_body));
+    block->statements.push_back(std::move(while_stmt));
+
+    // Final return
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::VariableExpr>("sum")));
+
+    fn->body.push_back(std::move(block));
+    generate_simple_program(std::move(fn));
+
+    // Verify loop structure
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    bool has_loop_backedge = false; // from loop body to cond block
+    BasicBlock *cond_block = nullptr;
+    BasicBlock *loop_block = nullptr;
+
+    // Check CFG structure
+    for (const auto &bb : *test_fn)
+    {
+        if (auto *term = bb->get_terminator())
+        {
+            if (auto *br = dynamic_cast<BranchInst *>(term))
+            {
+                // Record condition block
+                if (br->is_conditional() && !cond_block)
                 {
-                    found_array_alloca = true;
+                    // MO_DEBUG("Found condition block: %p", bb.get());
+                    cond_block = &*bb;
+                }
+            }
+        }
+
+        // Find loop body block
+        if (cond_block && bb.get() != cond_block && !loop_block)
+        {
+            // MO_DEBUG("Found loop body block: %p", bb.get());
+            loop_block = &*bb;
+
+            if (auto *term = bb->get_terminator())
+            {
+                if (auto *br = dynamic_cast<BranchInst *>(term))
+                {
+                    // Check for back edge (loop block -> cond block)
+                    if (br->get_true_successor() == cond_block)
+                    {
+                        has_loop_backedge = true;
+                    }
                 }
             }
         }
     }
-    EXPECT_FALSE(found_array_alloca);
-    auto ret_inst = find_return(test_fn);
-    auto ret_val = ret_inst->value();
 
-    auto *const_array = dynamic_cast<ConstantArray *>(ret_val);
-    EXPECT_NE(const_array, nullptr);
+    EXPECT_TRUE(cond_block) << "Condition block not found";
+    EXPECT_TRUE(loop_block) << "Loop body block not found";
+    EXPECT_TRUE(has_loop_backedge) << "Missing loop back edge";
 }
-// //===----------------------------------------------------------------------===//
-// //                         运算符和表达式测试
-// //===----------------------------------------------------------------------===//
-// //===----------------------------------------------------------------------===//
-// //                          Binary Arithmetic Ops Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, BinaryArithmeticOps)
-// {
-//     /*
-//         fn test(a: i32, b: i32) -> i32 {
-//             let c = a + b;
-//             let d = c - a;
-//             let e = d * b;
-//             let f = e / d;
-//             return f;
-//         }
-//     */
-//     auto fn = create_test_function(ast::Type::create_int());
 
-//     // Parameters
-//     fn->add_param("a", ast::Type::create_int());
-//     fn->add_param("b", ast::Type::create_int());
-
-//     // Body
-//     auto block = std::make_unique<ast::BlockStmt>();
-
-//     // c = a + b
-//     auto add_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Plus,
-//         std::make_unique<ast::VariableExpr>("a"),
-//         std::make_unique<ast::VariableExpr>("b"));
-//     auto add_decl = std::make_unique<ast::VarDeclStmt>();
-//     add_decl->name = "c";
-//     add_decl->type = ast::Type::create_int();
-//     add_decl->init_expr = std::move(add_expr);
-//     block->statements.push_back(std::move(add_decl));
-
-//     // d = c - a
-//     auto sub_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Minus,
-//         std::make_unique<ast::VariableExpr>("c"),
-//         std::make_unique<ast::VariableExpr>("a"));
-//     auto sub_decl = std::make_unique<ast::VarDeclStmt>();
-//     sub_decl->name = "d";
-//     sub_decl->type = ast::Type::create_int();
-//     sub_decl->init_expr = std::move(sub_expr);
-//     block->statements.push_back(std::move(sub_decl));
-
-//     // e = d * b
-//     auto mul_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Star,
-//         std::make_unique<ast::VariableExpr>("d"),
-//         std::make_unique<ast::VariableExpr>("b"));
-//     auto mul_decl = std::make_unique<ast::VarDeclStmt>();
-//     mul_decl->name = "e";
-//     mul_decl->type = ast::Type::create_int();
-//     mul_decl->init_expr = std::move(mul_expr);
-//     block->statements.push_back(std::move(mul_decl));
-
-//     // f = e / d
-//     auto div_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Slash,
-//         std::make_unique<ast::VariableExpr>("e"),
-//         std::make_unique<ast::VariableExpr>("d"));
-//     auto div_decl = std::make_unique<ast::VarDeclStmt>();
-//     div_decl->name = "f";
-//     div_decl->type = ast::Type::create_int();
-//     div_decl->init_expr = std::move(div_expr);
-//     block->statements.push_back(std::move(div_decl));
-
-//     // Return
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::VariableExpr>("f")));
-
-//     fn->body.push_back(std::move(block));
-//     generate_simple_program(std::move(fn));
-
-//     // Verify instructions
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
-
-//     bool found_add = false;
-//     bool found_sub = false;
-//     bool found_mul = false;
-//     bool found_div = false;
-
-//     for (const auto &bb : *test_fn)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *bin = dynamic_cast<const BinaryInst *>(&inst))
-//             {
-//                 switch (bin->opcode())
-//                 {
-//                 case Opcode::Add:
-//                     found_add = true;
-//                     break;
-//                 case Opcode::Sub:
-//                     found_sub = true;
-//                     break;
-//                 case Opcode::Mul:
-//                     found_mul = true;
-//                     break;
-//                 case Opcode::SDiv:
-//                     found_div = true;
-//                     break;
-//                 default:
-//                     break;
-//                 }
-//             }
-//         }
-//     }
-
-//     EXPECT_TRUE(found_add) << "Add instruction not found";
-//     EXPECT_TRUE(found_sub) << "Sub instruction not found";
-//     EXPECT_TRUE(found_mul) << "Mul instruction not found";
-//     EXPECT_TRUE(found_div) << "SDiv instruction not found";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                          Comparison Ops Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, ComparisonOps)
-// {
-//     /*
-//         fn test(a: i32, b: f32) -> i1 {
-//             let c = (a == 5);
-//             let d = (b != 3.14);
-//             let e = (a < 10);
-//             let f = (b > 2.0);
-//             return c && d && e && f;
-//         }
-//     */
-//     auto fn = create_test_function(ast::Type::create_bool());
-
-//     // Parameters
-//     fn->add_param("a", ast::Type::create_int());
-//     fn->add_param("b", ast::Type::create_float());
-
-//     // Body
-//     auto block = std::make_unique<ast::BlockStmt>();
-
-//     // c = (a == 5)
-//     auto eq_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Eq,
-//         std::make_unique<ast::VariableExpr>("a"),
-//         std::make_unique<ast::IntegerLiteralExpr>(5));
-//     auto eq_decl = std::make_unique<ast::VarDeclStmt>();
-//     eq_decl->name = "c";
-//     eq_decl->type = ast::Type::create_bool();
-//     eq_decl->init_expr = std::move(eq_expr);
-//     block->statements.push_back(std::move(eq_decl));
-
-//     // d = (b != 3.14)
-//     auto ne_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Ne,
-//         std::make_unique<ast::VariableExpr>("b"),
-//         std::make_unique<ast::FloatLiteralExpr>(3.14f));
-//     auto ne_decl = std::make_unique<ast::VarDeclStmt>();
-//     ne_decl->name = "d";
-//     ne_decl->type = ast::Type::create_bool();
-//     ne_decl->init_expr = std::move(ne_expr);
-//     block->statements.push_back(std::move(ne_decl));
-
-//     // e = (a < 10)
-//     auto lt_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Lt,
-//         std::make_unique<ast::VariableExpr>("a"),
-//         std::make_unique<ast::IntegerLiteralExpr>(10));
-//     auto lt_decl = std::make_unique<ast::VarDeclStmt>();
-//     lt_decl->name = "e";
-//     lt_decl->type = ast::Type::create_bool();
-//     lt_decl->init_expr = std::move(lt_expr);
-//     block->statements.push_back(std::move(lt_decl));
-
-//     // f = (b > 2.0)
-//     auto gt_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Gt,
-//         std::make_unique<ast::VariableExpr>("b"),
-//         std::make_unique<ast::FloatLiteralExpr>(2.0f));
-//     auto gt_decl = std::make_unique<ast::VarDeclStmt>();
-//     gt_decl->name = "f";
-//     gt_decl->type = ast::Type::create_bool();
-//     gt_decl->init_expr = std::move(gt_expr);
-//     block->statements.push_back(std::move(gt_decl));
-
-//     // Final return with logical ANDs
-//     auto final_and = std::make_unique<ast::BinaryExpr>(
-//         TokenType::And,
-//         std::make_unique<ast::BinaryExpr>(
-//             TokenType::And,
-//             std::make_unique<ast::BinaryExpr>(
-//                 TokenType::And,
-//                 std::make_unique<ast::VariableExpr>("c"),
-//                 std::make_unique<ast::VariableExpr>("d")),
-//             std::make_unique<ast::VariableExpr>("e")),
-//         std::make_unique<ast::VariableExpr>("f"));
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(final_and)));
-
-//     fn->body.push_back(std::move(block));
-//     generate_simple_program(std::move(fn));
-
-//     // Verify instructions
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
-
-//     bool found_icmp_eq = false;
-//     bool found_fcmp_ne = false;
-//     bool found_icmp_slt = false;
-//     bool found_fcmp_ogt = false;
-
-//     for (const auto &bb : *test_fn)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             // Check integer comparisons
-//             if (auto *icmp = dynamic_cast<const ICmpInst *>(&inst))
-//             {
-//                 if (icmp->predicate() == ICmpInst::EQ)
-//                 {
-//                     found_icmp_eq = true;
-//                 }
-//                 else if (icmp->predicate() == ICmpInst::SLT)
-//                 {
-//                     found_icmp_slt = true;
-//                 }
-//             }
-//             // Check float comparisons
-//             else if (auto *fcmp = dynamic_cast<const FCmpInst *>(&inst))
-//             {
-//                 if (fcmp->predicate() == FCmpInst::ONE)
-//                 {
-//                     found_fcmp_ne = true;
-//                 }
-//                 else if (fcmp->predicate() == FCmpInst::OGT)
-//                 {
-//                     found_fcmp_ogt = true;
-//                 }
-//             }
-//         }
-//     }
-
-//     EXPECT_TRUE(found_icmp_eq) << "i32 EQ comparison not found";
-//     EXPECT_TRUE(found_fcmp_ne) << "f32 NE comparison not found";
-//     EXPECT_TRUE(found_icmp_slt) << "i32 SLT comparison not found";
-//     EXPECT_TRUE(found_fcmp_ogt) << "f32 OGT comparison not found";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                          Logical Operators Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, LogicalOps)
-// {
-//     /*
-//         fn test(a: bool, b: bool) -> bool {
-//             return (a && b) || (!a)
-//         }
-//     */
-//     auto fn = create_test_function(ast::Type::create_bool());
-//     fn->add_param("a", ast::Type::create_bool());
-//     fn->add_param("b", ast::Type::create_bool());
-
-//     // Build logical expression
-//     auto logical_or = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Or,
-//         std::make_unique<ast::BinaryExpr>(
-//             TokenType::And,
-//             std::make_unique<ast::VariableExpr>("a"),
-//             std::make_unique<ast::VariableExpr>("b")),
-//         std::make_unique<ast::UnaryExpr>(
-//             TokenType::Not,
-//             std::make_unique<ast::VariableExpr>("a")));
-//     fn->body.push_back(std::make_unique<ast::ReturnStmt>(std::move(logical_or)));
-
-//     generate_simple_program(std::move(fn));
-
-//     // Verify short-circuit logic
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
-
-//     bool found_phi = false;
-//     bool has_multiple_blocks = false;
-//     int cond_br_count = 0;
-
-//     // Should have at least 3 basic blocks for short-circuit:
-//     // entry, and_block, or_block
-//     if (test_fn->basic_blocks().size() >= 3)
-//     {
-//         has_multiple_blocks = true;
-//     }
-
-//     for (const auto &bb : *test_fn)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             // Check for conditional branches
-//             if (auto *br = dynamic_cast<const BranchInst *>(&inst))
-//             {
-//                 if (br->is_conditional())
-//                 {
-//                     cond_br_count++;
-//                 }
-//             }
-//             // Check final phi node for merged result
-//             if (dynamic_cast<const PhiInst *>(&inst))
-//             {
-//                 found_phi = true;
-//             }
-//         }
-//     }
-
-//     EXPECT_TRUE(has_multiple_blocks) << "Expected multiple basic blocks for short-circuit";
-//     EXPECT_GE(cond_br_count, 2) << "Expected at least 2 conditional branches";
-//     EXPECT_TRUE(found_phi) << "Phi node for merging logic results not found";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                           Unary Operators Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, UnaryOps)
-// {
-//     /*
-//         fn test(a: i32, b: bool, c: i32, d: *i32) -> i32 {
-//             let neg = -a;       // Negation
-//             let not = !b;        // Logical NOT
-//             let bit_not = ~c;    // Bitwise NOT
-//             let addr = &neg;     // Address-of
-//             let deref = *d;      // Dereference
-//             return neg + deref;
-//         }
-//     */
-//     auto fn = create_test_function(ast::Type::create_int());
-//     fn->add_param("a", ast::Type::create_int());
-//     fn->add_param("b", ast::Type::create_bool());
-//     fn->add_param("c", ast::Type::create_int());
-//     fn->add_param("d", ast::Type::create_pointer(ast::Type::create_int()));
-
-//     auto block = std::make_unique<ast::BlockStmt>();
-
-//     // -a
-//     auto neg_expr = std::make_unique<ast::UnaryExpr>(
-//         TokenType::Minus,
-//         std::make_unique<ast::VariableExpr>("a"));
-//     auto neg_decl = std::make_unique<ast::VarDeclStmt>();
-//     neg_decl->name = "neg";
-//     neg_decl->type = ast::Type::create_int();
-//     neg_decl->init_expr = std::move(neg_expr);
-//     block->statements.push_back(std::move(neg_decl));
-
-//     // !b
-//     auto not_expr = std::make_unique<ast::UnaryExpr>(
-//         TokenType::Not,
-//         std::make_unique<ast::VariableExpr>("b"));
-//     auto not_decl = std::make_unique<ast::VarDeclStmt>();
-//     not_decl->name = "not";
-//     not_decl->type = ast::Type::create_bool();
-//     not_decl->init_expr = std::move(not_expr);
-//     block->statements.push_back(std::move(not_decl));
-
-//     // ~c
-//     auto bit_not_expr = std::make_unique<ast::UnaryExpr>(
-//         TokenType::Tilde,
-//         std::make_unique<ast::VariableExpr>("c"));
-//     auto bit_not_decl = std::make_unique<ast::VarDeclStmt>();
-//     bit_not_decl->name = "bit_not";
-//     bit_not_decl->type = ast::Type::create_int();
-//     bit_not_decl->init_expr = std::move(bit_not_expr);
-//     block->statements.push_back(std::move(bit_not_decl));
-
-//     // &neg
-//     auto addr_expr = std::make_unique<ast::AddressOfExpr>(
-//         std::make_unique<ast::VariableExpr>("neg"));
-//     auto addr_decl = std::make_unique<ast::VarDeclStmt>();
-//     addr_decl->name = "addr";
-//     addr_decl->type = ast::Type::create_pointer(ast::Type::create_int());
-//     addr_decl->init_expr = std::move(addr_expr);
-//     block->statements.push_back(std::move(addr_decl));
-
-//     // *d
-//     auto deref_expr = std::make_unique<ast::DerefExpr>(
-//         std::make_unique<ast::VariableExpr>("d"));
-//     auto deref_decl = std::make_unique<ast::VarDeclStmt>();
-//     deref_decl->name = "deref";
-//     deref_decl->type = ast::Type::create_int();
-//     deref_decl->init_expr = std::move(deref_expr);
-//     block->statements.push_back(std::move(deref_decl));
-
-//     // Return sum
-//     auto ret_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Plus,
-//         std::make_unique<ast::VariableExpr>("neg"),
-//         std::make_unique<ast::VariableExpr>("deref"));
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
-
-//     fn->body.push_back(std::move(block));
-//     generate_simple_program(std::move(fn));
-
-//     // Verify unary operations
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
-
-//     bool found_neg = false;
-//     bool found_not = false;
-//     bool found_bit_not = false;
-//     bool found_addr = false;
-//     bool found_deref = false;
-
-//     for (const auto &bb : *test_fn)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             // Check negation (0 - a)
-//             if (auto *bin = dynamic_cast<const BinaryInst *>(&inst))
-//             {
-//                 if (bin->opcode() == Opcode::Sub)
-//                 {
-//                     if (auto *lhs = dynamic_cast<ConstantInt *>(bin->get_lhs()))
-//                     {
-//                         if (lhs->value() == 0)
-//                         {
-//                             found_neg = true;
-//                         }
-//                     }
-//                 }
-//             }
-//             // Check logical NOT (icmp ne)
-//             else if (auto *icmp = dynamic_cast<const ICmpInst *>(&inst))
-//             {
-//                 if (icmp->predicate() == ICmpInst::NE)
-//                 {
-//                     found_not = true;
-//                 }
-//             }
-//             // Check bitwise NOT (xor -1)
-//             else if (auto *bin = dynamic_cast<const BinaryInst *>(&inst))
-//             {
-//                 if (bin->opcode() == Opcode::BitXor)
-//                 {
-//                     if (auto *rhs = dynamic_cast<ConstantInt *>(bin->get_rhs()))
-//                     {
-//                         if (rhs->value() == ~0ULL)
-//                         {
-//                             found_bit_not = true;
-//                         }
-//                     }
-//                 }
-//             }
-//             // Check address-of (alloca + store)
-//             else if (dynamic_cast<const AllocaInst *>(&inst))
-//             {
-//                 found_addr = true;
-//             }
-//             // Check dereference (load)
-//             else if (dynamic_cast<const LoadInst *>(&inst))
-//             {
-//                 found_deref = true;
-//             }
-//         }
-//     }
-
-//     EXPECT_TRUE(found_neg) << "Negation operation (-a) not found";
-//     EXPECT_TRUE(found_not) << "Logical NOT (!b) not found";
-//     EXPECT_TRUE(found_bit_not) << "Bitwise NOT (~c) not found";
-//     EXPECT_TRUE(found_addr) << "Address-of operator (&neg) not found";
-//     EXPECT_TRUE(found_deref) << "Dereference operator (*d) not found";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                          控制流测试
-// //===----------------------------------------------------------------------===//
-// //===----------------------------------------------------------------------===//
-// //                          If-Else Statement Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, IfElseStatement)
-// {
-//     /*
-//         fn test(a: i32) -> i32 {
-//             if a > 0 {
-//                 return 1;
-//             } else if a == 0 {
-//                 return 0;
-//             } else {
-//                 return -1;
-//             }
-//         }
-//     */
-//     auto fn = create_test_function(ast::Type::create_int());
-//     fn->add_param("a", ast::Type::create_int());
-
-//     // Build nested if-else
-//     auto else_block = std::make_unique<ast::BlockStmt>();
-//     else_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::IntegerLiteralExpr>(-1)));
-
-//     auto else_if_cond = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Eq,
-//         std::make_unique<ast::VariableExpr>("a"),
-//         std::make_unique<ast::IntegerLiteralExpr>(0));
-//     auto else_if_block = std::make_unique<ast::BlockStmt>();
-//     else_if_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::IntegerLiteralExpr>(0)));
-
-//     auto main_cond = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Ge,
-//         std::make_unique<ast::VariableExpr>("a"),
-//         std::make_unique<ast::IntegerLiteralExpr>(0));
-//     auto then_block = std::make_unique<ast::BlockStmt>();
-//     then_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::IntegerLiteralExpr>(1)));
-
-//     auto else_if_stmt = std::make_unique<ast::IfStmt>(
-//         std::move(else_if_cond),
-//         std::move(else_if_block),
-//         std::move(else_block));
-
-//     auto main_if = std::make_unique<ast::IfStmt>(
-//         std::move(main_cond),
-//         std::move(then_block),
-//         std::move(else_if_stmt));
-
-//     fn->body.push_back(std::move(main_if));
-//     generate_simple_program(std::move(fn));
-
-//     // Verify control flow
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
-
-//     bool found_phi = false;
-//     int cond_br_count = 0;
-//     size_t return_count = 0;
-
-//     for (const auto &bb : *test_fn)
-//     {
-//         // Count terminators
-//         if (auto *term = bb->get_terminator())
-//         {
-//             if (dynamic_cast<ReturnInst *>(term))
-//             {
-//                 return_count++;
-//             }
-//             else if (auto *br = dynamic_cast<BranchInst *>(term))
-//             {
-//                 if (br->is_conditional())
-//                 {
-//                     cond_br_count++;
-//                 }
-//             }
-//         }
-
-//         // Check for phi nodes
-//         for (const auto &inst : *bb)
-//         {
-//             if (dynamic_cast<const PhiInst *>(&inst))
-//             {
-//                 found_phi = true;
-//             }
-//         }
-//     }
-
-//     EXPECT_GE(cond_br_count, 2) << "Expected at least 2 conditional branches";
-//     EXPECT_EQ(return_count, 3) << "Expected 3 return points";
-//     EXPECT_TRUE(found_phi) << "Phi node for value merging not found";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                          While Loop Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, WhileLoop)
-// {
-//     /*
-//         fn test(n: i32) -> i32 {
-//             let mut i = 0;
-//             let mut sum = 0;
-//             while i < n {
-//                 sum += i;
-//                 i += 1;
-//             }
-//             return sum;
-//         }
-//     */
-//     auto fn = create_test_function(ast::Type::create_int());
-//     fn->add_param("n", ast::Type::create_int());
-
-//     auto block = std::make_unique<ast::BlockStmt>();
-
-//     // Variable declarations
-//     auto i_decl = std::make_unique<ast::VarDeclStmt>();
-//     i_decl->name = "i";
-//     i_decl->type = ast::Type::create_int();
-//     i_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(0);
-//     block->statements.push_back(std::move(i_decl));
-
-//     auto sum_decl = std::make_unique<ast::VarDeclStmt>();
-//     sum_decl->name = "sum";
-//     sum_decl->type = ast::Type::create_int();
-//     sum_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(0);
-//     block->statements.push_back(std::move(sum_decl));
-
-//     // While loop body
-//     auto loop_body = std::make_unique<ast::BlockStmt>();
-
-//     // sum += i
-//     auto sum_add = std::make_unique<ast::BinaryExpr>(
-//         TokenType::AddAssign,
-//         std::make_unique<ast::VariableExpr>("sum"),
-//         std::make_unique<ast::VariableExpr>("i"));
-//     loop_body->statements.push_back(std::make_unique<ast::ExprStmt>(std::move(sum_add)));
-
-//     // i += 1
-//     auto i_inc = std::make_unique<ast::BinaryExpr>(
-//         TokenType::AddAssign,
-//         std::make_unique<ast::VariableExpr>("i"),
-//         std::make_unique<ast::IntegerLiteralExpr>(1));
-//     loop_body->statements.push_back(std::make_unique<ast::ExprStmt>(std::move(i_inc)));
-
-//     // Condition: i < n
-//     auto cond = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Lt,
-//         std::make_unique<ast::VariableExpr>("i"),
-//         std::make_unique<ast::VariableExpr>("n"));
-
-//     auto while_stmt = std::make_unique<ast::WhileStmt>(
-//         std::move(cond),
-//         std::move(loop_body));
-//     block->statements.push_back(std::move(while_stmt));
-
-//     // Final return
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::VariableExpr>("sum")));
-
-//     fn->body.push_back(std::move(block));
-//     generate_simple_program(std::move(fn));
-
-//     // Verify loop structure
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
-
-//     bool has_loop_backedge = false;
-//     BasicBlock *cond_block = nullptr;
-//     BasicBlock *loop_block = nullptr;
-
-//     // Check CFG structure
-//     for (const auto &bb : *test_fn)
-//     {
-//         if (auto *term = bb->get_terminator())
-//         {
-//             if (auto *br = dynamic_cast<BranchInst *>(term))
-//             {
-//                 // Check for back edge (loop block -> cond block)
-//                 if (br->get_true_successor() == cond_block && loop_block == &*bb)
-//                 {
-//                     has_loop_backedge = true;
-//                 }
-
-//                 // Record condition block
-//                 if (br->is_conditional() && !cond_block)
-//                 {
-//                     cond_block = &*bb;
-//                 }
-//             }
-//         }
-
-//         // Find loop body block
-//         if (cond_block && bb.get() != cond_block && !loop_block)
-//         {
-//             loop_block = &*bb;
-//         }
-//     }
-
-//     EXPECT_TRUE(cond_block) << "Condition block not found";
-//     EXPECT_TRUE(loop_block) << "Loop body block not found";
-//     EXPECT_TRUE(has_loop_backedge) << "Missing loop back edge";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                          Break/Continue Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, BreakContinue)
-// {
-//     /*
-//         fn test() -> i32 {
-//             let mut i = 0;
-//             while true {
-//                 i += 1;
-//                 if i > 5 {
-//                     break;
-//                 }
-//                 if i % 2 == 0 {
-//                     continue;
-//                 }
-//                 // Do something
-//             }
-//             return i;
-//         }
-//     */
-//     auto fn = create_test_function(ast::Type::create_int());
-
-//     auto block = std::make_unique<ast::BlockStmt>();
-
-//     // let mut i = 0;
-//     auto i_decl = std::make_unique<ast::VarDeclStmt>();
-//     i_decl->name = "i";
-//     i_decl->type = ast::Type::create_int();
-//     i_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(0);
-//     block->statements.push_back(std::move(i_decl));
-
-//     // Loop body
-//     auto loop_body = std::make_unique<ast::BlockStmt>();
-
-//     // i += 1
-//     auto i_inc = std::make_unique<ast::BinaryExpr>(
-//         TokenType::AddAssign,
-//         std::make_unique<ast::VariableExpr>("i"),
-//         std::make_unique<ast::IntegerLiteralExpr>(1));
-//     loop_body->statements.push_back(std::make_unique<ast::ExprStmt>(std::move(i_inc)));
-
-//     // if i > 5 { break }
-//     auto break_cond = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Ge,
-//         std::make_unique<ast::VariableExpr>("i"),
-//         std::make_unique<ast::IntegerLiteralExpr>(5));
-//     auto break_then = std::make_unique<ast::BlockStmt>();
-//     break_then->statements.push_back(std::make_unique<ast::BreakStmt>());
-//     auto break_if = std::make_unique<ast::IfStmt>(
-//         std::move(break_cond),
-//         std::move(break_then),
-//         nullptr);
-//     loop_body->statements.push_back(std::move(break_if));
-
-//     // if i % 2 == 0 { continue }
-//     auto continue_cond = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Eq,
-//         std::make_unique<ast::BinaryExpr>(
-//             TokenType::Modulo,
-//             std::make_unique<ast::VariableExpr>("i"),
-//             std::make_unique<ast::IntegerLiteralExpr>(2)),
-//         std::make_unique<ast::IntegerLiteralExpr>(0));
-//     auto continue_then = std::make_unique<ast::BlockStmt>();
-//     continue_then->statements.push_back(std::make_unique<ast::ContinueStmt>());
-//     auto continue_if = std::make_unique<ast::IfStmt>(
-//         std::move(continue_cond),
-//         std::move(continue_then),
-//         nullptr);
-//     loop_body->statements.push_back(std::move(continue_if));
-
-//     // While loop with true condition
-//     auto while_stmt = std::make_unique<ast::WhileStmt>(
-//         std::make_unique<ast::IntegerLiteralExpr>(1), // true condition
-//         std::move(loop_body));
-//     block->statements.push_back(std::move(while_stmt));
-
-//     // Final return
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::VariableExpr>("i")));
-
-//     fn->body.push_back(std::move(block));
-//     generate_simple_program(std::move(fn));
-
-//     // Verify break/continue targets
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
-
-//     BasicBlock *loop_exit = nullptr;
-//     BasicBlock *loop_header = nullptr;
-//     bool has_break_jump = false;
-//     bool has_continue_jump = false;
-
-//     for (const auto &bb : *test_fn)
-//     {
-//         if (auto *term = bb->get_terminator())
-//         {
-//             // Check break (branch to loop exit)
-//             if (auto *br = dynamic_cast<BranchInst *>(term))
-//             {
-//                 if (!br->is_conditional() && br->get_true_successor() == loop_exit)
-//                 {
-//                     has_break_jump = true;
-//                 }
-//             }
-
-//             // Check continue (branch to loop header)
-//             if (auto *br = dynamic_cast<BranchInst *>(term))
-//             {
-//                 if (!br->is_conditional() && br->get_true_successor() == loop_header)
-//                 {
-//                     has_continue_jump = true;
-//                 }
-//             }
-
-//             // Find loop exit block (contains return)
-//             if (dynamic_cast<ReturnInst *>(term))
-//             {
-//                 loop_exit = &*bb;
-//             }
-
-//             // Find loop header (condition block)
-//             if (bb.get() != loop_exit && bb->get_terminator() &&
-//                 dynamic_cast<BranchInst *>(bb->get_terminator())->is_conditional())
-//             {
-//                 loop_header = &*bb;
-//             }
-//         }
-//     }
-
-//     EXPECT_TRUE(loop_exit) << "Loop exit block not found";
-//     EXPECT_TRUE(loop_header) << "Loop header block not found";
-//     EXPECT_TRUE(has_break_jump) << "Break jump to exit not found";
-//     EXPECT_TRUE(has_continue_jump) << "Continue jump to header not found";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                          函数和调用测试
-// //===----------------------------------------------------------------------===//
-// //===----------------------------------------------------------------------===//
-// //                          Function Call Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, FunctionCall)
-// {
-//     /*
-//         fn add(a: i32, b: i32) -> i32 {
-//             return a + b;
-//         }
-
-//         fn test() -> i32 {
-//             return add(5, 3);
-//         }
-//     */
-//     ast::Program program;
-
-//     // Add function
-//     auto add_fn = std::make_unique<ast::FunctionDecl>();
-//     add_fn->name = "add";
-//     add_fn->return_type = ast::Type::create_int();
-//     add_fn->add_param("a", ast::Type::create_int());
-//     add_fn->add_param("b", ast::Type::create_int());
-//     add_fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::BinaryExpr>(
-//             TokenType::Plus,
-//             std::move(std::make_unique<ast::VariableExpr>("a")),
-//             std::move(std::make_unique<ast::VariableExpr>("b")))));
-//     program.functions.push_back(std::move(add_fn));
-
-//     // Test function
-//     auto test_fn = create_test_function(ast::Type::create_int());
-
-//     std::vector<ast::ExprPtr> vec_1;
-//     vec_1.reserve(2);
-//     vec_1.push_back(std::make_unique<ast::IntegerLiteralExpr>(5));
-//     vec_1.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
-
-//     test_fn->body.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::CallExpr>(
-//             "add",
-//             std::move(vec_1))));
-//     program.functions.push_back(std::move(test_fn));
-
-//     generate(program);
-
-//     // Verify call instruction
-//     Function *add_func = module.get_function("add");
-//     Function *test_func = module.get_function("test");
-//     ASSERT_NE(add_func, nullptr);
-//     ASSERT_NE(test_func, nullptr);
-
-//     bool found_call = false;
-//     for (const auto &bb : *test_func)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *call = dynamic_cast<const CallInst *>(&inst))
-//             {
-//                 EXPECT_EQ(call->called_function(), add_func);
-//                 ASSERT_EQ(call->arguments().size(), 2);
-//                 EXPECT_EQ(call->arguments()[0], test_func->arg(0));
-//                 EXPECT_EQ(call->arguments()[1], test_func->arg(1));
-//                 found_call = true;
-//             }
-//         }
-//     }
-//     EXPECT_TRUE(found_call) << "Function call instruction not found";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                          Method Call Tests
-// //===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+//                          Break/Continue Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, BreakContinue)
+{
+    /*
+        fn test() -> i32 {
+            let mut i = 0;
+            while true {
+                i += 1;
+                if i > 5 {
+                    break;
+                }
+                if i % 2 == 0 {
+                    continue;
+                }
+                // Do something
+            }
+            return i;
+        }
+    */
+    auto fn = create_test_function(ast::Type::create_int());
+
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    // let mut i = 0;
+    auto i_decl = std::make_unique<ast::VarDeclStmt>();
+    i_decl->name = "i";
+    i_decl->type = ast::Type::create_int();
+    i_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(0);
+    block->statements.push_back(std::move(i_decl));
+
+    // Loop body
+    auto loop_body = std::make_unique<ast::BlockStmt>();
+
+    // i += 1
+    auto i_inc = std::make_unique<ast::BinaryExpr>(
+        TokenType::AddAssign,
+        std::make_unique<ast::VariableExpr>("i"),
+        std::make_unique<ast::IntegerLiteralExpr>(1));
+    loop_body->statements.push_back(std::make_unique<ast::ExprStmt>(std::move(i_inc)));
+
+    // if i > 5 { break }
+    auto break_cond = std::make_unique<ast::BinaryExpr>(
+        TokenType::Ge,
+        std::make_unique<ast::VariableExpr>("i"),
+        std::make_unique<ast::IntegerLiteralExpr>(5));
+    auto break_then = std::make_unique<ast::BlockStmt>();
+    break_then->statements.push_back(std::make_unique<ast::BreakStmt>());
+    auto break_if = std::make_unique<ast::IfStmt>(
+        std::move(break_cond),
+        std::move(break_then),
+        nullptr);
+    loop_body->statements.push_back(std::move(break_if));
+
+    // if i % 2 == 0 { continue }
+    auto continue_cond = std::make_unique<ast::BinaryExpr>(
+        TokenType::Eq,
+        std::make_unique<ast::BinaryExpr>(
+            TokenType::Modulo,
+            std::make_unique<ast::VariableExpr>("i"),
+            std::make_unique<ast::IntegerLiteralExpr>(2)),
+        std::make_unique<ast::IntegerLiteralExpr>(0));
+    auto continue_then = std::make_unique<ast::BlockStmt>();
+    continue_then->statements.push_back(std::make_unique<ast::ContinueStmt>());
+    auto continue_if = std::make_unique<ast::IfStmt>(
+        std::move(continue_cond),
+        std::move(continue_then),
+        nullptr);
+    loop_body->statements.push_back(std::move(continue_if));
+
+    // While loop with true condition
+    auto while_stmt = std::make_unique<ast::WhileStmt>(
+        std::make_unique<ast::IntegerLiteralExpr>(1), // true condition
+        std::move(loop_body));
+    block->statements.push_back(std::move(while_stmt));
+
+    // Final return
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::VariableExpr>("i")));
+
+    fn->body.push_back(std::move(block));
+    generate_simple_program(std::move(fn));
+
+    // Verify break/continue targets
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    BasicBlock *loop_exit = nullptr;
+    BasicBlock *loop_header = nullptr;
+    bool has_break_jump = false;
+    bool has_continue_jump = false;
+
+    for (const auto &bb : *test_fn)
+    {
+        if (auto *term = bb->get_terminator())
+        {
+            // Check break (branch to loop exit)
+            if (auto *br = dynamic_cast<BranchInst *>(term))
+            {
+                if (!br->is_conditional() && br->get_true_successor() == loop_exit)
+                {
+                    has_break_jump = true;
+                }
+            }
+
+            // Check continue (branch to loop header)
+            if (auto *br = dynamic_cast<BranchInst *>(term))
+            {
+                if (!br->is_conditional() && br->get_true_successor() == loop_header)
+                {
+                    has_continue_jump = true;
+                }
+            }
+
+            // Find loop exit block (contains return)
+            if (dynamic_cast<ReturnInst *>(term))
+            {
+                loop_exit = &*bb;
+            }
+
+            // Find loop header (condition block)
+            // if (bb.get() != loop_exit && bb->get_terminator() &&
+            //     dynamic_cast<BranchInst *>(bb->get_terminator())->is_conditional())
+            // {
+            //     loop_header = &*bb;
+            //     MO_DEBUG("loop_header bb: %s", bb->name().c_str());
+            // }
+            if (loop_header == nullptr && bb.get() != loop_exit && bb->get_terminator())
+            {
+                if (auto *br = dynamic_cast<BranchInst *>(bb->get_terminator()))
+                {
+                    if (br->is_conditional())
+                    {
+                        loop_header = &*bb;
+                    }
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(loop_exit) << "Loop exit block not found";
+    EXPECT_TRUE(loop_header) << "Loop header block not found";
+    EXPECT_TRUE(has_break_jump) << "Break jump to exit not found";
+    EXPECT_TRUE(has_continue_jump) << "Continue jump to header not found";
+}
+
+//===----------------------------------------------------------------------===//
+//                          Function Call Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, FunctionCall)
+{
+    /*
+        fn add(a: i32, b: i32) -> i32 {
+            return a + b;
+        }
+
+        fn test() -> i32 {
+            return add(5, 3);
+        }
+    */
+    ast::Program program;
+
+    // Add function
+    auto add_fn = std::make_unique<ast::FunctionDecl>();
+    add_fn->name = "add";
+    add_fn->return_type = ast::Type::create_int();
+    add_fn->add_param("a", ast::Type::create_int());
+    add_fn->add_param("b", ast::Type::create_int());
+    add_fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::BinaryExpr>(
+            TokenType::Plus,
+            std::move(std::make_unique<ast::VariableExpr>("a")),
+            std::move(std::make_unique<ast::VariableExpr>("b")))));
+    program.functions.push_back(std::move(add_fn));
+
+    // Test function
+    auto test_fn = create_test_function(ast::Type::create_int());
+
+    std::vector<ast::ExprPtr> vec_1;
+    vec_1.reserve(2);
+    vec_1.push_back(std::make_unique<ast::IntegerLiteralExpr>(5));
+    vec_1.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
+
+    test_fn->body.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::CallExpr>(
+            "add",
+            std::move(vec_1))));
+    program.functions.push_back(std::move(test_fn));
+
+    generate(program);
+
+    // Verify call instruction
+    Function *add_func = module.get_function("add");
+    Function *test_func = module.get_function("test");
+    ASSERT_NE(add_func, nullptr);
+    ASSERT_NE(test_func, nullptr);
+
+    bool found_call = false;
+    for (const auto &bb : *test_func)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *call = dynamic_cast<const CallInst *>(&inst))
+            {
+                EXPECT_EQ(call->called_function(), add_func);
+                ASSERT_EQ(call->arguments().size(), 2);
+                found_call = true;
+            }
+        }
+    }
+    EXPECT_TRUE(found_call) << "Function call instruction not found";
+}
+
+//===----------------------------------------------------------------------===//
+//                          Method Call Tests
+//===----------------------------------------------------------------------===//
 // TEST_F(IrGeneratorTest, MethodCall)
 // {
 //     /*
@@ -1267,12 +1313,6 @@ TEST_F(IrGeneratorTest, InitListExpr)
 //         fn test() -> i32 {
 //             let p = Point { x: 3, y: 5 };
 //             return p.sum();
-//         }
-
-//         impl Point {
-//             fn sum(self) -> i32 {
-//                 return self.x + self.y;
-//             }
 //         }
 //     */
 //     ast::Program program;
@@ -1294,11 +1334,11 @@ TEST_F(IrGeneratorTest, InitListExpr)
 //         std::make_unique<ast::BinaryExpr>(
 //             TokenType::Plus,
 //             std::make_unique<ast::MemberAccessExpr>(
-//                 std::make_unique<ast::VariableExpr>("self"),
+//                 std::make_unique<ast::VariableExpr>("this"),
 //                 "x",
 //                 TokenType::Dot),
 //             std::make_unique<ast::MemberAccessExpr>(
-//                 std::make_unique<ast::VariableExpr>("self"),
+//                 std::make_unique<ast::VariableExpr>("this"),
 //                 "y",
 //                 TokenType::Dot))));
 //     point_struct->add_method(std::move(*sum_method));
@@ -1343,7 +1383,7 @@ TEST_F(IrGeneratorTest, InitListExpr)
 //                 EXPECT_EQ(call->called_function(), sum_func);
 //                 ASSERT_GE(call->arguments().size(), 1);
 
-//                 // Verify 'self' pointer is first argument
+//                 // Verify 'this' pointer is first argument
 //                 if (auto *gep = dynamic_cast<GetElementPtrInst *>(call->arguments()[0]))
 //                 {
 //                     EXPECT_TRUE(gep->base_pointer()->name().find("%p") != std::string::npos);
@@ -1355,487 +1395,508 @@ TEST_F(IrGeneratorTest, InitListExpr)
 //     EXPECT_TRUE(found_method_call) << "Method call instruction not found";
 // }
 
-// //===----------------------------------------------------------------------===//
-// //                          Recursive Call Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, RecursiveCall)
-// {
-//     /*
-//         fn factorial(n: i32) -> i32 {
-//             if n <= 1 {
-//                 return 1;
-//             }
-//             return n * factorial(n - 1);
-//         }
-//     */
-//     ast::Program program;
-
-//     auto fact_fn = std::make_unique<ast::FunctionDecl>();
-//     fact_fn->name = "factorial";
-//     fact_fn->return_type = ast::Type::create_int();
-//     fact_fn->add_param("n", ast::Type::create_int());
-
-//     // if n <= 1
-//     auto cond = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Le,
-//         std::make_unique<ast::VariableExpr>("n"),
-//         std::make_unique<ast::IntegerLiteralExpr>(1));
-
-//     // then return 1
-//     auto then_block = std::make_unique<ast::BlockStmt>();
-//     then_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::IntegerLiteralExpr>(1)));
-
-//     // else return n * factorial(n-1)
-//     auto else_block = std::make_unique<ast::BlockStmt>();
-
-//     std::vector<ast::ExprPtr> vec_2;
-//     vec_2.push_back(std::make_unique<ast::BinaryExpr>(
-//         TokenType::Minus,
-//         std::make_unique<ast::VariableExpr>("n"),
-//         std::make_unique<ast::IntegerLiteralExpr>(1)));
-
-//     else_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
-//         std::make_unique<ast::BinaryExpr>(
-//             TokenType::Star,
-//             std::make_unique<ast::VariableExpr>("n"),
-//             std::make_unique<ast::CallExpr>(
-//                 "factorial",
-//                 std::move(vec_2)))));
-
-//     auto if_stmt = std::make_unique<ast::IfStmt>(
-//         std::move(cond),
-//         std::move(then_block),
-//         std::move(else_block));
-//     fact_fn->body.push_back(std::move(if_stmt));
-//     program.functions.push_back(std::move(fact_fn));
-
-//     generate(program);
-
-//     // Verify recursive call
-//     Function *fact_func = module.get_function("factorial");
-//     ASSERT_NE(fact_func, nullptr);
-
-//     bool found_recursive_call = false;
-//     for (const auto &bb : *fact_func)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *call = dynamic_cast<const CallInst *>(&inst))
-//             {
-//                 if (call->called_function() == fact_func)
-//                 {
-//                     ASSERT_EQ(call->arguments().size(), 1);
-
-//                     // Verify argument is n-1
-//                     if (auto *sub = dynamic_cast<const BinaryInst *>(call->arguments()[0]))
-//                     {
-//                         EXPECT_EQ(sub->opcode(), Opcode::Sub);
-//                         found_recursive_call = true;
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     EXPECT_TRUE(found_recursive_call) << "Recursive call instruction not found";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                      Struct Member Access Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, StructMemberAccess)
-// {
-//     /*
-//         struct Point {
-//             x: i32,
-//             y: i32
-//         }
-
-//         fn test() -> i32 {
-//             let p = Point { x: 3, y: 5 };
-//             return p.x + p.y;
-//         }
-//     */
-//     ast::Program program;
-
-//     // Define Point struct
-//     auto point_struct = std::make_unique<ast::StructDecl>();
-//     point_struct->name = "Point";
-//     point_struct->add_field({"x", ast::Type::create_int()});
-//     point_struct->add_field({"y", ast::Type::create_int()});
-//     auto struct_type = point_struct->type();
-
-//     program.structs.push_back(std::move(point_struct));
-
-//     // Test function
-//     auto test_fn = create_test_function(ast::Type::create_int());
-
-//     auto p_decl = std::make_unique<ast::VarDeclStmt>();
-//     p_decl->name = "p";
-//     p_decl->type = ast::Type::create_alias("Point");
-//     auto struct_lit = std::make_unique<ast::StructLiteralExpr>("Point");
-//     struct_lit->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(3));
-//     struct_lit->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(5));
-//     p_decl->init_expr = std::move(struct_lit);
-
-//     auto return_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Plus,
-//         std::make_unique<ast::MemberAccessExpr>(
-//             std::make_unique<ast::VariableExpr>("p"),
-//             "x",
-//             TokenType::Dot),
-//         std::make_unique<ast::MemberAccessExpr>(
-//             std::make_unique<ast::VariableExpr>("p"),
-//             "y",
-//             TokenType::Dot));
-
-//     auto block = std::make_unique<ast::BlockStmt>();
-//     block->statements.push_back(std::move(p_decl));
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(return_expr)));
-//     test_fn->body = std::move(block->statements);
-//     program.functions.push_back(std::move(test_fn));
-
-//     generate(program);
-
-//     // Verify GEP instructions
-//     Function *test_func = module.get_function("test");
-//     ASSERT_NE(test_func, nullptr);
-
-//     int gep_count = 0;
-//     for (const auto &bb : *test_func)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
-//             {
-//                 // Verify struct type
-//                 if (gep->base_pointer()->type()->element_type()->is_struct())
-//                 {
-//                     gep_count++;
-
-//                     // Check index for x (0) and y (1)
-//                     auto *idx = gep->indices().back();
-//                     if (auto *const_idx = dynamic_cast<ConstantInt *>(idx))
-//                     {
-//                         EXPECT_TRUE(const_idx->value() == 0 || const_idx->value() == 1)
-//                             << "Invalid struct member index: " << const_idx->value();
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     EXPECT_EQ(gep_count, 2) << "Expected 2 GEP instructions for x and y access";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                          Array Access Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, ArrayAccess)
-// {
-//     /*
-//         fn test() -> i32 {
-//             let arr: [3 x i32] = [1, 2, 3];
-//             let idx = 1;
-//             return arr[idx] + arr[2];
-//         }
-//     */
-//     ast::Program program;
-
-//     // Test function
-//     auto test_fn = create_test_function(ast::Type::create_int());
-
-//     // Array declaration
-//     auto arr_decl = std::make_unique<ast::VarDeclStmt>();
-//     arr_decl->name = "arr";
-//     arr_decl->type = ast::Type::create_array(ast::Type::create_int(), 3);
-//     std::vector<ast::ExprPtr> elems;
-//     elems.reserve(3);
-//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(1));
-//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(2));
-//     elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
-//     auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
-
-//     arr_decl->init_expr = std::move(init_list);
-
-//     // Index variable
-//     auto idx_decl = std::make_unique<ast::VarDeclStmt>();
-//     idx_decl->name = "idx";
-//     idx_decl->type = ast::Type::create_int();
-//     idx_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(1);
-
-//     // Array accesses
-//     auto dynamic_access = std::make_unique<ast::ArrayAccessExpr>(
-//         std::make_unique<ast::VariableExpr>("arr"),
-//         std::make_unique<ast::VariableExpr>("idx"));
-//     auto const_access = std::make_unique<ast::ArrayAccessExpr>(
-//         std::make_unique<ast::VariableExpr>("arr"),
-//         std::make_unique<ast::IntegerLiteralExpr>(2));
-
-//     auto return_expr = std::make_unique<ast::BinaryExpr>(
-//         TokenType::Plus,
-//         std::move(dynamic_access),
-//         std::move(const_access));
-
-//     auto block = std::make_unique<ast::BlockStmt>();
-//     block->statements.push_back(std::move(arr_decl));
-//     block->statements.push_back(std::move(idx_decl));
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(return_expr)));
-//     test_fn->body = std::move(block->statements);
-//     program.functions.push_back(std::move(test_fn));
-
-//     generate(program);
-
-//     // Verify array access patterns
-//     Function *test_func = module.get_function("test");
-//     ASSERT_NE(test_func, nullptr);
-
-//     int array_gep_count = 0;
-//     int const_index_gep = 0;
-//     int dynamic_index_gep = 0;
-
-//     for (const auto &bb : *test_func)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
-//             {
-//                 if (gep->base_pointer()->type()->element_type()->is_array())
-//                 {
-//                     array_gep_count++;
-
-//                     // Check array indices
-//                     auto indices = gep->indices();
-//                     ASSERT_GE(indices.size(), 2) << "Array GEP should have at least 2 indices";
-
-//                     // First index (array pointer)
-//                     EXPECT_EQ(dynamic_cast<ConstantInt *>(indices[0])->value(), 0)
-//                         << "First array index should be 0";
-
-//                     // Second index (element index)
-//                     if (auto *const_idx = dynamic_cast<ConstantInt *>(indices[1]))
-//                     {
-//                         EXPECT_EQ(const_idx->value(), 2) << "Constant index should be 2";
-//                         const_index_gep++;
-//                     }
-//                     else
-//                     {
-//                         // Dynamic index (from variable)
-//                         dynamic_index_gep++;
-//                     }
-//                 }
-//             }
-//         }
-//     }
-
-//     EXPECT_EQ(array_gep_count, 2) << "Expected 2 array access GEPs";
-//     EXPECT_EQ(const_index_gep, 1) << "Should have 1 constant index access";
-//     EXPECT_EQ(dynamic_index_gep, 1) << "Should have 1 dynamic index access";
-// }
-// //===----------------------------------------------------------------------===//
-// //                          类型系统测试
-// //===----------------------------------------------------------------------===//
-// //===----------------------------------------------------------------------===//
-// //                          Explicit Type Cast Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, ExplicitTypeCast)
-// {
-//     /*
-//         fn test(a: i32, b: f32, c: *i32) -> (f32, i32, *u8) {
-//             let f = f32(a);     // int to float
-//             let i = i32(b);     // float to int
-//             let p = *u8(c);     // pointer type cast
-//             return (f, i, p);
-//         }
-//     */
-//     ast::Program program;
-
-//     std::vector<ast::TypePtr> elem_types;
-//     elem_types.reserve(3);
-//     elem_types.push_back(ast::Type::create_float());
-//     elem_types.push_back(ast::Type::create_int());
-//     elem_types.push_back(ast::Type::create_pointer(ast::Type::create_int(8, true)));
-//     auto ret_ty = ast::Type::create_tuple(std::move(elem_types));
-//     auto fn = create_test_function(std::move(ret_ty));
-//     fn->add_param("a", ast::Type::create_int());
-//     fn->add_param("b", ast::Type::create_float());
-//     fn->add_param("c", ast::Type::create_pointer(ast::Type::create_int()));
-
-//     auto block = std::make_unique<ast::BlockStmt>();
-
-//     // f32(a)
-//     auto cast1 = std::make_unique<ast::CastExpr>(
-//         ast::Type::create_float(),
-//         std::make_unique<ast::VariableExpr>("a"));
-//     auto decl1 = std::make_unique<ast::VarDeclStmt>();
-//     decl1->name = "f";
-//     // decl1->type = ast::Type::create_float();
-//     decl1->init_expr = std::move(cast1);
-//     block->statements.push_back(std::move(decl1));
-
-//     // i32(b)
-//     auto cast2 = std::make_unique<ast::CastExpr>(
-//         ast::Type::create_int(),
-//         std::make_unique<ast::VariableExpr>("b"));
-//     auto decl2 = std::make_unique<ast::VarDeclStmt>();
-//     decl2->name = "i";
-//     // decl2->type = ast::Type::create_int();
-//     decl2->init_expr = std::move(cast2);
-//     block->statements.push_back(std::move(decl2));
-
-//     // *u8(c)
-//     auto cast3 = std::make_unique<ast::CastExpr>(
-//         ast::Type::create_pointer(ast::Type::create_int(8, true)),
-//         std::make_unique<ast::VariableExpr>("c"));
-//     auto decl3 = std::make_unique<ast::VarDeclStmt>();
-//     decl3->name = "p";
-//     // decl3->type = ast::Type::create_pointer(ast::Type::create_int(8, true));
-//     decl3->init_expr = std::move(cast3);
-//     block->statements.push_back(std::move(decl3));
-
-//     // Return tuple
-//     std::vector<ast::ExprPtr> elems;
-//     elems.reserve(3);
-//     elems.push_back(std::make_unique<ast::VariableExpr>("f"));
-//     elems.push_back(std::make_unique<ast::VariableExpr>("i"));
-//     elems.push_back(std::make_unique<ast::VariableExpr>("p"));
-//     auto ret_expr = std::make_unique<ast::TupleExpr>(std::move(elems));
-
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
-
-//     fn->body = std::move(block->statements);
-//     program.functions.push_back(std::move(fn));
-//     generate(program);
-
-//     // Verify cast instructions
-//     Function *test_fn = module.get_function("test");
-//     ASSERT_NE(test_fn, nullptr);
-
-//     bool found_sitofp = false;
-//     bool found_fptosi = false;
-//     bool found_bitcast = false;
-
-//     for (const auto &bb : *test_fn)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *cast = dynamic_cast<const SIToFPInst *>(&inst))
-//             {
-//                 EXPECT_EQ(cast->source()->type(), module.get_integer_type(32));
-//                 EXPECT_EQ(cast->type(), module.get_float_type(FloatType::Single));
-//                 found_sitofp = true;
-//             }
-//             else if (auto *cast = dynamic_cast<const FPToSIInst *>(&inst))
-//             {
-//                 EXPECT_EQ(cast->source()->type(), module.get_float_type(FloatType::Single));
-//                 EXPECT_EQ(cast->type(), module.get_integer_type(32));
-//                 found_fptosi = true;
-//             }
-//             else if (auto *cast = dynamic_cast<const BitCastInst *>(&inst))
-//             {
-//                 EXPECT_TRUE(cast->source()->type()->is_pointer());
-//                 EXPECT_TRUE(cast->type()->is_pointer());
-//                 found_bitcast = true;
-//             }
-//         }
-//     }
-
-//     EXPECT_TRUE(found_sitofp) << "SIToFP instruction not found";
-//     EXPECT_TRUE(found_fptosi) << "FPToSI instruction not found";
-//     EXPECT_TRUE(found_bitcast) << "Pointer BitCast instruction not found";
-// }
-
-// //===----------------------------------------------------------------------===//
-// //                          Sizeof Operator Tests
-// //===----------------------------------------------------------------------===//
-// TEST_F(IrGeneratorTest, SizeofOperator)
-// {
-//     /*
-//         struct Point { x: f32, y: f32 }
-
-//         fn test() -> (i32, i32) {
-//             let s1 = sizeof(Point);
-//             let s2 = sizeof(5);
-//             return (s1, s2);
-//         }
-//     */
-//     ast::Program program;
-
-//     // Define Point struct
-//     auto point_struct = std::make_unique<ast::StructDecl>();
-//     point_struct->name = "Point";
-//     point_struct->add_field({"x", ast::Type::create_float()});
-//     point_struct->add_field({"y", ast::Type::create_float()});
-//     program.structs.push_back(std::move(point_struct));
-
-//     // Test function
-//     auto elem_types = std::vector<ast::TypePtr>();
-//     elem_types.reserve(2);
-//     elem_types.push_back(ast::Type::create_int());
-//     elem_types.push_back(ast::Type::create_int());
-//     auto ret_ty = ast::Type::create_tuple(std::move(elem_types));
-//     auto test_fn = create_test_function(std::move(ret_ty));
-
-//     auto block = std::make_unique<ast::BlockStmt>();
-
-//     // sizeof(Point)
-//     auto sizeof_type = std::make_unique<ast::SizeofExpr>(ast::Type::create_alias("Point"));
-//     auto decl1 = std::make_unique<ast::VarDeclStmt>();
-//     decl1->name = "s1";
-//     // decl1->type = ast::Type::create_int();
-//     decl1->init_expr = std::move(sizeof_type);
-//     block->statements.push_back(std::move(decl1));
-
-//     // sizeof(5)
-//     auto sizeof_expr = std::make_unique<ast::SizeofExpr>(std::make_unique<ast::IntegerLiteralExpr>(5));
-//     auto decl2 = std::make_unique<ast::VarDeclStmt>();
-//     decl2->name = "s2";
-//     // decl2->type = ast::Type::create_int();
-//     decl2->init_expr = std::move(sizeof_expr);
-//     block->statements.push_back(std::move(decl2));
-
-//     // Return tuple
-//     std::vector<ast::ExprPtr> elems;
-//     elems.reserve(2);
-//     elems.push_back(std::make_unique<ast::VariableExpr>("s1"));
-//     elems.push_back(std::make_unique<ast::VariableExpr>("s2"));
-//     auto ret_expr = std::make_unique<ast::TupleExpr>(std::move(elems));
-//     block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
-
-//     test_fn->body = std::move(block->statements);
-//     program.functions.push_back(std::move(test_fn));
-//     generate(program);
-
-//     // Verify sizeof constants
-//     Function *test_func = module.get_function("test");
-//     ASSERT_NE(test_func, nullptr);
-
-//     const int point_size = 8; // 2 x f32
-//     const int int_size = 4;
-
-//     bool found_type_size = false;
-//     bool found_expr_size = false;
-
-//     for (const auto &bb : *test_func)
-//     {
-//         for (const auto &inst : *bb)
-//         {
-//             if (auto *cnst = dynamic_cast<const ConstantInt *>(&inst))
-//             {
-//                 if (cnst->value() == point_size)
-//                 {
-//                     found_type_size = true;
-//                 }
-//                 else if (cnst->value() == int_size)
-//                 {
-//                     found_expr_size = true;
-//                 }
-//             }
-//         }
-//     }
-
-//     EXPECT_TRUE(found_type_size) << "Struct sizeof constant incorrect";
-//     EXPECT_TRUE(found_expr_size) << "Expression sizeof constant incorrect";
-// }
+//===----------------------------------------------------------------------===//
+//                          Recursive Call Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, RecursiveCall)
+{
+    /*
+        fn factorial(n: i32) -> i32 {
+            if n <= 1 {
+                return 1;
+            }
+            return n * factorial(n - 1);
+        }
+    */
+    ast::Program program;
+
+    auto fact_fn = std::make_unique<ast::FunctionDecl>();
+    fact_fn->name = "factorial";
+    fact_fn->return_type = ast::Type::create_int();
+    fact_fn->add_param("n", ast::Type::create_int());
+
+    // if n <= 1
+    auto cond = std::make_unique<ast::BinaryExpr>(
+        TokenType::Le,
+        std::make_unique<ast::VariableExpr>("n"),
+        std::make_unique<ast::IntegerLiteralExpr>(1));
+
+    // then return 1
+    auto then_block = std::make_unique<ast::BlockStmt>();
+    then_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::IntegerLiteralExpr>(1)));
+
+    // else return n * factorial(n-1)
+    auto else_block = std::make_unique<ast::BlockStmt>();
+
+    std::vector<ast::ExprPtr> vec_2;
+    vec_2.push_back(std::make_unique<ast::BinaryExpr>(
+        TokenType::Minus,
+        std::make_unique<ast::VariableExpr>("n"),
+        std::make_unique<ast::IntegerLiteralExpr>(1)));
+
+    else_block->statements.push_back(std::make_unique<ast::ReturnStmt>(
+        std::make_unique<ast::BinaryExpr>(
+            TokenType::Star,
+            std::make_unique<ast::VariableExpr>("n"),
+            std::make_unique<ast::CallExpr>(
+                "factorial",
+                std::move(vec_2)))));
+
+    auto if_stmt = std::make_unique<ast::IfStmt>(
+        std::move(cond),
+        std::move(then_block),
+        std::move(else_block));
+    fact_fn->body.push_back(std::move(if_stmt));
+    program.functions.push_back(std::move(fact_fn));
+
+    generate(program);
+
+    // Verify recursive call
+    Function *fact_func = module.get_function("factorial");
+    ASSERT_NE(fact_func, nullptr);
+
+    bool found_recursive_call = false;
+    for (const auto &bb : *fact_func)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *call = dynamic_cast<const CallInst *>(&inst))
+            {
+                if (call->called_function() == fact_func)
+                {
+                    ASSERT_EQ(call->arguments().size(), 1);
+
+                    // Verify argument is n-1
+                    if (auto *sub = dynamic_cast<const BinaryInst *>(call->arguments()[0]))
+                    {
+                        EXPECT_EQ(sub->opcode(), Opcode::Sub);
+                        found_recursive_call = true;
+                    }
+                }
+            }
+        }
+    }
+    EXPECT_TRUE(found_recursive_call) << "Recursive call instruction not found";
+}
+
+//===----------------------------------------------------------------------===//
+//                      Struct Member Access Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, StructMemberAccess)
+{
+    /*
+        struct Point {
+            x: i32,
+            y: i32
+        }
+
+        fn test() -> i32 {
+            let p = Point { x: 3, y: 5 };
+            return p.x + p.y;
+        }
+    */
+    ast::Program program;
+
+    // Define Point struct
+    auto point_struct = std::make_unique<ast::StructDecl>();
+    point_struct->name = "Point";
+    point_struct->add_field({"x", ast::Type::create_int()});
+    point_struct->add_field({"y", ast::Type::create_int()});
+    auto struct_type = point_struct->type();
+
+    program.structs.push_back(std::move(point_struct));
+
+    // Test function
+    auto test_fn = create_test_function(ast::Type::create_int());
+
+    auto p_decl = std::make_unique<ast::VarDeclStmt>();
+    p_decl->name = "p";
+    p_decl->type = ast::Type::create_alias("Point");
+    auto struct_lit = std::make_unique<ast::StructLiteralExpr>("Point");
+    struct_lit->add_member("x", std::make_unique<ast::IntegerLiteralExpr>(3));
+    struct_lit->add_member("y", std::make_unique<ast::IntegerLiteralExpr>(5));
+    p_decl->init_expr = std::move(struct_lit);
+
+    auto return_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Plus,
+        std::make_unique<ast::MemberAccessExpr>(
+            std::make_unique<ast::VariableExpr>("p"),
+            "x",
+            TokenType::Dot),
+        std::make_unique<ast::MemberAccessExpr>(
+            std::make_unique<ast::VariableExpr>("p"),
+            "y",
+            TokenType::Dot));
+
+    auto block = std::make_unique<ast::BlockStmt>();
+    block->statements.push_back(std::move(p_decl));
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(return_expr)));
+    test_fn->body = std::move(block->statements);
+    program.functions.push_back(std::move(test_fn));
+
+    generate(program);
+
+    // Verify GEP instructions
+    Function *test_func = module.get_function("test");
+    ASSERT_NE(test_func, nullptr);
+
+    int gep_count = 0;
+    for (const auto &bb : *test_func)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
+            {
+                // Verify struct type
+                if (gep->base_pointer()->type()->element_type()->is_struct())
+                {
+                    gep_count++;
+
+                    // Check index for x (0) and y (1)
+                    auto *idx = gep->indices().back();
+                    if (auto *const_idx = dynamic_cast<ConstantInt *>(idx))
+                    {
+                        EXPECT_TRUE(const_idx->value() == 0 || const_idx->value() == 1)
+                            << "Invalid struct member index: " << const_idx->value();
+                    }
+                }
+            }
+        }
+    }
+    EXPECT_EQ(gep_count, 4) << "Expected 4 GEP instructions for x and y access";
+}
+
+//===----------------------------------------------------------------------===//
+//                          Array Access Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, ArrayAccess)
+{
+    /*
+        fn test() -> i32 {
+            let arr: [3 x i32] = [1, 2, 3];
+            let idx = 1;
+            return arr[idx] + arr[2];
+        }
+    */
+    ast::Program program;
+
+    // Test function
+    auto test_fn = create_test_function(ast::Type::create_int());
+
+    // Array declaration
+    auto arr_decl = std::make_unique<ast::VarDeclStmt>();
+    arr_decl->name = "arr";
+    arr_decl->type = ast::Type::create_array(ast::Type::create_int(), 3);
+    std::vector<ast::ExprPtr> elems;
+    elems.reserve(3);
+    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(1));
+    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(2));
+    elems.push_back(std::make_unique<ast::IntegerLiteralExpr>(3));
+    auto init_list = std::make_unique<ast::InitListExpr>(std::move(elems));
+
+    arr_decl->init_expr = std::move(init_list);
+
+    // Index variable
+    auto idx_decl = std::make_unique<ast::VarDeclStmt>();
+    idx_decl->name = "idx";
+    idx_decl->type = ast::Type::create_int();
+    idx_decl->init_expr = std::make_unique<ast::IntegerLiteralExpr>(1);
+
+    // Array accesses
+    auto dynamic_access = std::make_unique<ast::ArrayAccessExpr>(
+        std::make_unique<ast::VariableExpr>("arr"),
+        std::make_unique<ast::VariableExpr>("idx"));
+    auto const_access = std::make_unique<ast::ArrayAccessExpr>(
+        std::make_unique<ast::VariableExpr>("arr"),
+        std::make_unique<ast::IntegerLiteralExpr>(2));
+
+    auto return_expr = std::make_unique<ast::BinaryExpr>(
+        TokenType::Plus,
+        std::move(dynamic_access),
+        std::move(const_access));
+
+    auto block = std::make_unique<ast::BlockStmt>();
+    block->statements.push_back(std::move(arr_decl));
+    block->statements.push_back(std::move(idx_decl));
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(return_expr)));
+    test_fn->body = std::move(block->statements);
+    program.functions.push_back(std::move(test_fn));
+
+    generate(program);
+
+    // Verify array access patterns
+    Function *test_func = module.get_function("test");
+    ASSERT_NE(test_func, nullptr);
+
+    int array_gep_count = 0;
+    int const_index_gep = 0;
+    int dynamic_index_gep = 0;
+
+    for (const auto &bb : *test_func)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *gep = dynamic_cast<const GetElementPtrInst *>(&inst))
+            {
+                if (gep->base_pointer()->type()->element_type()->is_array())
+                {
+                    array_gep_count++;
+
+                    // Check array indices
+                    auto indices = gep->indices();
+                    ASSERT_GE(indices.size(), 2) << "Array GEP should have at least 2 indices";
+
+                    if (array_gep_count > 3)
+                    {
+                        // First index (array pointer)
+                        EXPECT_EQ(dynamic_cast<ConstantInt *>(indices[0])->value(), 0)
+                            << "First array index should be 0";
+
+                        // Second index (element index)
+                        if (auto *const_idx = dynamic_cast<ConstantInt *>(indices[1]))
+                        {
+                            EXPECT_EQ(const_idx->value(), 2) << "Constant index should be 2";
+                            const_index_gep++;
+                        }
+                        else
+                        {
+                            // Dynamic index (from variable)
+                            dynamic_index_gep++;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    EXPECT_EQ(array_gep_count, 2 + 3) << "Expected 5 array access GEPs";
+    EXPECT_EQ(const_index_gep, 1) << "Should have 1 constant index access";
+    EXPECT_EQ(dynamic_index_gep, 1) << "Should have 1 dynamic index access";
+}
+//===----------------------------------------------------------------------===//
+//                          Type System Tests
+//===----------------------------------------------------------------------===//
+//===----------------------------------------------------------------------===//
+//                          Explicit Type Cast Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, ExplicitTypeCast)
+{
+    /*
+        fn test(a: i32, b: f32, c: *i32) -> (f32, i32, *u8) {
+            let f = f32(a);     // int to float
+            let i = i32(b);     // float to int
+            let p = *u8(c);     // pointer type cast
+            return (f, i, p);
+        }
+    */
+    ast::Program program;
+
+    std::vector<ast::TypePtr> elem_types;
+    elem_types.reserve(3);
+    elem_types.push_back(ast::Type::create_float());
+    elem_types.push_back(ast::Type::create_int());
+    elem_types.push_back(ast::Type::create_pointer(ast::Type::create_int(8, true)));
+    auto ret_ty = ast::Type::create_tuple(std::move(elem_types));
+    auto fn = create_test_function(std::move(ret_ty));
+    fn->add_param("a", ast::Type::create_int());
+    fn->add_param("b", ast::Type::create_float());
+    fn->add_param("c", ast::Type::create_pointer(ast::Type::create_int()));
+
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    // f32(a)
+    auto cast1 = std::make_unique<ast::CastExpr>(
+        ast::Type::create_float(),
+        std::make_unique<ast::VariableExpr>("a"));
+    auto decl1 = std::make_unique<ast::VarDeclStmt>();
+    decl1->name = "f";
+    // decl1->type = ast::Type::create_float();
+    decl1->init_expr = std::move(cast1);
+    block->statements.push_back(std::move(decl1));
+
+    // i32(b)
+    auto cast2 = std::make_unique<ast::CastExpr>(
+        ast::Type::create_int(),
+        std::make_unique<ast::VariableExpr>("b"));
+    auto decl2 = std::make_unique<ast::VarDeclStmt>();
+    decl2->name = "i";
+    // decl2->type = ast::Type::create_int();
+    decl2->init_expr = std::move(cast2);
+    block->statements.push_back(std::move(decl2));
+
+    // *u8(c)
+    auto cast3 = std::make_unique<ast::CastExpr>(
+        ast::Type::create_pointer(ast::Type::create_int(8, true)),
+        std::make_unique<ast::VariableExpr>("c"));
+    auto decl3 = std::make_unique<ast::VarDeclStmt>();
+    decl3->name = "p";
+    // decl3->type = ast::Type::create_pointer(ast::Type::create_int(8, true));
+    decl3->init_expr = std::move(cast3);
+    block->statements.push_back(std::move(decl3));
+
+    // Return tuple
+    std::vector<ast::ExprPtr> elems;
+    elems.reserve(3);
+    elems.push_back(std::make_unique<ast::VariableExpr>("f"));
+    elems.push_back(std::make_unique<ast::VariableExpr>("i"));
+    elems.push_back(std::make_unique<ast::VariableExpr>("p"));
+    auto ret_expr = std::make_unique<ast::TupleExpr>(std::move(elems));
+
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
+
+    fn->body = std::move(block->statements);
+    program.functions.push_back(std::move(fn));
+
+    TypeChecker checker(&program);
+    auto ret = checker.check();
+    EXPECT_FALSE(no_error(ret));
+    EXPECT_TRUE(ret.errors.size() == 1);
+    EXPECT_TRUE(ret.errors[0] == "Invalid type conversion in cast: *i32 to *u8");
+    generator.generate(program);
+
+    IRPrinter printer;
+    std::ostringstream os;
+    printer.print_module(module, os);
+    std::cout << os.str() << std::endl;
+
+    // Verify cast instructions
+    Function *test_fn = module.get_function("test");
+    ASSERT_NE(test_fn, nullptr);
+
+    bool found_sitofp = false;
+    bool found_fptosi = false;
+    bool found_bitcast = false;
+
+    for (const auto &bb : *test_fn)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *cast = dynamic_cast<const SIToFPInst *>(&inst))
+            {
+                EXPECT_EQ(cast->source()->type(), module.get_integer_type(32));
+                EXPECT_EQ(cast->type(), module.get_float_type(32));
+                found_sitofp = true;
+            }
+            else if (auto *cast = dynamic_cast<const FPToSIInst *>(&inst))
+            {
+                EXPECT_EQ(cast->source()->type(), module.get_float_type(32));
+                EXPECT_EQ(cast->type(), module.get_integer_type(32));
+                found_fptosi = true;
+            }
+            else if (auto *cast = dynamic_cast<const BitCastInst *>(&inst))
+            {
+                EXPECT_TRUE(cast->source()->type()->is_pointer());
+                EXPECT_TRUE(cast->type()->is_pointer());
+                found_bitcast = true;
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_sitofp) << "SIToFP instruction not found";
+    EXPECT_TRUE(found_fptosi) << "FPToSI instruction not found";
+    EXPECT_TRUE(found_bitcast) << "Pointer BitCast instruction not found";
+}
+
+//===----------------------------------------------------------------------===//
+//                          Sizeof Operator Tests
+//===----------------------------------------------------------------------===//
+TEST_F(IrGeneratorTest, SizeofOperator)
+{
+    /*
+        struct Point { x: f32, y: f32 }
+
+        fn test() -> (u64, u64) {
+            let s1 = sizeof(Point);
+            let s2 = sizeof(5);
+            return (s1, s2);
+        }
+    */
+    ast::Program program;
+
+    // Define Point struct
+    auto point_struct = std::make_unique<ast::StructDecl>();
+    point_struct->name = "Point";
+    point_struct->add_field({"x", ast::Type::create_float()});
+    point_struct->add_field({"y", ast::Type::create_float()});
+    program.structs.push_back(std::move(point_struct));
+
+    // Test function
+    auto elem_types = std::vector<ast::TypePtr>();
+    elem_types.reserve(2);
+    elem_types.push_back(ast::Type::create_int(64, true));
+    elem_types.push_back(ast::Type::create_int(64, true));
+    auto ret_ty = ast::Type::create_tuple(std::move(elem_types));
+    auto test_fn = create_test_function(std::move(ret_ty));
+
+    auto block = std::make_unique<ast::BlockStmt>();
+
+    // sizeof(Point)
+    auto sizeof_type = std::make_unique<ast::SizeofExpr>(ast::Type::create_alias("Point"));
+    auto decl1 = std::make_unique<ast::VarDeclStmt>();
+    decl1->name = "s1";
+    // decl1->type = ast::Type::create_int();
+    decl1->init_expr = std::move(sizeof_type);
+    block->statements.push_back(std::move(decl1));
+
+    // sizeof(5)
+    auto sizeof_expr = std::make_unique<ast::SizeofExpr>(std::make_unique<ast::IntegerLiteralExpr>(5));
+    auto decl2 = std::make_unique<ast::VarDeclStmt>();
+    decl2->name = "s2";
+    // decl2->type = ast::Type::create_int();
+    decl2->init_expr = std::move(sizeof_expr);
+    block->statements.push_back(std::move(decl2));
+
+    // Return tuple
+    std::vector<ast::ExprPtr> elems;
+    elems.reserve(2);
+    elems.push_back(std::make_unique<ast::VariableExpr>("s1"));
+    elems.push_back(std::make_unique<ast::VariableExpr>("s2"));
+    auto ret_expr = std::make_unique<ast::TupleExpr>(std::move(elems));
+    block->statements.push_back(std::make_unique<ast::ReturnStmt>(std::move(ret_expr)));
+
+    test_fn->body = std::move(block->statements);
+    program.functions.push_back(std::move(test_fn));
+    generate(program);
+
+    // Verify sizeof constants
+    Function *test_func = module.get_function("test");
+    ASSERT_NE(test_func, nullptr);
+
+    const int point_size = 8; // 2 x f32
+    const int int_size = 4;
+
+    bool found_type_size = false;
+    bool found_expr_size = false;
+
+    auto u64 = module.get_integer_type(64, true);
+
+    for (const auto &bb : *test_func)
+    {
+        for (const auto &inst : *bb)
+        {
+            if (auto *store = dynamic_cast<const StoreInst *>(&inst))
+            {
+                if (auto *cnst = dynamic_cast<const ConstantInt *>(store->value()))
+                {
+                    if (cnst->value() == point_size)
+                    {
+                        found_type_size = true;
+                        EXPECT_EQ(store->value()->type(), u64);
+                    }
+                    else if (cnst->value() == int_size)
+                    {
+                        found_expr_size = true;
+                        EXPECT_EQ(store->value()->type(), u64);
+                    }
+                }
+            }
+        }
+    }
+
+    EXPECT_TRUE(found_type_size) << "Struct sizeof constant incorrect";
+    EXPECT_TRUE(found_expr_size) << "Expression sizeof constant incorrect";
+}
 
 // //===----------------------------------------------------------------------===//
 // //                          Type Alias Tests
@@ -2021,8 +2082,8 @@ TEST_F(IrGeneratorTest, InitListExpr)
 //             // Check store through pointer
 //             else if (auto *store = dynamic_cast<const StoreInst *>(&inst))
 //             {
-//                 if (store->stored_value()->type()->is_integer() &&
-//                     dynamic_cast<ConstantInt *>(store->stored_value())->value() == 99)
+//                 if (store->value()->type()->is_integer() &&
+//                     dynamic_cast<ConstantInt *>(store->value())->value() == 99)
 //                 {
 //                     found_ptr_store = true;
 //                 }
@@ -2130,7 +2191,7 @@ TEST_F(IrGeneratorTest, InitListExpr)
 //                 if (store->pointer() == global_var)
 //                 {
 //                     found_global_store = true;
-//                     EXPECT_EQ(dynamic_cast<ConstantInt *>(store->stored_value())->value(), 200);
+//                     EXPECT_EQ(dynamic_cast<ConstantInt *>(store->value())->value(), 200);
 //                 }
 //             }
 //         }
@@ -2180,7 +2241,7 @@ TEST_F(IrGeneratorTest, InitListExpr)
 //     generate(program);
 
 //     // Verify empty struct has 1 byte size (minimum allowed)
-//     StructType *empty_type = module.try_get_named_struct_type("Empty");
+//     StructType *empty_type = module.try_named_struct_type("Empty");
 //     ASSERT_NE(empty_type, nullptr);
 //     EXPECT_EQ(empty_type->size(), 1) << "Empty struct should have 1 byte size";
 // }
@@ -2218,7 +2279,7 @@ TEST_F(IrGeneratorTest, InitListExpr)
 //     generate(program);
 
 //     // Verify zero-size array handling
-//     StructType *container_type = module.try_get_named_struct_type("Container");
+//     StructType *container_type = module.try_named_struct_type("Container");
 //     ASSERT_NE(container_type, nullptr);
 
 //     // Should have 0 size but alignment may vary

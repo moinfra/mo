@@ -45,30 +45,11 @@ Type *Type::element_type() const
     }
 }
 
-IntegerType::IntegerType(Module *m, unsigned bits, bool unsigned_)
-    : NumericType(IntTy, m), bits_(bits), unsigned_(unsigned_) {}
+IntegerType::IntegerType(Module *m, uint8_t bit_width, bool unsigned_)
+    : NumericType(IntTy, m), bit_width_(bit_width), unsigned_(unsigned_) {}
 
-FloatType::FloatType(Module *m, FloatType::Precision precision)
-    : NumericType(FpTy, m), precision_(precision)
-{
-    switch (precision)
-    {
-    case Half:
-        bits_ = 16;
-        break;
-    case Single:
-        bits_ = 32;
-        break;
-    case Double:
-        bits_ = 64;
-        break;
-    case Quad:
-        bits_ = 128;
-        break;
-    default:
-        assert(0 && "Invalid float precision");
-    }
-}
+FloatType::FloatType(Module *m, uint8_t bit_width)
+    : NumericType(FpTy, m), bit_width_(bit_width) {}
 
 PointerType::PointerType(Module *m, Type *element_type)
     : Type(PtrTy, m), element_type_(element_type) {}
@@ -528,22 +509,22 @@ GlobalVariable *Module::create_global_variable(Type *type, bool is_constant, Con
     return gv_ptr;
 }
 
-IntegerType *Module::get_integer_type(unsigned bits, bool unsigned_)
+IntegerType *Module::get_integer_type(uint8_t bit_width, bool unsigned_)
 {
-    auto &type = integer_types_[bits];
+    auto &type = integer_types_[bit_width];
     if (!type)
     {
-        type = std::unique_ptr<IntegerType>(new IntegerType(this, bits, unsigned_));
+        type = std::unique_ptr<IntegerType>(new IntegerType(this, bit_width, unsigned_));
     }
     return type.get();
 }
 
-FloatType *Module::get_float_type(FloatType::Precision precision)
+FloatType *Module::get_float_type(uint8_t bit_width)
 {
-    auto &type = float_types_[precision];
+    auto &type = float_types_[bit_width];
     if (!type)
     {
-        type = std::unique_ptr<FloatType>(new FloatType(this, precision));
+        type = std::unique_ptr<FloatType>(new FloatType(this, bit_width));
     }
     return type.get();
 }
@@ -690,23 +671,23 @@ VectorType *Module::get_vector_type(Type *element_type, uint64_t num_elements)
     return result;
 }
 
-static bool is_supported_bits(unsigned bits)
+static bool is_supported_bit_width(uint8_t bit_width)
 {
-    return bits == 1 || bits == 8 || bits == 16 || bits == 32 || bits == 64;
+    return bit_width == 1 || bit_width == 8 || bit_width == 16 || bit_width == 32 || bit_width == 64;
 }
 
-uint64_t truncate_value(uint64_t value, unsigned bits, bool is_signed)
+uint64_t truncate_value(uint64_t value, uint8_t bit_width, bool is_signed)
 {
-    const uint64_t mask = (bits == 64) ? 0xFFFFFFFFFFFFFFFF : (1ULL << bits) - 1;
-    if (bits > 0)
+    const uint64_t mask = (bit_width == 64) ? 0xFFFFFFFFFFFFFFFF : (1ULL << bit_width) - 1;
+    if (bit_width > 0)
     {
-        value &= mask; // Truncate high bits only if bits > 0
+        value &= mask; // Truncate high bit_width only if bit_width > 0
     }
 
-    if (is_signed && bits > 0)
+    if (is_signed && bit_width > 0)
     {
-        // Check for any non-zero bits to handle sign extension
-        const uint64_t sign_bit = 1ULL << (bits - 1);
+        // Check for any non-zero bit_width to handle sign extension
+        const uint64_t sign_bit = 1ULL << (bit_width - 1);
         if (value & sign_bit)
         {
             value |= ~mask; // prevent shift overflow for 64-bit values
@@ -720,7 +701,7 @@ ConstantInt *Module::get_constant_int(IntegerType *type, uint64_t value)
     MO_ASSERT(type != nullptr, "Invalid integer type");
 
     const bool is_signed = type->is_signed();
-    const uint64_t processed_value = truncate_value(value, type->bits(), is_signed);
+    const uint64_t processed_value = truncate_value(value, type->bit_width(), is_signed);
     MO_DEBUG("Creating constant int, type: '%s', value: %zu", type->name().c_str(), processed_value);
     const auto key = std::make_pair(type, processed_value);
     if (auto it = constant_ints_.find(key); it != constant_ints_.end())
@@ -735,10 +716,10 @@ ConstantInt *Module::get_constant_int(IntegerType *type, uint64_t value)
     return result.first->second.get();
 }
 
-ConstantInt *Module::get_constant_int(unsigned bits, uint64_t value, bool unsigned_)
+ConstantInt *Module::get_constant_int(uint8_t bit_width, uint64_t value, bool unsigned_)
 {
-    MO_ASSERT(is_supported_bits(bits), "Bits must be 1/8/16/32/64");
-    return get_constant_int(get_integer_type(bits, unsigned_), value);
+    MO_ASSERT(is_supported_bit_width(bit_width), "Bits must be 1/8/16/32/64");
+    return get_constant_int(get_integer_type(bit_width, unsigned_), value);
 }
 
 ConstantFP *Module::get_constant_fp(FloatType *type, double value)
@@ -753,9 +734,9 @@ ConstantFP *Module::get_constant_fp(FloatType *type, double value)
     return constant.get();
 }
 
-ConstantFP *Module::get_constant_fp(FloatType::Precision precision, double value)
+ConstantFP *Module::get_constant_fp(uint8_t bit_width, double value)
 {
-    return get_constant_fp(get_float_type(precision), value);
+    return get_constant_fp(get_float_type(bit_width), value);
 }
 
 ConstantString *Module::get_constant_string(std::string value)
@@ -864,21 +845,21 @@ ConstantInt::ConstantInt(IntegerType *type, uint64_t value)
 
 ConstantInt *ConstantInt::zext_value(Module *m, IntegerType *dest_type) const
 {
-    assert(dest_type->bits() > type()->bits());
+    assert(dest_type->bit_width() > type()->bit_width());
     return m->get_constant_int(dest_type, value_);
 }
 
 ConstantInt *ConstantInt::sext_value(Module *m, IntegerType *dest_type) const
 {
-    assert(dest_type->bits() > type()->bits());
-    const uint64_t sign_bit = 1ULL << (type()->bits() - 1);
-    const uint64_t sign_extended = (value_ & sign_bit) ? (value_ | ~((1ULL << type()->bits()) - 1)) : value_;
+    assert(dest_type->bit_width() > type()->bit_width());
+    const uint64_t sign_bit = 1ULL << (type()->bit_width() - 1);
+    const uint64_t sign_extended = (value_ & sign_bit) ? (value_ | ~((1ULL << type()->bit_width()) - 1)) : value_;
     return m->get_constant_int(dest_type, sign_extended);
 }
 
 std::string ConstantInt::as_string() const
 {
-    if (type()->bits() == 1)
+    if (type()->bit_width() == 1)
     {
         return value_ ? "true" : "false";
     }
@@ -957,7 +938,7 @@ std::string ConstantString::escape_string(const std::string &input)
         {
             // Escape non-printable characters as \HH
             ss << "\\" << std::hex << std::setw(2) << std::setfill('0')
-               << static_cast<unsigned int>(static_cast<unsigned char>(c));
+               << static_cast<unsigned>(static_cast<unsigned char>(c));
         }
     }
     return ss.str();

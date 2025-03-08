@@ -12,7 +12,6 @@
 #include <unicode/uchar.h>
 #endif // MO_UNICODE
 
-
 struct LexerError
 {
     std::string message;
@@ -28,6 +27,7 @@ enum class TokenType
     Struct,
     Impl,
     Fn,
+    Static,
     This,
     Return,
     Type,
@@ -108,6 +108,7 @@ const std::unordered_map<std::string, TokenType> keywords = {
     {"struct", TokenType::Struct},
     {"impl", TokenType::Impl},
     {"fn", TokenType::Fn},
+    {"static", TokenType::Static},
     {"this", TokenType::This},
     {"type", TokenType::Type},
     {"return", TokenType::Return},
@@ -151,7 +152,7 @@ public:
     Lexer(const std::string &input);
     Lexer(Lexer &&other) noexcept;
     Token next_token();
-    const std::vector<LexerError>& get_errors() const { return errors; }
+    const std::vector<LexerError> &get_errors() const { return errors; }
 
 private:
     std::string input;
@@ -160,10 +161,10 @@ private:
     int current_col;
     std::vector<LexerError> errors;
 
-    #if defined(MO_UNICODE)
+#if defined(MO_UNICODE)
     std::pair<char32_t, int> decode_utf8();
-    #endif // MO_UNICODE
-    
+#endif // MO_UNICODE
+
     void advance();
     char peek(size_t offset = 0) const;
     void skip_whitespace_and_comments();
