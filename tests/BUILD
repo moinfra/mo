@@ -70,3 +70,13 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "machine_test",
+    srcs = ["machine_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:machine",
+        "@googletest//:gtest_main",
+    ],
+)

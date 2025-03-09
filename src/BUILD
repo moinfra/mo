@@ -84,3 +84,11 @@ cc_library(
     deps = [":ir"],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "machine",
+    srcs = ["machine.cc", "lra.cc"],
+    hdrs = ["machine.h", "lra.h"],
+    deps = [":utils", ":ir"],
+    visibility = ["//visibility:public"],
+)
