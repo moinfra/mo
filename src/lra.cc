@@ -9,10 +9,11 @@
 #include <vector>
 
 //===----------------------------------------------------------------------===//
-// Live Range Implementation
+// Live Interval Implementation
 //===----------------------------------------------------------------------===//
 
-LiveInterval::LiveInterval(unsigned start, unsigned end) : start_(start), end_(end)
+LiveInterval::LiveInterval(unsigned start, unsigned end)
+    : start_(start), end_(end)
 {
     assert(start < end && "Invalid interval range");
 }
@@ -28,14 +29,16 @@ bool LiveInterval::overlaps(const LiveInterval &other) const
 
 LiveInterval LiveInterval::merge(const LiveInterval &other) const
 {
-    assert((overlaps(other) || end() == other.start() || other.end() == start()) && "Merging non-overlapping intervals");
+    assert((overlaps(other) || end() == other.start() || other.end() == start()) &&
+           "Merging non-overlapping intervals");
     return LiveInterval(std::min(start(), other.start()),
                         std::max(end(), other.end()));
 }
 
 bool LiveInterval::operator<(const LiveInterval &rhs) const
 {
-    return start() < rhs.start() || (start() == rhs.start() && end() < rhs.end());
+    return start() < rhs.start() ||
+           (start() == rhs.start() && end() < rhs.end());
 }
 
 void LiveRange::add_interval(unsigned start, unsigned end)
@@ -47,11 +50,12 @@ void LiveRange::add_interval(unsigned start, unsigned end)
 bool LiveRange::live_at(unsigned pos) const
 {
     // Binary search optimization: find the first interval whose end position > pos
-    auto it = std::upper_bound(intervals_.begin(), intervals_.end(), pos,
-                               [](unsigned val, const LiveInterval &interval)
-                               {
-                                   return val < interval.end();
-                               });
+    auto it = std::upper_bound(
+        intervals_.begin(), intervals_.end(), pos,
+        [](unsigned val, const LiveInterval &interval)
+        {
+            return val < interval.end();
+        });
     return it != intervals_.begin() && (--it)->start() <= pos;
 }
 
@@ -111,54 +115,67 @@ void LiveRange::merge_intervals()
 //===----------------------------------------------------------------------===//
 // Live Range Analysis Implementation
 //===----------------------------------------------------------------------===//
-void LiveRangeAnalysis::compute() const {
-    if (!live_ranges_dirty_) return;
+void LiveRangeAnalysis::compute() const
+{
+    if (!live_ranges_dirty_)
+        return;
 
-    // 确保全局指令位置已计算
+    // Ensure global instruction positions are computed
     mf_.ensure_global_positions_computed();
 
-    // 步骤1：收集所有虚拟寄存器的使用位置（定义点+使用点）
+    // Step 1: Collect all virtual register use positions (definition + use points)
     std::unordered_map<unsigned, std::set<unsigned>> vreg_positions;
 
-    for (const auto &bb : mf_.get_basic_blocks()) {
-        for (const auto &inst : bb->instructions()) {
+    for (const auto &bb : mf_.get_basic_blocks())
+    {
+        for (const auto &inst : bb->instructions())
+        {
             const unsigned global_pos = mf_.get_global_instr_pos(inst.get());
-            
-            for (const auto &op : inst->operands()) {
-                if (!op.is_reg()) continue;
-                const unsigned reg = op.get_reg();
-                
-                // 仅处理虚拟寄存器
-                if (reg < MachineFunction::FIRST_VIRTUAL_REGISTER) continue;
 
-                // 定义点需要特殊处理：起始位置 = 定义点，结束位置 = 下一条指令
-                if (op.is_def()) {
+            for (const auto &op : inst->operands())
+            {
+                if (!op.is_reg())
+                    continue;
+                const unsigned reg = op.get_reg();
+
+                // Only process virtual registers
+                if (reg < MachineFunction::FIRST_VIRTUAL_REGISTER)
+                    continue;
+
+                // Definition points need special handling: start position = definition
+                // point, end position = next instruction
+                if (op.is_def())
+                {
                     vreg_positions[reg].insert(global_pos);
                 }
-                // 使用点：结束位置 = 当前指令后
+                // Use points: end position = after the current instruction
                 vreg_positions[reg].insert(global_pos + 1);
             }
         }
     }
 
-    // 步骤2：为每个虚拟寄存器生成连续区间
+    // Step 2: Generate continuous intervals for each virtual register
     vreg_live_ranges_.clear();
-    for (const auto &[vreg, positions] : vreg_positions) {
-        if (positions.empty()) continue;
+    for (const auto &[vreg, positions] : vreg_positions)
+    {
+        if (positions.empty())
+            continue;
 
-        // 将有序位置转换为连续区间
+        // Convert ordered positions to continuous intervals
         std::vector<unsigned> sorted(positions.begin(), positions.end());
         std::sort(sorted.begin(), sorted.end());
 
         LiveRange lr(vreg);
         unsigned start = sorted.front();
-        for (size_t i = 1; i < sorted.size(); ++i) {
-            if (sorted[i] != sorted[i-1] + 1) {
-                lr.add_interval(start, sorted[i-1] + 1);
+        for (size_t i = 1; i < sorted.size(); ++i)
+        {
+            if (sorted[i] != sorted[i - 1] + 1)
+            {
+                lr.add_interval(start, sorted[i - 1] + 1);
                 start = sorted[i];
             }
         }
-        // 添加最后一个区间
+        // Add the last interval
         lr.add_interval(start, sorted.back() + 1);
 
         vreg_live_ranges_.emplace(vreg, std::move(lr));
@@ -167,34 +184,41 @@ void LiveRangeAnalysis::compute() const {
     live_ranges_dirty_ = false;
 }
 
-const LiveRange &LiveRangeAnalysis::get_live_range(unsigned vreg) const {
-    if (live_ranges_dirty_) compute();
-    
+const LiveRange &LiveRangeAnalysis::get_live_range(unsigned vreg) const
+{
+    if (live_ranges_dirty_)
+        compute();
+
     auto it = vreg_live_ranges_.find(vreg);
-    if (it == vreg_live_ranges_.end()) {
-        throw std::runtime_error("Virtual register " + std::to_string(vreg) + 
+    if (it == vreg_live_ranges_.end())
+    {
+        throw std::runtime_error("Virtual register " + std::to_string(vreg) +
                                  " has no live range");
     }
     return it->second;
 }
 
-std::map<unsigned, std::set<unsigned>> 
-LiveRangeAnalysis::build_interference_graph() const {
-    compute(); // 确保数据最新
+std::map<unsigned, std::set<unsigned>>
+LiveRangeAnalysis::build_interference_graph() const
+{
+    compute(); // Ensure data is up-to-date
 
     std::map<unsigned, std::set<unsigned>> graph;
     const auto &ranges = vreg_live_ranges_;
 
-    // 双重遍历所有虚拟寄存器对
-    for (auto it1 = ranges.begin(); it1 != ranges.end(); ++it1) {
+    // Double-iterate over all virtual register pairs
+    for (auto it1 = ranges.begin(); it1 != ranges.end(); ++it1)
+    {
         const unsigned vreg1 = it1->first;
         const LiveRange &lr1 = it1->second;
 
-        for (auto it2 = std::next(it1); it2 != ranges.end(); ++it2) {
+        for (auto it2 = std::next(it1); it2 != ranges.end(); ++it2)
+        {
             const unsigned vreg2 = it2->first;
             const LiveRange &lr2 = it2->second;
 
-            if (lr1.interferes_with(lr2)) {
+            if (lr1.interferes_with(lr2))
+            {
                 graph[vreg1].insert(vreg2);
                 graph[vreg2].insert(vreg1);
             }
@@ -204,35 +228,41 @@ LiveRangeAnalysis::build_interference_graph() const {
     return graph;
 }
 
-bool LiveRangeAnalysis::has_conflict(unsigned reg1, unsigned reg2) const {
-    // 步骤1：检查别名关系
-  
-    // 物理寄存器别名冲突（无需活跃区间重叠）
-    if (reg1 < MachineFunction::FIRST_VIRTUAL_REGISTER && 
-        reg2 < MachineFunction::FIRST_VIRTUAL_REGISTER) 
+bool LiveRangeAnalysis::has_conflict(unsigned reg1, unsigned reg2) const
+{
+    // Step 1: Check alias relationships
+
+    // Physical register alias conflict (no need for overlapping live intervals)
+    if (reg1 < MachineFunction::FIRST_VIRTUAL_REGISTER &&
+        reg2 < MachineFunction::FIRST_VIRTUAL_REGISTER)
     {
         return is_alias_(reg1, reg2);
     }
 
-    // 步骤2：检查活跃区间重叠
+    // Step 2: Check for overlapping live intervals
     const LiveRange &lr1 = get_live_range(reg1);
     const LiveRange &lr2 = get_live_range(reg2);
-    
-    for (const auto &i1 : lr1.intervals()) {
-        for (const auto &i2 : lr2.intervals()) {
-            if (i1.overlaps(i2)) {
+
+    for (const auto &i1 : lr1.intervals())
+    {
+        for (const auto &i2 : lr2.intervals())
+        {
+            if (i1.overlaps(i2))
+            {
                 return true;
             }
         }
     }
-    
-    // 步骤3：处理虚拟寄存器与物理寄存器的别名冲突
-    if (reg1 < MachineFunction::FIRST_VIRTUAL_REGISTER) {
+
+    // Step 3: Handle alias conflicts between virtual and physical registers
+    if (reg1 < MachineFunction::FIRST_VIRTUAL_REGISTER)
+    {
         return is_alias_(reg1, reg2);
     }
-    if (reg2 < MachineFunction::FIRST_VIRTUAL_REGISTER) {
+    if (reg2 < MachineFunction::FIRST_VIRTUAL_REGISTER)
+    {
         return is_alias_(reg2, reg1);
     }
-    
+
     return false;
 }
