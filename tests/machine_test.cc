@@ -7,13 +7,13 @@ TEST(MOperandTest, CreateAndAccess)
     // 寄存器操作数
     auto reg_op = MOperand::create_reg(123, true);
     EXPECT_TRUE(reg_op.is_reg());
-    EXPECT_EQ(reg_op.get_reg(), 123u);
+    EXPECT_EQ(reg_op.reg(), 123u);
     EXPECT_TRUE(reg_op.is_def());
 
     // 立即数操作数
     auto imm_op = MOperand::create_imm(42);
     EXPECT_TRUE(imm_op.is_imm());
-    EXPECT_EQ(imm_op.get_imm(), 42);
+    EXPECT_EQ(imm_op.imm(), 42);
 
     // 内存操作数
     auto mem_rix = MOperand::create_mem_rix(1, 2, 4, 8);
