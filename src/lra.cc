@@ -136,7 +136,7 @@ void LiveRangeAnalysis::compute() const
             {
                 if (!op.is_reg())
                     continue;
-                const unsigned reg = op.get_reg();
+                const unsigned reg = op.reg();
 
                 // Only process virtual registers
                 if (reg < MachineFunction::FIRST_VIRTUAL_REGISTER)
