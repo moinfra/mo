@@ -2,8 +2,6 @@
 
 #pragma once
 
-#include "ir.h"
-#include "lra.h"
 #include <algorithm>
 #include <bitset>
 #include <cassert>
@@ -16,6 +14,9 @@
 #include <variant>
 #include <vector>
 
+#include "ir.h"
+#include "lra.h"
+
 class Function;
 class GlobalVariable;
 class MachineFunction;
@@ -24,6 +25,7 @@ class TargetInstInfo;
 class TargetRegisterInfo;
 class Value;
 
+#define MO_MAX_RC 16
 //===----------------------------------------------------------------------===//
 // Register Pressure Tracking
 //===----------------------------------------------------------------------===//
@@ -117,43 +119,26 @@ public:
 
     static MOperand create_mem_rix(unsigned base_reg, unsigned index_reg, int scale,
                                    int offset);
-
     MEMrix get_mem_rix() const;
-
     static MOperand create_reg(unsigned reg, bool is_def = false);
-
     static MOperand create_imm(int64_t val);
-
     static MOperand create_fp_imm(double val);
-
     static MOperand create_frame_index(int index);
-
     static MOperand create_global(GlobalVariable *global_variable);
-
     static MOperand create_external_sym(const char *symbol);
-
     static MOperand create_mem_ri(unsigned base_reg, int offset);
-
     static MOperand create_mem_rr(unsigned base_reg, unsigned index_reg);
 
     // Access methods
-    unsigned get_reg() const;
-
-    int64_t get_imm() const;
-
-    double get_fp_imm() const;
-
-    int get_frame_index() const;
-
-    GlobalVariable *get_global() const;
-
-    const char *get_external_sym() const;
-
-    MEMri get_mem_ri() const;
-
-    MEMrr get_mem_rr() const;
-
-    unsigned get_base_reg() const;
+    unsigned reg() const;
+    int64_t imm() const;
+    double fp_imm() const;
+    int frame_index() const;
+    GlobalVariable *global() const;
+    const char *external_sym() const;
+    MEMri mem_ri() const;
+    MEMrr mem_rr() const;
+    unsigned base_reg() const;
 
     // Status flag operations
     void set_is_def(bool val = true) noexcept { is_def_ = val; }
@@ -226,7 +211,7 @@ public:
     void remove_operand(unsigned index);
 
     // Accessors
-    unsigned get_opcode() const { return opcode_; }
+    unsigned opcode() const { return opcode_; }
     const std::vector<MOperand> &operands() const { return ops_; }
 };
 
@@ -246,15 +231,16 @@ class MachineBasicBlock
     unsigned number_ = 0; // Unique identifier
 
 public:
-    MachineBasicBlock(MachineFunction &machine_function, unsigned number);
+    MachineBasicBlock(MachineFunction &mf, unsigned number);
 
     using iterator = std::vector<std::unique_ptr<MachineInst>>::iterator;
     const auto &instructions() const { return insts_; }
     iterator insert(iterator pos, std::unique_ptr<MachineInst> inst);
+    void erase(iterator pos);
     iterator begin() { return insts_.begin(); }
     iterator end() { return insts_.end(); }
 
-    void add_instr(std::unique_ptr<MachineInst> machine_instruction);
+    void add_instr(std::unique_ptr<MachineInst> mi);
 
     unsigned get_instr_position(iterator it) const;
 
@@ -321,6 +307,9 @@ struct FrameObjectInfo
     unsigned alignment;                // Minimum required alignment
     uint8_t flags;                     // Attribute flags
     Value *associated_value = nullptr; // Associated IR object
+    // For SPill
+    unsigned spill_rc_id = 0;          // 溢出目标的寄存器类别 ID
+    bool spill_needs_reload = true;    // 是否需重新加载
 
     // Validity check
     bool validate(std::string *err = nullptr) const;
@@ -398,11 +387,11 @@ public:
     void mark_global_positions_dirty() { global_positions_dirty_ = true; }
 
     // Get the global position of an instruction
-    unsigned get_global_instr_pos(const MachineInst *machine_instruction) const
+    unsigned get_global_instr_pos(const MachineInst *mi) const
     {
         assert(!global_positions_dirty_ && "Global positions not computed!");
         ensure_global_positions_computed();
-        return global_instr_positions_.at(machine_instruction);
+        return global_instr_positions_.at(mi);
     }
 
     void ensure_global_positions_computed() const
@@ -453,7 +442,8 @@ public:
     {
         C,    // C calling convention
         Fast, // Fast call
-        Tail  // Tail call optimization
+        Vector,
+        NUM_CALLING_CONV
     };
 
     struct RetLocation : ArgLocation
@@ -463,10 +453,10 @@ public:
 
     virtual ~CallingConv() = default;
 
-    virtual void analyze_call(MachineFunction &machine_function,
+    virtual void analyze_call(MachineFunction &mf,
                               const std::vector<Value *> &args,
                               std::vector<ArgLocation> &locations) const = 0;
-    virtual void analyze_return(MachineFunction &machine_function,
+    virtual void analyze_return(MachineFunction &mf,
                                 const Value *return_value,
                                 RetLocation &location) const = 0;
 };
@@ -478,15 +468,24 @@ struct RegisterDesc
     bool is_reserved;        // Reserved
     bool is_allocatable;     // Allocatable
     unsigned primary_rc_id;  // Primary register class ID
+    std::bitset<16> rc_mask; // Register class mask
 };
 
 /// Target register class - represents a set of registers
 struct RegisterClass
 {
-    std::string name_;
+    std::string name;
     std::vector<unsigned> regs; // List of registers
     unsigned copy_cost;         // Register-to-register copy cost
     unsigned weight;            // Weight for pressure calculation
+};
+
+struct ArgPassingRule
+{
+    std::vector<unsigned> int_regs; // 整型参数寄存器序列
+    std::vector<unsigned> fp_regs;  // 浮点参数寄存器序列
+    unsigned stack_align = 16;      // 栈对齐要求
+    bool shadow_space = false;      // Win64的阴影空间
 };
 
 /// Target register information
@@ -495,6 +494,10 @@ class TargetRegisterInfo
 protected:
     // Table of all register descriptors
     std::vector<RegisterDesc> reg_descs_;
+    // TODO: define and support ArgPassingRule/RetPassingRule
+    std::unordered_map<CallingConv::ID, ArgPassingRule> arg_rules_;
+    // std::unordered_map<CallingConv::ID, RetPassingRule> ret_rules_;
+
     std::vector<std::unique_ptr<RegisterClass>> register_classes_;
 
     // Pre-stored Callee/Caller Saved Registers based on calling convention
@@ -503,6 +506,8 @@ protected:
 
     // Precomputed alias relationship (reg -> set of aliases)
     std::vector<std::unordered_set<unsigned>> alias_map_;
+
+    const std::vector<unsigned> empty_reg_list_;
 
 public:
     explicit TargetRegisterInfo(unsigned num_regs)
@@ -514,6 +519,19 @@ public:
     bool is_reserved_reg(unsigned reg) const { return reg_descs_[reg].is_reserved; }
 
     unsigned get_spill_cost(unsigned reg) const { return reg_descs_[reg].spill_cost; }
+    const std::vector<unsigned> &get_reg_classes(unsigned reg) const
+    {
+        auto mask = reg_descs_[reg].rc_mask;
+        std::vector<unsigned> classes;
+        for (unsigned i = 0; i < register_classes_.size(); ++i)
+        {
+            if (mask[i])
+            {
+                classes.push_back(i);
+            }
+        }
+        return classes;
+    }
     virtual unsigned get_primary_reg_class(unsigned reg) const
     {
         return reg_descs_[reg].primary_rc_id;
@@ -549,20 +567,25 @@ public:
     //===---------------- Calling Convention Related ----------------------===//
     const std::vector<unsigned> &get_callee_saved_regs(CallingConv::ID cc) const
     {
-        return callee_saved_map_.at(cc);
+        auto it = callee_saved_map_.find(cc);
+        return (it != callee_saved_map_.end()) ? it->second : empty_reg_list_;
     }
 
     const std::vector<unsigned> &get_caller_saved_regs(CallingConv::ID cc) const
     {
-        return caller_saved_map_.at(cc);
+        auto it = caller_saved_map_.find(cc);
+        return (it != caller_saved_map_.end()) ? it->second : empty_reg_list_;
     }
 
     //===---------------- Alias Relationship Handling ----------------------===//
     // Precompute alias relationships (called during initialization)
-    void add_alias(unsigned reg, unsigned alias)
+    void add_alias(unsigned reg, unsigned alias, bool bidirectional = true)
     {
         alias_map_[reg].insert(alias);
-        alias_map_[alias].insert(reg);
+        if (bidirectional)
+        {
+            alias_map_[alias].insert(reg);
+        }
     }
 
     bool are_aliases(unsigned reg1, unsigned reg2) const
@@ -591,22 +614,22 @@ class TargetInstInfo
 public:
     // Core interfaces
     virtual const char *get_opcode_name(unsigned opcode) const = 0;
-    virtual unsigned get_inst_size(const MachineInst &machine_instruction) const = 0;
+    virtual unsigned get_inst_size(const MachineInst &mi) const = 0;
 
     // Instruction verification
-    virtual bool verify_instruction(const MachineInst &machine_instruction,
+    virtual bool verify_instruction(const MachineInst &mi,
                                     std::string &error_msg) const = 0;
 
     // Instruction encoding
-    virtual uint32_t get_binary_encoding(const MachineInst &machine_instruction) const = 0;
+    virtual uint32_t get_binary_encoding(const MachineInst &mi) const = 0;
 
     // Pseudo-instruction handling
-    virtual void expand_pseudo(MachineBasicBlock &machine_basic_block,
-                               MachineBasicBlock::iterator machine_instruction) const = 0;
+    virtual void expand_pseudo(MachineBasicBlock &mbb,
+                               MachineBasicBlock::iterator mi) const = 0;
 
     // Special instruction identification
-    virtual bool is_return(const MachineInst &machine_instruction) const = 0;
-    virtual bool is_call(const MachineInst &machine_instruction) const = 0;
+    virtual bool is_return(const MachineInst &mi) const = 0;
+    virtual bool is_call(const MachineInst &mi) const = 0;
 
     // Immediate legality check
     virtual bool is_legal_immediate(int64_t immediate,
@@ -616,13 +639,13 @@ public:
     virtual unsigned get_instruction_latency(unsigned opcode) const = 0;
 
     // Register operations
-    virtual void copy_phys_reg(MachineBasicBlock &machine_basic_block,
+    virtual void copy_phys_reg(MachineBasicBlock &mbb,
                                MachineBasicBlock::iterator insert, unsigned dest_reg,
                                unsigned src_reg) const = 0;
 
     // Legalization handling
-    virtual bool legalize_inst(MachineInst &machine_instruction,
-                               MachineFunction &machine_function) const = 0;
+    virtual bool legalize_inst(MachineBasicBlock &mbb, MachineBasicBlock::iterator mii,
+                               MachineFunction &mf) const = 0;
 };
 
 /// Target frame lowering interface
@@ -637,14 +660,14 @@ class TargetFrameLowering
 public:
     virtual ~TargetFrameLowering() = default;
 
-    virtual void emit_prologue(MachineFunction &machine_function) const = 0;
-    virtual void emit_epilogue(MachineFunction &machine_function) const = 0;
-    virtual int get_frame_index_offset(const MachineFunction &machine_function,
+    virtual void emit_prologue(MachineFunction &mf) const = 0;
+    virtual void emit_epilogue(MachineFunction &mf) const = 0;
+    virtual int get_frame_index_offset(const MachineFunction &mf,
                                        int frame_index) const = 0;
     virtual FrameLayout compute_frame_layout(
-        const MachineFunction &machine_function) const = 0;
+        const MachineFunction &mf) const = 0;
 
-    virtual void emit_stack_protector(MachineFunction &machine_function,
+    virtual void emit_stack_protector(MachineFunction &mf,
                                       int guard_index) const = 0; // Insert stack protection code
 };
 

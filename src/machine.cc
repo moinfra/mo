@@ -119,47 +119,47 @@ MOperand MOperand::create_mem_rr(unsigned base_reg, unsigned index_reg) {
   return op;
 }
 
-unsigned MOperand::get_reg() const {
+unsigned MOperand::reg() const {
   assert(is_reg());
   return std::get<unsigned>(storage_);
 }
 
-int64_t MOperand::get_imm() const {
+int64_t MOperand::imm() const {
   assert(is_imm());
   return std::get<int64_t>(storage_);
 }
 
-double MOperand::get_fp_imm() const {
+double MOperand::fp_imm() const {
   assert(is_fp_imm());
   return std::get<double>(storage_);
 }
 
-int MOperand::get_frame_index() const {
+int MOperand::frame_index() const {
   assert(is_frame_index());
   return std::get<int>(storage_);
 }
 
-GlobalVariable *MOperand::get_global() const {
+GlobalVariable *MOperand::global() const {
   assert(is_global());
   return std::get<GlobalVariable *>(storage_);
 }
 
-const char *MOperand::get_external_sym() const {
+const char *MOperand::external_sym() const {
   assert(is_external_sym());
   return std::get<const char *>(storage_);
 }
 
-MOperand::MEMri MOperand::get_mem_ri() const {
+MOperand::MEMri MOperand::mem_ri() const {
   assert(is_mem_ri());
   return std::get<MEMri>(storage_);
 }
 
-MOperand::MEMrr MOperand::get_mem_rr() const {
+MOperand::MEMrr MOperand::mem_rr() const {
   assert(is_mem_rr());
   return std::get<MEMrr>(storage_);
 }
 
-unsigned MOperand::get_base_reg() const {
+unsigned MOperand::base_reg() const {
   if (is_mem_ri()) return std::get<MEMri>(storage_).base_reg;
   if (is_mem_rr()) return std::get<MEMrr>(storage_).base_reg;
   if (is_mem_rix()) return std::get<MEMrix>(storage_).base_reg;
@@ -203,30 +203,30 @@ std::string MOperand::to_string() const {
 
   std::ostringstream oss;
   if (is_reg()) {
-    oss << "R" << get_reg();
+    oss << "R" << reg();
     if (is_def()) oss << "<def>";
     if (is_kill()) oss << "<kill>";
     if (is_dead()) oss << "<dead>";
   } else if (is_imm()) {
-    oss << "#" << get_imm();
+    oss << "#" << imm();
   } else if (is_fp_imm()) {
-    oss << "#" << get_fp_imm();
+    oss << "#" << fp_imm();
   } else if (is_mem_ri()) {
-    auto mem = get_mem_ri();
+    auto mem = mem_ri();
     oss << "[R" << mem.base_reg << " + " << mem.offset << "]";
   } else if (is_mem_rr()) {
-    auto mem = get_mem_rr();
+    auto mem = mem_rr();
     oss << "[R" << mem.base_reg << " + R" << mem.index_reg << "]";
   } else if (is_mem_rix()) {
     auto mem = get_mem_rix();
     oss << "[R" << mem.base_reg << " + R" << mem.index_reg << "*" << mem.scale
         << " + " << mem.offset << "]";
   } else if (is_frame_index()) {
-    oss << "fi#" << get_frame_index();
+    oss << "fi#" << frame_index();
   } else if (is_global()) {
-    oss << "global(" << get_global()->name() << ")";
+    oss << "global(" << global()->name() << ")";
   } else if (is_external_sym()) {
-    oss << "sym(" << get_external_sym() << ")";
+    oss << "sym(" << external_sym() << ")";
   }
   return oss.str();
 }
@@ -329,6 +329,12 @@ MachineBasicBlock::MachineBasicBlock(MachineFunction &machine_function,
 MachineBasicBlock::iterator MachineBasicBlock::insert(
     iterator pos, std::unique_ptr<MachineInst> inst) {
   return insts_.insert(pos, std::move(inst));
+}
+
+void MachineBasicBlock::erase(iterator pos) {
+  mf_.mark_global_positions_dirty();
+  mf_.mark_live_ranges_dirty();
+  insts_.erase(pos);
 }
 
 void MachineBasicBlock::add_instr(std::unique_ptr<MachineInst> mi) {
