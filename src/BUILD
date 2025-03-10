@@ -87,8 +87,8 @@ cc_library(
 
 cc_library(
     name = "machine",
-    srcs = ["machine.cc", "lra.cc"],
-    hdrs = ["machine.h", "lra.h"],
+    srcs = ["machine.cc", "lra.cc","reg_alloc/reg_alloc.cc"],
+    hdrs = ["machine.h", "lra.h","reg_alloc/reg_alloc.h"],
     deps = [":utils", ":ir"],
     visibility = ["//visibility:public"],
 )

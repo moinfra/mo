@@ -80,3 +80,14 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "lra_test",
+    srcs = ["lra_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:machine",
+        "//src/targets:riscv_target",
+        "@googletest//:gtest_main",
+    ],
+)
