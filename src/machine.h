@@ -62,8 +62,22 @@ public:
         int offset;
     };
 
+    enum class MOperandType : unsigned
+    {
+        Invalid,
+        Register,
+        Immediate,
+        FPImmediate,
+        FrameIndex,
+        GlobalAddress,
+        ExternalSymbol,
+        MEMri,
+        MEMrr,
+        MEMrix
+    };
+
 private:
-    using StorageType = std::variant<
+    using Storage = std::variant<
         std::monostate,   // Invalid
         unsigned,         // Register (physical/virtual register number)
         int64_t,          // Immediate (integer immediate)
@@ -76,10 +90,9 @@ private:
         MEMrix            // MEMrix memory operand
         >;
 
-    StorageType storage_;
-    bool is_def_ = false;  // Is a definition operand
-    bool is_kill_ = false; // Is register killed after use
-    bool is_dead_ = false; // Is register dead
+    Storage storage_;
+    MOperandType type_ = MOperandType::Invalid;
+    bool is_def_ = false; // Is this a definition.
 
 public:
     MOperand() = default;
@@ -123,15 +136,7 @@ public:
     MEMrr mem_rr() const;
     MEMrix get_mem_rix() const;
     unsigned base_reg() const;
-
-    // Status flag operations
-    void set_is_def(bool val = true) noexcept { is_def_ = val; }
-    void set_is_kill(bool val = true) noexcept { is_kill_ = val; }
-    void set_is_dead(bool val = true) noexcept { is_dead_ = val; }
-
-    bool is_def() const noexcept { return is_def_; }
-    bool is_kill() const noexcept { return is_kill_; }
-    bool is_dead() const noexcept { return is_dead_; }
+    bool is_def() const { return is_def_; }
 
     std::string to_string() const;
 };
@@ -192,14 +197,15 @@ public:
     void add_operand(const MOperand &operand);
     void insert_operand(unsigned index, const MOperand &operand);
     void remove_operand(unsigned index);
+    bool is_operand_def(unsigned index) const noexcept;
 
     // Accessors
     unsigned opcode() const { return opcode_; }
     const std::vector<MOperand> &operands() const { return ops_; }
 
     // Analysis methods
-    void get_used_regs(std::set<unsigned> &regs) const;
-    void get_defined_regs(std::set<unsigned> &regs) const;
+    std::set<unsigned> defs() const;
+    std::set<unsigned> uses() const;
 
     // Verification and string conversion
     bool verify(VerificationLevel level, const TargetInstInfo *target_info = nullptr,
@@ -215,22 +221,20 @@ class MachineBasicBlock
 {
 public:
     using iterator = std::vector<std::unique_ptr<MachineInst>>::iterator;
-    using pred_iterator = std::vector<MachineBasicBlock *>::iterator;
-    using succ_iterator = std::vector<MachineBasicBlock *>::iterator;
 
 private:
-    std::string label_;
     MachineFunction &mf_;
     unsigned number_ = 0; // Unique identifier
+    std::string label_;
     std::vector<std::unique_ptr<MachineInst>> insts_;
     std::vector<MachineBasicBlock *> predecessors_;
     std::vector<MachineBasicBlock *> successors_;
-    std::unordered_map<unsigned, LiveRange> vreg_live_ranges_;
     mutable std::unique_ptr<PressureTracker> pressure_tracker_;
 
 public:
-    MachineBasicBlock(MachineFunction &mf, unsigned number);
+    MachineBasicBlock(MachineFunction &mf, unsigned number, std::string label);
 
+    const std::string &label() const { return label_; }
     MachineFunction *parent() const { return &mf_; }
     // Instruction access and manipulation
     const auto &instructions() const { return insts_; }
@@ -242,21 +246,22 @@ public:
     unsigned get_instr_position(iterator it) const;
 
     // CFG management
-    pred_iterator pred_begin() { return predecessors_.begin(); }
-    pred_iterator pred_end() { return predecessors_.end(); }
-    succ_iterator succ_begin() { return successors_.begin(); }
-    succ_iterator succ_end() { return successors_.end(); }
+    const std::vector<MachineBasicBlock *> &predecessors() const { return predecessors_; }
+    const std::vector<MachineBasicBlock *> &successors() const { return successors_; }
+    void clear_cfg()
+    {
+        predecessors_.clear();
+        successors_.clear();
+    }
     size_t pred_size() const { return predecessors_.size(); }
     size_t succ_size() const { return successors_.size(); }
     void add_successor(MachineBasicBlock *successor);
     void remove_successor(MachineBasicBlock *successor);
-
+    size_t global_start() const;
+    size_t global_end_inclusive() const;
     // Label management
     void set_label(const std::string &label) { label_ = label; }
     std::string get_label() const;
-
-    // Cached live range access
-    const LiveRange &get_live_range(unsigned vreg) const;
 
     std::string to_string() const;
 
@@ -307,9 +312,11 @@ struct FrameObjectInfo
 
 class MachineFunction
 {
+
 private:
     Function *ir_func_; // Source IR function
     MachineModule *mm_; // Target machine module
+    static const unsigned FIRST_VIRT_REG = 1000;
 
     // Basic blocks and frame objects
     std::vector<std::unique_ptr<MachineBasicBlock>> blocks_;
@@ -317,11 +324,11 @@ private:
     int next_frame_idx_ = 0;                                 // Stack object index counter
 
     // Virtual register management
-    unsigned next_vreg_ = 0; // Virtual register counter
+    unsigned next_vreg_ = FIRST_VIRT_REG; // Virtual register counter
     std::unordered_map<unsigned, VRegInfo> vreg_infos_;
 
     // Analysis results
-    mutable std::unique_ptr<LiveRangeAnalysis> lra_;
+    mutable std::unique_ptr<LiveRangeAnalyzer> lra_;
 
     // Stack frame layout cache
     mutable bool is_frame_layout_dirty_ = true; // Layout cache status
@@ -342,7 +349,6 @@ private:
     void operator=(const MachineFunction &) = delete;
 
     unsigned next_bb_number_ = 0; // Basic block number generator
-    static const unsigned FIRST_VIRT_REG = 1024;
 
 public:
     static bool is_physical_reg(unsigned reg) { return reg < FIRST_VIRT_REG; }
@@ -355,12 +361,14 @@ public:
         {
             return false; // TODO: use info given by target
         };
-        lra_ = std::unique_ptr<LiveRangeAnalysis>(
-            new LiveRangeAnalysis(*this, is_alias_fn));
+        lra_ = std::unique_ptr<LiveRangeAnalyzer>(
+            new LiveRangeAnalyzer(*this, is_alias_fn));
     }
 
+    virtual ~MachineFunction() = default;
+
     // Basic block management
-    MachineBasicBlock *create_block();
+    MachineBasicBlock *create_block(std::string label = "");
     const std::vector<std::unique_ptr<MachineBasicBlock>> &get_basic_blocks() const;
 
     // Virtual register management
@@ -374,10 +382,6 @@ public:
     bool has_frame_index(Value *value) const;
     int create_frame_object(FrameObjectInfo frame_object_info);
     const FrameObjectInfo *get_frame_object(int index) const;
-
-    // Live range analysis
-    const LiveRange &get_vreg_liverange(unsigned vreg) const;
-    void mark_live_ranges_dirty() { lra_->mark_dirty(); }
 
     // Stack frame layout
     const std::vector<int> &get_frame_layout() const;
@@ -398,15 +402,15 @@ public:
     void mark_global_positions_dirty() { global_positions_dirty_ = true; }
     unsigned get_global_instr_pos(const MachineInst *mi) const
     {
-        assert(!global_positions_dirty_ && "Global positions not computed!");
         ensure_global_positions_computed();
+        MO_ASSERT(global_instr_positions_.count(mi) != 0, "Instruction %p not found in global position map!", mi);
         return global_instr_positions_.at(mi);
     }
 
     std::unique_ptr<PressureTracker> compute_pressure() const;
 
-    MachineModule *parent() { return mm_; }
-
+    MachineModule *parent() const { return mm_; }
+    LiveRangeAnalyzer *live_range_analyzer() const { return lra_.get(); }
     std::string to_string() const;
 };
 
@@ -506,6 +510,7 @@ protected:
     const std::vector<unsigned> empty_reg_list_;
 
 public:
+    virtual ~TargetRegisterInfo() = default;
     explicit TargetRegisterInfo(unsigned num_regs)
         : reg_descs_(num_regs), alias_map_(num_regs) {}
 
@@ -517,7 +522,7 @@ public:
     {
         return reg_descs_[reg].primary_rc_id;
     }
-    const std::vector<unsigned> &get_reg_classes(unsigned reg) const;
+    const std::vector<unsigned> get_reg_classes(unsigned reg) const;
     unsigned get_reg_class_weight(unsigned register_class_id) const;
     unsigned get_reg_weight(unsigned reg) const;
 
@@ -554,6 +559,7 @@ public:
 class TargetInstInfo
 {
 public:
+    virtual ~TargetInstInfo() = default;
     // Core interfaces
     virtual const char *get_opcode_name(unsigned opcode) const = 0;
     virtual unsigned get_inst_size(const MachineInst &mi) const = 0;
@@ -576,6 +582,10 @@ public:
     // Immediate legality check
     virtual bool is_legal_immediate(int64_t immediate,
                                     unsigned operand_size) const = 0;
+
+    // Def-use info
+    virtual bool is_operand_def(unsigned op, unsigned index) const = 0;
+    virtual bool is_operand_use(unsigned op, unsigned index) const = 0;
 
     // Scheduling information
     virtual unsigned get_instruction_latency(unsigned opcode) const = 0;

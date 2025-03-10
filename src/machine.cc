@@ -75,12 +75,12 @@ MOperand::MEMrix MOperand::get_mem_rix() const
     assert(is_mem_rix());
     return std::get<MEMrix>(storage_);
 }
-
 MOperand MOperand::create_mem_rix(unsigned base_reg, unsigned index_reg,
                                   int scale, int offset)
 {
     MOperand op;
     op.storage_ = MEMrix{base_reg, index_reg, scale, offset};
+    op.type_ = MOperandType::MEMrix;
     return op;
 }
 
@@ -89,6 +89,7 @@ MOperand MOperand::create_reg(unsigned reg, bool is_def)
     MOperand op;
     op.storage_ = reg;
     op.is_def_ = is_def;
+    op.type_ = MOperandType::Register;
     return op;
 }
 
@@ -96,6 +97,7 @@ MOperand MOperand::create_imm(int64_t val)
 {
     MOperand op;
     op.storage_ = val;
+    op.type_ = MOperandType::Immediate;
     return op;
 }
 
@@ -103,6 +105,7 @@ MOperand MOperand::create_fp_imm(double val)
 {
     MOperand op;
     op.storage_ = val;
+    op.type_ = MOperandType::FPImmediate;
     return op;
 }
 
@@ -110,6 +113,7 @@ MOperand MOperand::create_frame_index(int index)
 {
     MOperand op;
     op.storage_ = index;
+    op.type_ = MOperandType::FrameIndex;
     return op;
 }
 
@@ -117,6 +121,7 @@ MOperand MOperand::create_global(GlobalVariable *global_variable)
 {
     MOperand op;
     op.storage_ = global_variable;
+    op.type_ = MOperandType::GlobalAddress;
     return op;
 }
 
@@ -124,6 +129,7 @@ MOperand MOperand::create_external_sym(const char *symbol)
 {
     MOperand op;
     op.storage_ = symbol;
+    op.type_ = MOperandType::ExternalSymbol;
     return op;
 }
 
@@ -131,6 +137,7 @@ MOperand MOperand::create_mem_ri(unsigned base_reg, int offset)
 {
     MOperand op;
     op.storage_ = MEMri{base_reg, offset};
+    op.type_ = MOperandType::MEMri;
     return op;
 }
 
@@ -138,9 +145,9 @@ MOperand MOperand::create_mem_rr(unsigned base_reg, unsigned index_reg)
 {
     MOperand op;
     op.storage_ = MEMrr{base_reg, index_reg};
+    op.type_ = MOperandType::MEMrr;
     return op;
 }
-
 unsigned MOperand::reg() const
 {
     assert(is_reg());
@@ -201,45 +208,77 @@ unsigned MOperand::base_reg() const
     return 0;
 }
 
+#include <cassert>
+
 bool MOperand::is_reg() const noexcept
 {
-    return std::holds_alternative<unsigned>(storage_);
+    bool expected = std::holds_alternative<unsigned>(storage_);
+    bool actual = type_ == MOperandType::Register;
+    assert(expected == actual);
+    return actual;
 }
 bool MOperand::is_imm() const noexcept
 {
-    return std::holds_alternative<int64_t>(storage_);
+    bool expected = std::holds_alternative<int64_t>(storage_);
+    bool actual = type_ == MOperandType::Immediate;
+    assert(expected == actual);
+    return actual;
 }
 bool MOperand::is_fp_imm() const noexcept
 {
-    return std::holds_alternative<double>(storage_);
+    bool expected = std::holds_alternative<double>(storage_);
+    bool actual = type_ == MOperandType::FPImmediate;
+    assert(expected == actual);
+    return actual;
 }
 bool MOperand::is_frame_index() const noexcept
 {
-    return std::holds_alternative<int>(storage_);
+    bool expected = std::holds_alternative<int>(storage_);
+    bool actual = type_ == MOperandType::FrameIndex;
+    assert(expected == actual);
+    return actual;
 }
 bool MOperand::is_global() const noexcept
 {
-    return std::holds_alternative<GlobalVariable *>(storage_);
+    bool expected = std::holds_alternative<GlobalVariable *>(storage_);
+    bool actual = type_ == MOperandType::GlobalAddress;
+    assert(expected == actual);
+    return actual;
 }
 bool MOperand::is_external_sym() const noexcept
 {
-    return std::holds_alternative<const char *>(storage_);
+    bool expected = std::holds_alternative<const char *>(storage_);
+    bool actual = type_ == MOperandType::ExternalSymbol;
+    assert(expected == actual);
+    return actual;
 }
 bool MOperand::is_mem_ri() const noexcept
 {
-    return std::holds_alternative<MEMri>(storage_);
+    bool expected = std::holds_alternative<MEMri>(storage_);
+    bool actual = type_ == MOperandType::MEMri;
+    assert(expected == actual);
+    return actual;
 }
 bool MOperand::is_mem_rr() const noexcept
 {
-    return std::holds_alternative<MEMrr>(storage_);
+    bool expected = std::holds_alternative<MEMrr>(storage_);
+    bool actual = type_ == MOperandType::MEMrr;
+    assert(expected == actual);
+    return actual;
 }
 bool MOperand::is_mem_rix() const noexcept
 {
-    return std::holds_alternative<MEMrix>(storage_);
+    bool expected = std::holds_alternative<MEMrix>(storage_);
+    bool actual = type_ == MOperandType::MEMrix;
+    assert(expected == actual);
+    return actual;
 }
 bool MOperand::is_valid() const noexcept
 {
-    return !std::holds_alternative<std::monostate>(storage_);
+    bool expected = !std::holds_alternative<std::monostate>(storage_);
+    bool actual = type_ != MOperandType::Invalid;
+    assert(expected == actual);
+    return actual;
 }
 
 std::string MOperand::to_string() const
@@ -253,10 +292,6 @@ std::string MOperand::to_string() const
         oss << "R" << reg();
         if (is_def())
             oss << "<def>";
-        if (is_kill())
-            oss << "<kill>";
-        if (is_dead())
-            oss << "<dead>";
     }
     else if (is_imm())
     {
@@ -422,13 +457,9 @@ void MachineInst::replace_reg(unsigned old_reg, unsigned new_reg)
         {
             // Save original operand flags
             bool is_def = op.is_def();
-            bool is_kill = op.is_kill();
-            bool is_dead = op.is_dead();
 
             // Create a new register operand and preserve flags
             op = MOperand::create_reg(new_reg, is_def);
-            op.set_is_kill(is_kill);
-            op.set_is_dead(is_dead);
         }
 
         // Replace base register in memory operands
@@ -477,12 +508,8 @@ void MachineInst::remap_registers(const std::map<unsigned, unsigned> &vreg_map)
             {
                 // Found a mapping, replace with physical register
                 bool is_def = op.is_def();
-                bool is_kill = op.is_kill();
-                bool is_dead = op.is_dead();
 
                 op = MOperand::create_reg(it->second, is_def);
-                op.set_is_kill(is_kill);
-                op.set_is_dead(is_dead);
             }
         }
 
@@ -554,8 +581,9 @@ void MachineInst::remap_registers(const std::map<unsigned, unsigned> &vreg_map)
         }
     }
 }
-void MachineInst::get_used_regs(std::set<unsigned> &regs) const
+std::set<unsigned> MachineInst::uses() const
 {
+    std::set<unsigned> regs;
     // Iterate through all operands, collecting used (read) registers
     for (const auto &op : ops_)
     {
@@ -586,10 +614,14 @@ void MachineInst::get_used_regs(std::set<unsigned> &regs) const
             regs.insert(mem.index_reg);
         }
     }
+
+    // remove ZERO register from set
+    return regs;
 }
 
-void MachineInst::get_defined_regs(std::set<unsigned> &regs) const
+std::set<unsigned> MachineInst::defs() const
 {
+    std::set<unsigned> regs;
     // Iterate through all operands, collecting defined (written) registers
     for (const auto &op : ops_)
     {
@@ -599,6 +631,9 @@ void MachineInst::get_defined_regs(std::set<unsigned> &regs) const
             regs.insert(op.reg());
         }
     }
+
+    // remove ZERO register from set
+    return regs;
 }
 
 //===----------------------------------------------------------------------===//
@@ -606,37 +641,43 @@ void MachineInst::get_defined_regs(std::set<unsigned> &regs) const
 //===----------------------------------------------------------------------===//
 
 MachineBasicBlock::MachineBasicBlock(MachineFunction &machine_function,
-                                     unsigned number)
-    : mf_(machine_function), number_(number) {}
+                                     unsigned number, std::string label)
+    : mf_(machine_function), number_(number), label_(std::move(label)) {}
 
 MachineBasicBlock::iterator MachineBasicBlock::insert(
     iterator pos, std::unique_ptr<MachineInst> inst)
 {
+    mf_.mark_global_positions_dirty();
+    mf_.live_range_analyzer()->mark_dirty();
     return insts_.insert(pos, std::move(inst));
 }
 
 void MachineBasicBlock::erase(iterator pos)
 {
     mf_.mark_global_positions_dirty();
-    mf_.mark_live_ranges_dirty();
+    mf_.live_range_analyzer()->mark_dirty();
     insts_.erase(pos);
 }
 
 void MachineBasicBlock::add_instr(std::unique_ptr<MachineInst> mi)
 {
     mf_.mark_global_positions_dirty();
-    mf_.mark_live_ranges_dirty();
+    mf_.live_range_analyzer()->mark_dirty();
     insts_.push_back(std::move(mi));
 }
 
 void MachineBasicBlock::add_successor(MachineBasicBlock *successor)
 {
+    mf_.mark_global_positions_dirty();
+    mf_.live_range_analyzer()->mark_dirty();
     successors_.push_back(successor);
     successor->predecessors_.push_back(this);
 }
 
 void MachineBasicBlock::remove_successor(MachineBasicBlock *successor)
 {
+    mf_.mark_global_positions_dirty();
+    mf_.live_range_analyzer()->mark_dirty();
     auto it = std::find(successors_.begin(), successors_.end(), successor);
     if (it != successors_.end())
     {
@@ -645,6 +686,24 @@ void MachineBasicBlock::remove_successor(MachineBasicBlock *successor)
                                                  successor->predecessors_.end(),
                                                  this));
     }
+}
+
+size_t MachineBasicBlock::global_start() const
+{
+    auto it = insts_.begin();
+    if (it == insts_.end())
+        return 0;
+
+    return mf_.get_global_instr_pos((*it).get());
+}
+size_t MachineBasicBlock::global_end_inclusive() const
+{
+    auto it = insts_.end();
+    if (it == insts_.begin())
+        return 0;
+
+    it--;
+    return mf_.get_global_instr_pos((*it).get());
 }
 
 std::string MachineBasicBlock::get_label() const
@@ -663,12 +722,6 @@ std::string MachineBasicBlock::to_string() const
         oss << "  " << inst->to_string() << "\n";
     }
     return oss.str();
-}
-
-// Cached live range access
-const LiveRange &MachineBasicBlock::get_live_range(unsigned vreg) const
-{
-    return mf_.get_vreg_liverange(vreg);
 }
 
 unsigned MachineBasicBlock::get_instr_global_pos(iterator it) const
@@ -700,12 +753,17 @@ bool FrameObjectInfo::validate(std::string *err) const
 // MachineFunction Implementation
 //===----------------------------------------------------------------------===//
 
-MachineBasicBlock *MachineFunction::create_block()
+MachineBasicBlock *MachineFunction::create_block(std::string label)
 {
+    if (label.empty())
+    {
+        label = "BB" + std::to_string(next_bb_number_);
+    }
     auto block =
-        std::make_unique<MachineBasicBlock>(*this, next_bb_number_++);
+        std::make_unique<MachineBasicBlock>(*this, next_bb_number_, std::move(label));
     auto *ptr = block.get();
     blocks_.push_back(std::move(block));
+    next_bb_number_++;
     return ptr;
 }
 
@@ -783,6 +841,9 @@ void MachineFunction::ensure_global_positions_computed() const
     if (!global_positions_dirty_)
         return;
 
+    MO_DEBUG("Recomputing global instruction positions");
+
+    // Reset global instruction positions
     global_instr_positions_.clear();
     next_global_pos_ = 0;
 
@@ -792,9 +853,12 @@ void MachineFunction::ensure_global_positions_computed() const
         for (const auto &inst : bb->instructions())
         {
             global_instr_positions_[inst.get()] = next_global_pos_++;
+            // printf("Global position for %p is %d\n", inst.get(), next_global_pos_);
         }
     }
     global_positions_dirty_ = false;
+
+    MO_DEBUG("%zu global instruction positions computed", global_instr_positions_.size());
 }
 
 unsigned MachineFunction::create_vreg(unsigned register_class_id, unsigned size,
@@ -809,12 +873,6 @@ const VRegInfo &MachineFunction::get_vreg_info(unsigned reg) const
     auto it = vreg_infos_.find(reg);
     assert(it != vreg_infos_.end() && "Invalid virtual register!");
     return it->second;
-}
-
-// Get live range
-const LiveRange &MachineFunction::get_vreg_liverange(unsigned vreg) const
-{
-    return lra_->get_live_range(vreg);
 }
 
 // Enhanced frame index management
@@ -882,7 +940,7 @@ std::string MachineFunction::to_string() const
 //===----------------------------------------------------------------------===//
 // TargetRegisterInfo Implementation
 //===----------------------------------------------------------------------===//
-const std::vector<unsigned> &TargetRegisterInfo::get_reg_classes(unsigned reg) const
+const std::vector<unsigned> TargetRegisterInfo::get_reg_classes(unsigned reg) const
 {
     static const std::vector<unsigned> empty_reg_list_;
 
@@ -1119,8 +1177,7 @@ void MachineModule::set_target_info(const TargetRegisterInfo *tri,
     tii_ = tii;
 }
 
-const std::vector<std::unique_ptr<MachineBasicBlock>> &
-MachineFunction::get_basic_blocks() const
+const std::vector<std::unique_ptr<MachineBasicBlock>> &MachineFunction::get_basic_blocks() const
 {
     return blocks_;
 }
