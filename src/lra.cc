@@ -56,7 +56,14 @@ bool LiveRange::live_at(unsigned pos) const
         {
             return val < interval.end();
         });
-    return it != intervals_.begin() && (--it)->start() <= pos;
+
+    if (it == intervals_.begin())
+    {
+        return false; // pos is before the first interval
+    }
+
+    --it;
+    return it->start() <= pos;
 }
 
 bool LiveRange::interferes_with(const LiveRange &other) const
@@ -139,7 +146,7 @@ void LiveRangeAnalysis::compute() const
                 const unsigned reg = op.reg();
 
                 // Only process virtual registers
-                if (reg < MachineFunction::FIRST_VIRTUAL_REGISTER)
+                if (MachineFunction::is_physical_reg(reg))
                     continue;
 
                 // Definition points need special handling: start position = definition
@@ -233,8 +240,8 @@ bool LiveRangeAnalysis::has_conflict(unsigned reg1, unsigned reg2) const
     // Step 1: Check alias relationships
 
     // Physical register alias conflict (no need for overlapping live intervals)
-    if (reg1 < MachineFunction::FIRST_VIRTUAL_REGISTER &&
-        reg2 < MachineFunction::FIRST_VIRTUAL_REGISTER)
+    if (MachineFunction::is_physical_reg(reg1) &&
+        MachineFunction::is_physical_reg(reg2))
     {
         return is_alias_(reg1, reg2);
     }
@@ -255,11 +262,11 @@ bool LiveRangeAnalysis::has_conflict(unsigned reg1, unsigned reg2) const
     }
 
     // Step 3: Handle alias conflicts between virtual and physical registers
-    if (reg1 < MachineFunction::FIRST_VIRTUAL_REGISTER)
+    if (MachineFunction::is_physical_reg(reg1))
     {
         return is_alias_(reg1, reg2);
     }
-    if (reg2 < MachineFunction::FIRST_VIRTUAL_REGISTER)
+    if (MachineFunction::is_physical_reg(reg2))
     {
         return is_alias_(reg2, reg1);
     }
