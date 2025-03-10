@@ -1,8 +1,10 @@
 
 #include "riscv_target.h"
 
+using namespace RISCV;
+
 //===----------------------------------------------------------------------===//
-// RISCVRegisterInfo Implementation
+// RegisterInfo Implementation
 //===----------------------------------------------------------------------===//
 
 RISCVRegisterInfo::RISCVRegisterInfo(ABIVersion abi)
@@ -17,7 +19,7 @@ RISCVRegisterInfo::RISCVRegisterInfo(ABIVersion abi)
 void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
 {
     // 初始化整型寄存器 (x0-x31)
-    for (unsigned reg = RISCVReg::ZERO; reg <= RISCVReg::T6; ++reg)
+    for (unsigned reg = Reg::ZERO; reg <= Reg::T6; ++reg)
     {
         reg_descs_[reg].spill_cost = 6;
         reg_descs_[reg].is_callee_saved = false;
@@ -29,10 +31,10 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
 
     // 标记特殊整型寄存器
     const std::vector<unsigned> reserved_int_regs = {
-        RISCVReg::ZERO, // 零寄存器
-        RISCVReg::SP,   // 栈指针
-        RISCVReg::GP,   // 全局指针
-        RISCVReg::TP    // 线程指针
+        Reg::ZERO, // 零寄存器
+        Reg::SP,   // 栈指针
+        Reg::GP,   // 全局指针
+        Reg::TP    // 线程指针
     };
 
     for (auto reg : reserved_int_regs)
@@ -43,10 +45,10 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
 
     // 配置被调用者保存的整型寄存器 (s0-s11)
     const std::vector<unsigned> callee_saved_int = {
-        RISCVReg::S0, RISCVReg::S1,
-        RISCVReg::S2, RISCVReg::S3, RISCVReg::S4, RISCVReg::S5,
-        RISCVReg::S6, RISCVReg::S7, RISCVReg::S8, RISCVReg::S9,
-        RISCVReg::S10, RISCVReg::S11};
+        Reg::S0, Reg::S1,
+        Reg::S2, Reg::S3, Reg::S4, Reg::S5,
+        Reg::S6, Reg::S7, Reg::S8, Reg::S9,
+        Reg::S10, Reg::S11};
 
     for (auto reg : callee_saved_int)
     {
@@ -59,7 +61,7 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
 
     if (has_float)
     {
-        for (unsigned reg = RISCVReg::F0; reg <= RISCVReg::F31; ++reg)
+        for (unsigned reg = Reg::F0; reg <= Reg::F31; ++reg)
         {
             reg_descs_[reg].spill_cost = 8;
             reg_descs_[reg].is_callee_saved = false;
@@ -71,10 +73,10 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
 
         // 配置被调用者保存的浮点寄存器 (fs0-fs11)
         const std::vector<unsigned> callee_saved_fp = {
-            RISCVReg::F8, RISCVReg::F9,
-            RISCVReg::F18, RISCVReg::F19, RISCVReg::F20, RISCVReg::F21,
-            RISCVReg::F22, RISCVReg::F23, RISCVReg::F24, RISCVReg::F25,
-            RISCVReg::F26, RISCVReg::F27};
+            Reg::F8, Reg::F9,
+            Reg::F18, Reg::F19, Reg::F20, Reg::F21,
+            Reg::F22, Reg::F23, Reg::F24, Reg::F25,
+            Reg::F26, Reg::F27};
 
         for (auto reg : callee_saved_fp)
         {
@@ -85,7 +87,7 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
     else
     {
         // 如果不支持浮点，则标记所有浮点寄存器为不可分配
-        for (unsigned reg = RISCVReg::F0; reg <= RISCVReg::F31; ++reg)
+        for (unsigned reg = Reg::F0; reg <= Reg::F31; ++reg)
         {
             reg_descs_[reg].is_reserved = true;
             reg_descs_[reg].is_allocatable = false;
@@ -96,41 +98,149 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
 // 初始化寄存器类
 void RISCVRegisterInfo::initializeRegisterClasses(ABIVersion abi)
 {
-    // 通用寄存器类 (GPR)
-    RegisterClass gpr = {
-        "GPR",
-        /*regs=*/{},
-        /*copy_cost=*/1,
-        /*weight=*/1};
-
-    for (unsigned reg = RISCVReg::ZERO; reg <= RISCVReg::T6; ++reg)
-    {
-        if (reg_descs_[reg].is_allocatable && !reg_descs_[reg].is_reserved)
+    // 定义整型寄存器类 (GR32)
+    RegisterClass gr32_class = {
+        "GR32", // 类名称
         {
-            gpr.regs.push_back(reg);
-        }
+            // 所有可分配的32位整型寄存器
+            Reg::RA, Reg::SP, Reg::GP, Reg::TP,
+            Reg::T0, Reg::T1, Reg::T2,
+            Reg::S0, Reg::S1,
+            Reg::A0, Reg::A1, Reg::A2, Reg::A3,
+            Reg::A4, Reg::A5, Reg::A6, Reg::A7,
+            Reg::S2, Reg::S3, Reg::S4, Reg::S5,
+            Reg::S6, Reg::S7, Reg::S8, Reg::S9,
+            Reg::S10, Reg::S11,
+            Reg::T3, Reg::T4, Reg::T5, Reg::T6},
+        1, // 拷贝代价
+        1  // 寄存器压力权重
+    };
+
+    // 定义64位整型寄存器类 (GR64)
+    RegisterClass gr64_class = {
+        "GR64", // 类名称
+        {
+            // 与GR32相同的寄存器集合，但在LP64模式下是64位宽
+            Reg::RA, Reg::SP, Reg::GP, Reg::TP,
+            Reg::T0, Reg::T1, Reg::T2,
+            Reg::S0, Reg::S1,
+            Reg::A0, Reg::A1, Reg::A2, Reg::A3,
+            Reg::A4, Reg::A5, Reg::A6, Reg::A7,
+            Reg::S2, Reg::S3, Reg::S4, Reg::S5,
+            Reg::S6, Reg::S7, Reg::S8, Reg::S9,
+            Reg::S10, Reg::S11,
+            Reg::T3, Reg::T4, Reg::T5, Reg::T6},
+        1, // 拷贝代价
+        2  // 较高的权重(因为是64位)
+    };
+
+    // 定义单精度浮点寄存器类 (FP32)
+    RegisterClass fp32_class = {
+        "FP32", // 类名称
+        {
+            // 所有浮点寄存器F0-F31
+            Reg::F0, Reg::F1, Reg::F2, Reg::F3,
+            Reg::F4, Reg::F5, Reg::F6, Reg::F7,
+            Reg::F8, Reg::F9, Reg::F10, Reg::F11,
+            Reg::F12, Reg::F13, Reg::F14, Reg::F15,
+            Reg::F16, Reg::F17, Reg::F18, Reg::F19,
+            Reg::F20, Reg::F21, Reg::F22, Reg::F23,
+            Reg::F24, Reg::F25, Reg::F26, Reg::F27,
+            Reg::F28, Reg::F29, Reg::F30, Reg::F31},
+        2, // 浮点拷贝代价较高
+        1  // 权重
+    };
+
+    // 定义双精度浮点寄存器类 (FP64)
+    RegisterClass fp64_class = {
+        "FP64", // 类名称
+        {
+            // 与FP32相同的寄存器，但在D扩展下是64位宽
+            Reg::F0, Reg::F1, Reg::F2, Reg::F3,
+            Reg::F4, Reg::F5, Reg::F6, Reg::F7,
+            Reg::F8, Reg::F9, Reg::F10, Reg::F11,
+            Reg::F12, Reg::F13, Reg::F14, Reg::F15,
+            Reg::F16, Reg::F17, Reg::F18, Reg::F19,
+            Reg::F20, Reg::F21, Reg::F22, Reg::F23,
+            Reg::F24, Reg::F25, Reg::F26, Reg::F27,
+            Reg::F28, Reg::F29, Reg::F30, Reg::F31},
+        2, // 拷贝代价
+        2  // 较高的权重(因为是64位)
+    };
+
+    // 根据目标ABI添加寄存器类
+    add_register_class(gr32_class); // 所有ABI都有32位整型寄存器类
+
+    // 64位ABI添加64位整型寄存器类
+    if (abi == ABIVersion::LP64 || abi == ABIVersion::LP64F || abi == ABIVersion::LP64D)
+    {
+        add_register_class(gr64_class);
     }
-    add_register_class(gpr);
 
-    // 浮点寄存器类 (FPR)，如果支持
-    bool has_float = (abi == ABIVersion::ILP32F || abi == ABIVersion::LP64F || abi == ABIVersion::LP64D);
-
-    if (has_float)
+    // 根据ABI添加浮点寄存器类
+    if (abi == ABIVersion::ILP32F || abi == ABIVersion::LP64F)
     {
-        RegisterClass fpr = {
-            (abi == ABIVersion::LP64D) ? "FPR64" : "FPR32",
-            /*regs=*/{},
-            /*copy_cost=*/2,
-            /*weight=*/2};
+        add_register_class(fp32_class); // 单精度浮点
+    }
 
-        for (unsigned reg = RISCVReg::F0; reg <= RISCVReg::F31; ++reg)
+    if (abi == ABIVersion::LP64D)
+    {
+        add_register_class(fp32_class); // 单精度浮点
+        add_register_class(fp64_class); // 双精度浮点
+    }
+
+    // 更新寄存器描述符中的寄存器类信息
+    for (unsigned reg = 0; reg < reg_descs_.size(); reg++)
+    {
+        if (reg == Reg::ZERO)
         {
-            if (reg_descs_[reg].is_allocatable && !reg_descs_[reg].is_reserved)
+            // 零寄存器不可分配
+            reg_descs_[reg].is_allocatable = false;
+            reg_descs_[reg].is_reserved = true;
+            continue;
+        }
+
+        if (reg >= Reg::F0 && reg <= Reg::F31)
+        {
+            // 浮点寄存器
+            if (abi == ABIVersion::ILP32F || abi == ABIVersion::LP64F || abi == ABIVersion::LP64D)
             {
-                fpr.regs.push_back(reg);
+                reg_descs_[reg].primary_rc_id = RegClass::FP32;
+                reg_descs_[reg].rc_mask.set(RegClass::FP32);
+
+                // 如果支持D扩展
+                if (abi == ABIVersion::LP64D)
+                {
+                    reg_descs_[reg].rc_mask.set(RegClass::FP64);
+                }
+            }
+            else
+            {
+                // 没有浮点支持的ABI中，浮点寄存器不可分配
+                reg_descs_[reg].is_allocatable = false;
             }
         }
-        add_register_class(fpr);
+        else if (reg < Reg::F0)
+        {
+            // 整型寄存器
+            reg_descs_[reg].primary_rc_id = RegClass::GR32;
+            reg_descs_[reg].rc_mask.set(RegClass::GR32);
+
+            // 64位ABI下
+            if (abi == ABIVersion::LP64 || abi == ABIVersion::LP64F || abi == ABIVersion::LP64D)
+            {
+                reg_descs_[reg].rc_mask.set(RegClass::GR64);
+            }
+        }
+
+        // 设置被调用者保存的寄存器
+        if ((reg >= Reg::S0 && reg <= Reg::S1) ||
+            (reg >= Reg::S2 && reg <= Reg::S11) ||
+            (reg >= Reg::F8 && reg <= Reg::F9) ||
+            (reg >= Reg::F18 && reg <= Reg::F27))
+        {
+            reg_descs_[reg].is_callee_saved = true;
+        }
     }
 }
 
@@ -143,18 +253,18 @@ void RISCVRegisterInfo::initializeCallingConventions(ABIVersion abi)
 
     // 整型被调用者保存寄存器
     std::vector<unsigned> callee_saved = {
-        RISCVReg::S0, RISCVReg::S1,
-        RISCVReg::S2, RISCVReg::S3, RISCVReg::S4, RISCVReg::S5,
-        RISCVReg::S6, RISCVReg::S7, RISCVReg::S8, RISCVReg::S9,
-        RISCVReg::S10, RISCVReg::S11};
+        Reg::S0, Reg::S1,
+        Reg::S2, Reg::S3, Reg::S4, Reg::S5,
+        Reg::S6, Reg::S7, Reg::S8, Reg::S9,
+        Reg::S10, Reg::S11};
 
     // 整型调用者保存寄存器
     std::vector<unsigned> caller_saved = {
-        RISCVReg::RA,
-        RISCVReg::T0, RISCVReg::T1, RISCVReg::T2,
-        RISCVReg::A0, RISCVReg::A1, RISCVReg::A2, RISCVReg::A3,
-        RISCVReg::A4, RISCVReg::A5, RISCVReg::A6, RISCVReg::A7,
-        RISCVReg::T3, RISCVReg::T4, RISCVReg::T5, RISCVReg::T6};
+        Reg::RA,
+        Reg::T0, Reg::T1, Reg::T2,
+        Reg::A0, Reg::A1, Reg::A2, Reg::A3,
+        Reg::A4, Reg::A5, Reg::A6, Reg::A7,
+        Reg::T3, Reg::T4, Reg::T5, Reg::T6};
 
     // 添加浮点寄存器（如果支持）
     bool has_float = (abi == ABIVersion::ILP32F || abi == ABIVersion::LP64F || abi == ABIVersion::LP64D);
@@ -163,19 +273,19 @@ void RISCVRegisterInfo::initializeCallingConventions(ABIVersion abi)
     {
         // 浮点被调用者保存寄存器
         const std::vector<unsigned> callee_saved_fp = {
-            RISCVReg::F8, RISCVReg::F9,
-            RISCVReg::F18, RISCVReg::F19, RISCVReg::F20, RISCVReg::F21,
-            RISCVReg::F22, RISCVReg::F23, RISCVReg::F24, RISCVReg::F25,
-            RISCVReg::F26, RISCVReg::F27};
+            Reg::F8, Reg::F9,
+            Reg::F18, Reg::F19, Reg::F20, Reg::F21,
+            Reg::F22, Reg::F23, Reg::F24, Reg::F25,
+            Reg::F26, Reg::F27};
         callee_saved.insert(callee_saved.end(), callee_saved_fp.begin(), callee_saved_fp.end());
 
         // 浮点调用者保存寄存器
         const std::vector<unsigned> caller_saved_fp = {
-            RISCVReg::F0, RISCVReg::F1, RISCVReg::F2, RISCVReg::F3,
-            RISCVReg::F4, RISCVReg::F5, RISCVReg::F6, RISCVReg::F7,
-            RISCVReg::F10, RISCVReg::F11, RISCVReg::F12, RISCVReg::F13,
-            RISCVReg::F14, RISCVReg::F15, RISCVReg::F16, RISCVReg::F17,
-            RISCVReg::F28, RISCVReg::F29, RISCVReg::F30, RISCVReg::F31};
+            Reg::F0, Reg::F1, Reg::F2, Reg::F3,
+            Reg::F4, Reg::F5, Reg::F6, Reg::F7,
+            Reg::F10, Reg::F11, Reg::F12, Reg::F13,
+            Reg::F14, Reg::F15, Reg::F16, Reg::F17,
+            Reg::F28, Reg::F29, Reg::F30, Reg::F31};
         caller_saved.insert(caller_saved.end(), caller_saved_fp.begin(), caller_saved_fp.end());
     }
 
@@ -188,15 +298,15 @@ void RISCVRegisterInfo::initializeCallingConventions(ABIVersion abi)
 
     // 整型参数使用a0-a7
     c_rule.int_regs = {
-        RISCVReg::A0, RISCVReg::A1, RISCVReg::A2, RISCVReg::A3,
-        RISCVReg::A4, RISCVReg::A5, RISCVReg::A6, RISCVReg::A7};
+        Reg::A0, Reg::A1, Reg::A2, Reg::A3,
+        Reg::A4, Reg::A5, Reg::A6, Reg::A7};
 
     // 浮点参数使用fa0-fa7（如果支持）
     if (has_float)
     {
         c_rule.fp_regs = {
-            RISCVReg::F10, RISCVReg::F11, RISCVReg::F12, RISCVReg::F13,
-            RISCVReg::F14, RISCVReg::F15, RISCVReg::F16, RISCVReg::F17};
+            Reg::F10, Reg::F11, Reg::F12, Reg::F13,
+            Reg::F14, Reg::F15, Reg::F16, Reg::F17};
     }
 
     // 设置C调用约定的参数传递规则
@@ -206,81 +316,70 @@ void RISCVRegisterInfo::initializeCallingConventions(ABIVersion abi)
 //===----------------------------------------------------------------------===//
 // Instruction Selection: RISCVTargetInstInfo Implementation
 //===----------------------------------------------------------------------===//
+const std::map<unsigned, std::string> opcode_names_ = {
+    {RISCV::LUI, "lui"},
+    {RISCV::AUIPC, "auipc"},
+    {RISCV::JAL, "jal"},
+    {RISCV::JALR, "jalr"},
+    {RISCV::BEQ, "beq"},
+    {RISCV::BNE, "bne"},
+    {RISCV::BLT, "blt"},
+    {RISCV::BGE, "bge"},
+    {RISCV::BLTU, "bltu"},
+    {RISCV::BGEU, "bgeu"},
+    {RISCV::LB, "lb"},
+    {RISCV::LH, "lh"},
+    {RISCV::LW, "lw"},
+    {RISCV::LBU, "lbu"},
+    {RISCV::LHU, "lhu"},
+    {RISCV::SB, "sb"},
+    {RISCV::SH, "sh"},
+    {RISCV::SW, "sw"},
+    {RISCV::ADDI, "addi"},
+    {RISCV::SLTI, "slti"},
+    {RISCV::SLTIU, "sltiu"},
+    {RISCV::XORI, "xori"},
+    {RISCV::ORI, "ori"},
+    {RISCV::ANDI, "andi"},
+    {RISCV::SLLI, "slli"},
+    {RISCV::SRLI, "srli"},
+    {RISCV::SRAI, "srai"},
+    {RISCV::ADD, "add"},
+    {RISCV::SUB, "sub"},
+    {RISCV::SLL, "sll"},
+    {RISCV::SLT, "slt"},
+    {RISCV::SLTU, "sltu"},
+    {RISCV::XOR, "xor"},
+    {RISCV::SRL, "srl"},
+    {RISCV::SRA, "sra"},
+    {RISCV::OR, "or"},
+    {RISCV::AND, "and"},
+    {RISCV::RET, "ret"},
+    {RISCV::NOP, "nop"},
+    {RISCV::LI, "li"},
+    {RISCV::MV, "mv"},
+    {RISCV::LA, "la"},
+    {RISCV::CALL, "call"},
+    {RISCV::J, "j"},
+    {RISCV::FLW, "flw"},
+    {RISCV::FSW, "fsw"},
+    {RISCV::FADD_S, "fadd.s"},
+    {RISCV::FSUB_S, "fsub.s"},
+    {RISCV::FMUL_S, "fmul.s"},
+    {RISCV::FDIV_S, "fdiv.s"},
+    {RISCV::FLD, "fld"},
+    {RISCV::FSD, "fsd"},
+    {RISCV::FADD_D, "fadd.d"},
+    {RISCV::FSUB_D, "fsub.d"},
+    {RISCV::FMUL_D, "fmul.d"},
+    {RISCV::FDIV_D, "fdiv.d"},
+};
 
 RISCVTargetInstInfo::RISCVTargetInstInfo(ABIVersion abi)
     : abi_version_(abi)
 {
-    // 初始化指令名称映射
-    opcode_names_ = {
-        {RISCV::LUI, "lui"},
-        {RISCV::AUIPC, "auipc"},
-        {RISCV::JAL, "jal"},
-        {RISCV::JALR, "jalr"},
-        {RISCV::BEQ, "beq"},
-        {RISCV::BNE, "bne"},
-        {RISCV::BLT, "blt"},
-        {RISCV::BGE, "bge"},
-        {RISCV::BLTU, "bltu"},
-        {RISCV::BGEU, "bgeu"},
-        {RISCV::LB, "lb"},
-        {RISCV::LH, "lh"},
-        {RISCV::LW, "lw"},
-        {RISCV::LBU, "lbu"},
-        {RISCV::LHU, "lhu"},
-        {RISCV::SB, "sb"},
-        {RISCV::SH, "sh"},
-        {RISCV::SW, "sw"},
-        {RISCV::ADDI, "addi"},
-        {RISCV::SLTI, "slti"},
-        {RISCV::SLTIU, "sltiu"},
-        {RISCV::XORI, "xori"},
-        {RISCV::ORI, "ori"},
-        {RISCV::ANDI, "andi"},
-        {RISCV::SLLI, "slli"},
-        {RISCV::SRLI, "srli"},
-        {RISCV::SRAI, "srai"},
-        {RISCV::ADD, "add"},
-        {RISCV::SUB, "sub"},
-        {RISCV::SLL, "sll"},
-        {RISCV::SLT, "slt"},
-        {RISCV::SLTU, "sltu"},
-        {RISCV::XOR, "xor"},
-        {RISCV::SRL, "srl"},
-        {RISCV::SRA, "sra"},
-        {RISCV::OR, "or"},
-        {RISCV::AND, "and"},
-        {RISCV::RET, "ret"},
-        {RISCV::NOP, "nop"},
-        {RISCV::LI, "li"},
-        {RISCV::MV, "mv"},
-        {RISCV::LA, "la"},
-        {RISCV::CALL, "call"},
-        {RISCV::J, "j"}};
-
     // 如果支持浮点，添加浮点指令
     bool has_float = (abi == ABIVersion::ILP32F || abi == ABIVersion::LP64F || abi == ABIVersion::LP64D);
-    if (has_float)
-    {
-        // 单精度浮点指令
-        opcode_names_[RISCV::FLW] = "flw";
-        opcode_names_[RISCV::FSW] = "fsw";
-        opcode_names_[RISCV::FADD_S] = "fadd.s";
-        opcode_names_[RISCV::FSUB_S] = "fsub.s";
-        opcode_names_[RISCV::FMUL_S] = "fmul.s";
-        opcode_names_[RISCV::FDIV_S] = "fdiv.s";
-    }
-
-    // 如果支持双精度浮点，添加双精度浮点指令
-    if (abi == ABIVersion::LP64D)
-    {
-        opcode_names_[RISCV::FLD] = "fld";
-        opcode_names_[RISCV::FSD] = "fsd";
-        opcode_names_[RISCV::FADD_D] = "fadd.d";
-        opcode_names_[RISCV::FSUB_D] = "fsub.d";
-        opcode_names_[RISCV::FMUL_D] = "fmul.d";
-        opcode_names_[RISCV::FDIV_D] = "fdiv.d";
-    }
-
     // 初始化指令延迟表
     inst_latency_ = {
         {RISCV::LUI, 1},
@@ -642,7 +741,7 @@ bool RISCVTargetInstInfo::is_return(const MachineInst &MI) const
 
 bool RISCVTargetInstInfo::is_call(const MachineInst &MI) const
 {
-    return MI.opcode() == RISCV::CALL || (MI.opcode() == RISCV::JAL && MI.operands()[0].reg() == RISCVReg::RA);
+    return MI.opcode() == RISCV::CALL || (MI.opcode() == RISCV::JAL && MI.operands()[0].is_reg() && MI.operands()[0].reg() == Reg::RA);
 }
 
 bool RISCVTargetInstInfo::is_legal_immediate(int64_t imm, unsigned operand_size) const
@@ -671,53 +770,50 @@ unsigned RISCVTargetInstInfo::get_instruction_latency(unsigned opcode) const
     }
     return 1; // 默认延迟
 }
-
 void RISCVTargetInstInfo::copy_phys_reg(MachineBasicBlock &MBB, MachineBasicBlock::iterator mii,
                                         unsigned dest_reg, unsigned src_reg) const
 {
     // 使用mv伪指令实现寄存器复制
-    if (dest_reg >= RISCVReg::ZERO && dest_reg <= RISCVReg::T6 &&
-        src_reg >= RISCVReg::ZERO && src_reg <= RISCVReg::T6)
+    if (dest_reg >= Reg::ZERO && dest_reg <= Reg::T6 &&
+        src_reg >= Reg::ZERO && src_reg <= Reg::T6)
     {
         // 整型寄存器之间的复制
-        auto copy_inst = new MachineInst(RISCV::ADD, {MOperand::create_reg(dest_reg),
-                                                      MOperand::create_reg(src_reg),
-                                                      MOperand::create_reg(RISCVReg::ZERO)});
+        auto copy_inst = new MachineInst(RISCV::ADD, {MOperand::create_reg(dest_reg, true),
+                                                      MOperand::create_reg(src_reg, false),
+                                                      MOperand::create_reg(Reg::ZERO, false)});
         mii = MBB.insert(mii, std::unique_ptr<MachineInst>(copy_inst));
         mii++;
     }
-    else if (dest_reg >= RISCVReg::F0 && dest_reg <= RISCVReg::F31 &&
-             src_reg >= RISCVReg::F0 && src_reg <= RISCVReg::F31)
+    else if (dest_reg >= Reg::F0 && dest_reg <= Reg::F31 &&
+             src_reg >= Reg::F0 && src_reg <= Reg::F31)
     {
         // 浮点寄存器之间的复制
         if (abi_version_ == ABIVersion::LP64D)
         {
             // 双精度复制
-            auto copy_inst = new MachineInst(RISCV::FADD_D, {MOperand::create_reg(dest_reg),
-                                                             MOperand::create_reg(src_reg),
-                                                             MOperand::create_reg(src_reg)});
+            auto copy_inst = new MachineInst(RISCV::FADD_D, {MOperand::create_reg(dest_reg, true),
+                                                             MOperand::create_reg(src_reg, false),
+                                                             MOperand::create_reg(src_reg, false)});
             mii = MBB.insert(mii, std::unique_ptr<MachineInst>(copy_inst));
             mii++;
         }
         else
         {
             // 单精度复制
-            auto copy_inst = new MachineInst(RISCV::FADD_S, {MOperand::create_reg(dest_reg),
-                                                             MOperand::create_reg(src_reg),
-                                                             MOperand::create_reg(src_reg)});
+            auto copy_inst = new MachineInst(RISCV::FADD_S, {MOperand::create_reg(dest_reg, true),
+                                                             MOperand::create_reg(src_reg, false),
+                                                             MOperand::create_reg(src_reg, false)});
             mii = MBB.insert(mii, std::unique_ptr<MachineInst>(copy_inst));
             mii++;
         }
     }
     // 其他情况（如混合整型/浮点）需要使用内存进行复制
 }
-
 bool RISCVTargetInstInfo::legalize_inst(MachineBasicBlock &mbb, MachineBasicBlock::iterator mii, MachineFunction &MF) const
 {
     MachineInst &MI = **mii;
     unsigned opcode = MI.opcode();
 
-    // 检查并调整立即数范围
     switch (opcode)
     {
     case RISCV::ADDI:
@@ -740,14 +836,14 @@ bool RISCVTargetInstInfo::legalize_inst(MachineBasicBlock &mbb, MachineBasicBloc
                 {
                     // 使用LUI+ADDI序列处理大立即数（32位范围内）
                     unsigned dest_reg = MI.operands()[0].reg();
-                    auto lui = new MachineInst(RISCV::LUI, {MOperand::create_reg(dest_reg),
+                    auto lui = new MachineInst(RISCV::LUI, {MOperand::create_reg(dest_reg, true),
                                                             MOperand::create_imm(hi)});
                     mii = mbb.insert(mii, std::unique_ptr<MachineInst>(lui));
                     mii++;
 
                     // 更新当前指令为ADDI
-                    auto addi = new MachineInst(RISCV::ADDI, {MI.operands()[0],
-                                                              MI.operands()[1],
+                    auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg, true),
+                                                              MOperand::create_reg(dest_reg, false),
                                                               MOperand::create_imm(lo)});
 
                     mii = mbb.insert(mii, std::unique_ptr<MachineInst>(addi));
@@ -760,7 +856,8 @@ bool RISCVTargetInstInfo::legalize_inst(MachineBasicBlock &mbb, MachineBasicBloc
                     // 处理64位值 - 使用多条指令序列
                     unsigned dest_reg = MI.operands()[0].reg();
                     unsigned src_reg = MI.operands()[1].reg();
-                    unsigned temp_reg = RISCVReg::T0; // 使用T0作为临时寄存器
+                    unsigned temp_reg = Reg::T0; // 使用T0作为临时寄存器
+                    MO_NOP(src_reg);             // FIXME: src_reg not used
 
                     // 先处理低32位
                     int64_t lower32 = imm & 0xFFFFFFFF;
@@ -768,13 +865,13 @@ bool RISCVTargetInstInfo::legalize_inst(MachineBasicBlock &mbb, MachineBasicBloc
                     split_imm(lower32, hi_lower, lo_lower);
 
                     // 构建低32位
-                    auto lui = new MachineInst(RISCV::LUI, {MOperand::create_reg(dest_reg),
+                    auto lui = new MachineInst(RISCV::LUI, {MOperand::create_reg(dest_reg, true),
                                                             MOperand::create_imm(hi_lower)});
                     mii = mbb.insert(mii, std::unique_ptr<MachineInst>(lui));
                     mii++;
 
-                    auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg),
-                                                              MOperand::create_reg(dest_reg),
+                    auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg, true),
+                                                              MOperand::create_reg(dest_reg, false),
                                                               MOperand::create_imm(lo_lower)});
                     mii = mbb.insert(mii, std::unique_ptr<MachineInst>(addi));
                     mii++;
@@ -786,28 +883,28 @@ bool RISCVTargetInstInfo::legalize_inst(MachineBasicBlock &mbb, MachineBasicBloc
                     int64_t hi_upper, lo_upper;
                     split_imm(upper32, hi_upper, lo_upper);
 
-                    auto lui_upper = new MachineInst(RISCV::LUI, {MOperand::create_reg(temp_reg),
+                    auto lui_upper = new MachineInst(RISCV::LUI, {MOperand::create_reg(temp_reg, true),
                                                                   MOperand::create_imm(hi_upper)});
                     mii = mbb.insert(mii, std::unique_ptr<MachineInst>(lui_upper));
                     mii++;
 
-                    auto addi_upper = new MachineInst(RISCV::ADDI, {MOperand::create_reg(temp_reg),
-                                                                    MOperand::create_reg(temp_reg),
+                    auto addi_upper = new MachineInst(RISCV::ADDI, {MOperand::create_reg(temp_reg, true),
+                                                                    MOperand::create_reg(temp_reg, false),
                                                                     MOperand::create_imm(lo_upper)});
                     mii = mbb.insert(mii, std::unique_ptr<MachineInst>(addi_upper));
                     mii++;
 
                     // 将低32位左移32位
-                    auto slli = new MachineInst(RISCV::SLLI, {MOperand::create_reg(dest_reg),
-                                                              MOperand::create_reg(dest_reg),
+                    auto slli = new MachineInst(RISCV::SLLI, {MOperand::create_reg(dest_reg, true),
+                                                              MOperand::create_reg(dest_reg, false),
                                                               MOperand::create_imm(32)});
                     mii = mbb.insert(mii, std::unique_ptr<MachineInst>(slli));
                     mii++;
 
                     // 将高32位与左移后的低32位进行OR操作
-                    auto orr = new MachineInst(RISCV::OR, {MOperand::create_reg(dest_reg),
-                                                           MOperand::create_reg(dest_reg),
-                                                           MOperand::create_reg(temp_reg)});
+                    auto orr = new MachineInst(RISCV::OR, {MOperand::create_reg(dest_reg, true),
+                                                           MOperand::create_reg(dest_reg, false),
+                                                           MOperand::create_reg(temp_reg, false)});
                     mii = mbb.insert(mii, std::unique_ptr<MachineInst>(orr));
                     mii++;
 
@@ -941,8 +1038,8 @@ void RISCVTargetInstInfo::expand_li(MachineBasicBlock &MBB, MachineBasicBlock::i
     if (imm >= -2048 && imm <= 2047)
     {
         // 小立即数可以直接使用ADDI
-        auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg),
-                                                  MOperand::create_reg(RISCVReg::ZERO),
+        auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg, true),
+                                                  MOperand::create_reg(Reg::ZERO, false),
                                                   MOperand::create_imm(imm)});
         mii = MBB.insert(mii, std::unique_ptr<MachineInst>(addi));
         mii++;
@@ -954,12 +1051,12 @@ void RISCVTargetInstInfo::expand_li(MachineBasicBlock &MBB, MachineBasicBlock::i
         bool can_handle_with_lui_addi = split_imm(imm, hi, lo);
         if (can_handle_with_lui_addi)
         {
-            auto lui = new MachineInst(RISCV::LUI, {MOperand::create_reg(dest_reg),
+            auto lui = new MachineInst(RISCV::LUI, {MOperand::create_reg(dest_reg, true),
                                                     MOperand::create_imm(hi)});
             mii = MBB.insert(mii, std::unique_ptr<MachineInst>(lui));
             mii++;
-            auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg),
-                                                      MOperand::create_reg(dest_reg),
+            auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg, true),
+                                                      MOperand::create_reg(dest_reg, false),
                                                       MOperand::create_imm(lo)});
             mii = MBB.insert(mii, std::unique_ptr<MachineInst>(addi));
             mii++;
@@ -967,20 +1064,20 @@ void RISCVTargetInstInfo::expand_li(MachineBasicBlock &MBB, MachineBasicBlock::i
         else
         {
             // 处理64位立即数 - 优化实现
-            unsigned temp_reg = RISCVReg::T0; // 使用T0作为临时寄存器
+            unsigned temp_reg = Reg::T0; // 使用T0作为临时寄存器
 
             // 先处理低32位
             int64_t lower32 = imm & 0xFFFFFFFF;
             int64_t hi_lower, lo_lower;
             split_imm(lower32, hi_lower, lo_lower);
 
-            auto lui = new MachineInst(RISCV::LUI, {MOperand::create_reg(dest_reg),
+            auto lui = new MachineInst(RISCV::LUI, {MOperand::create_reg(dest_reg, true),
                                                     MOperand::create_imm(hi_lower)});
             mii = MBB.insert(mii, std::unique_ptr<MachineInst>(lui));
             mii++;
 
-            auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg),
-                                                      MOperand::create_reg(dest_reg),
+            auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg, true),
+                                                      MOperand::create_reg(dest_reg, false),
                                                       MOperand::create_imm(lo_lower)});
             mii = MBB.insert(mii, std::unique_ptr<MachineInst>(addi));
             mii++;
@@ -993,28 +1090,28 @@ void RISCVTargetInstInfo::expand_li(MachineBasicBlock &MBB, MachineBasicBlock::i
                 int64_t hi_upper, lo_upper;
                 split_imm(upper32, hi_upper, lo_upper);
 
-                auto lui_upper = new MachineInst(RISCV::LUI, {MOperand::create_reg(temp_reg),
+                auto lui_upper = new MachineInst(RISCV::LUI, {MOperand::create_reg(temp_reg, true),
                                                               MOperand::create_imm(hi_upper)});
                 mii = MBB.insert(mii, std::unique_ptr<MachineInst>(lui_upper));
                 mii++;
 
-                auto addi_upper = new MachineInst(RISCV::ADDI, {MOperand::create_reg(temp_reg),
-                                                                MOperand::create_reg(temp_reg),
+                auto addi_upper = new MachineInst(RISCV::ADDI, {MOperand::create_reg(temp_reg, true),
+                                                                MOperand::create_reg(temp_reg, false),
                                                                 MOperand::create_imm(lo_upper)});
                 mii = MBB.insert(mii, std::unique_ptr<MachineInst>(addi_upper));
                 mii++;
 
                 // 将低32位左移32位
-                auto slli = new MachineInst(RISCV::SLLI, {MOperand::create_reg(dest_reg),
-                                                          MOperand::create_reg(dest_reg),
+                auto slli = new MachineInst(RISCV::SLLI, {MOperand::create_reg(dest_reg, true),
+                                                          MOperand::create_reg(dest_reg, false),
                                                           MOperand::create_imm(32)});
                 mii = MBB.insert(mii, std::unique_ptr<MachineInst>(slli));
                 mii++;
 
                 // 将高32位与左移后的低32位进行OR操作
-                auto orr = new MachineInst(RISCV::OR, {MOperand::create_reg(dest_reg),
-                                                       MOperand::create_reg(dest_reg),
-                                                       MOperand::create_reg(temp_reg)});
+                auto orr = new MachineInst(RISCV::OR, {MOperand::create_reg(dest_reg, true),
+                                                       MOperand::create_reg(dest_reg, false),
+                                                       MOperand::create_reg(temp_reg, false)});
                 mii = MBB.insert(mii, std::unique_ptr<MachineInst>(orr));
                 mii++;
             }
@@ -1022,7 +1119,6 @@ void RISCVTargetInstInfo::expand_li(MachineBasicBlock &MBB, MachineBasicBlock::i
     }
     MBB.erase(mii);
 }
-
 void RISCVTargetInstInfo::expand_la(MachineBasicBlock &MBB, MachineBasicBlock::iterator mii) const
 {
     MachineInst &MI = **mii;
@@ -1031,7 +1127,7 @@ void RISCVTargetInstInfo::expand_la(MachineBasicBlock &MBB, MachineBasicBlock::i
 
     // 创建auipc加载高20位地址
     auto auipc = new MachineInst(RISCV::AUIPC, {
-                                                   MOperand::create_reg(dest_reg),
+                                                   MOperand::create_reg(dest_reg, true),
                                                    MOperand::create_imm(0) // 重定位器会填充正确的值
                                                });
 
@@ -1039,8 +1135,8 @@ void RISCVTargetInstInfo::expand_la(MachineBasicBlock &MBB, MachineBasicBlock::i
     mii++;
     // 创建addi加载低12位偏移
     auto addi = new MachineInst(RISCV::ADDI, {
-                                                 MOperand::create_reg(dest_reg),
-                                                 MOperand::create_reg(dest_reg),
+                                                 MOperand::create_reg(dest_reg, true),
+                                                 MOperand::create_reg(dest_reg, false),
                                                  MOperand::create_imm(0) // 重定位器会填充正确的值
                                              });
 
@@ -1056,8 +1152,8 @@ void RISCVTargetInstInfo::expand_mv(MachineBasicBlock &MBB, MachineBasicBlock::i
     unsigned dest_reg = MI.operands()[0].reg();
     unsigned src_reg = MI.operands()[1].reg();
 
-    auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg),
-                                              MOperand::create_reg(src_reg),
+    auto addi = new MachineInst(RISCV::ADDI, {MOperand::create_reg(dest_reg, true),
+                                              MOperand::create_reg(src_reg, false),
                                               MOperand::create_imm(0)});
 
     mii = MBB.insert(mii, std::unique_ptr<MachineInst>(addi));
@@ -1067,21 +1163,19 @@ void RISCVTargetInstInfo::expand_mv(MachineBasicBlock &MBB, MachineBasicBlock::i
 
 void RISCVTargetInstInfo::expand_call(MachineBasicBlock &MBB, MachineBasicBlock::iterator mii) const
 {
-    MachineInst &MI = **mii;
     // 调用函数伪指令 - 展开为 AUIPC + JALR 序列
-
     // 创建auipc加载高20位地址
     auto auipc = new MachineInst(RISCV::AUIPC, {
-                                                   MOperand::create_reg(RISCVReg::T0), // 使用临时寄存器
-                                                   MOperand::create_imm(0)             // 重定位器会填充正确的值
+                                                   MOperand::create_reg(Reg::T0, true), // 使用临时寄存器
+                                                   MOperand::create_imm(0)              // 重定位器会填充正确的值
                                                });
 
     mii = MBB.insert(mii, std::unique_ptr<MachineInst>(auipc));
     mii++;
     // 创建jalr进行调用
     auto jalr = new MachineInst(RISCV::JALR, {
-                                                 MOperand::create_reg(RISCVReg::RA), // 保存返回地址
-                                                 MOperand::create_reg(RISCVReg::T0),
+                                                 MOperand::create_reg(Reg::RA, true), // 保存返回地址
+                                                 MOperand::create_reg(Reg::T0, false),
                                                  MOperand::create_imm(0) // 重定位器会填充正确的值
                                              });
     mii = MBB.insert(mii, std::unique_ptr<MachineInst>(jalr));
@@ -1093,12 +1187,309 @@ void RISCVTargetInstInfo::expand_j(MachineBasicBlock &MBB, MachineBasicBlock::it
 {
     MachineInst &MI = **mii;
     // 无条件跳转伪指令 - 展开为 JAL x0, offset
-
     auto jal = new MachineInst(RISCV::JAL, {
-                                               MOperand::create_reg(RISCVReg::ZERO), // 不保存返回地址
-                                               MI.operands()[0]                      // 直接使用原始偏移量操作数
+                                               MOperand::create_reg(Reg::ZERO, false), // 不保存返回地址
+                                               MI.operands()[0]                        // 直接使用原始偏移量操作数
                                            });
     mii = MBB.insert(mii, std::unique_ptr<MachineInst>(jal));
     mii++;
     MBB.erase(mii);
 }
+void RISCVTargetInstInfo::insert_load_from_stack(MachineBasicBlock &mbb,
+                                                 MachineBasicBlock::iterator insert_point,
+                                                 unsigned dest_reg, int frame_index,
+                                                 int64_t offset) const
+{
+    // 获取函数和帧索引信息
+    MachineFunction *mf = mbb.parent();
+    const FrameObjectInfo *fobjinfo = mf->get_frame_object(frame_index);
+
+    // 选择适当的加载指令
+    unsigned load_op = RISCV::LW; // 默认使用字加载
+
+    // 根据寄存器类型选择加载指令
+    if (dest_reg >= Reg::F0 && dest_reg <= Reg::F31)
+    {
+        // 浮点寄存器加载
+        if (fobjinfo && fobjinfo->size == 8)
+        {
+            load_op = RISCV::FLD; // 双精度浮点加载
+        }
+        else
+        {
+            load_op = RISCV::FLW; // 单精度浮点加载
+        }
+    }
+    else
+    {
+        // 整型寄存器加载
+        if (fobjinfo && fobjinfo->size == 8 &&
+            (abi_version_ == ABIVersion::LP64 ||
+             abi_version_ == ABIVersion::LP64F ||
+             abi_version_ == ABIVersion::LP64D))
+        {
+            // 在64位模式下可以使用64位加载，这里简化处理仍使用LW
+            load_op = RISCV::LW;
+        }
+    }
+
+    // 使用帧指针或栈指针作为基址寄存器
+    unsigned base_reg = Reg::SP; // 默认使用栈指针
+
+    // 创建内存操作数和指令
+    std::vector<MOperand> ops;
+    ops.push_back(MOperand::create_reg(dest_reg, true));      // 目标寄存器操作数
+    ops.push_back(MOperand::create_mem_ri(base_reg, offset)); // 内存操作数
+
+    // 创建并插入加载指令
+    auto instr = std::make_unique<MachineInst>(load_op, ops);
+    instr->set_flag(MIFlag::MayLoad);
+
+    mbb.insert(insert_point, std::move(instr));
+}
+void RISCVTargetInstInfo::insert_store_to_stack(MachineBasicBlock &mbb,
+                                                MachineBasicBlock::iterator insert_point,
+                                                unsigned src_reg, int frame_index,
+                                                int64_t offset) const
+{
+    // 获取函数和帧索引信息
+    MachineFunction *mf = mbb.parent();
+    const FrameObjectInfo *fobjinfo = mf->get_frame_object(frame_index);
+
+    // 选择适当的存储指令
+    unsigned store_op = RISCV::SW; // 默认使用字存储
+
+    // 根据寄存器类型选择存储指令
+    if (src_reg >= Reg::F0 && src_reg <= Reg::F31)
+    {
+        // 浮点寄存器存储
+        if (fobjinfo && fobjinfo->size == 8)
+        {
+            store_op = RISCV::FSD; // 双精度浮点存储
+        }
+        else
+        {
+            store_op = RISCV::FSW; // 单精度浮点存储
+        }
+    }
+    else
+    {
+        // 整型寄存器存储
+        if (fobjinfo && fobjinfo->size == 8 &&
+            (abi_version_ == ABIVersion::LP64 ||
+             abi_version_ == ABIVersion::LP64F ||
+             abi_version_ == ABIVersion::LP64D))
+        {
+            // 在64位模式下可以使用64位存储，这里简化处理仍使用SW
+            store_op = RISCV::SW;
+        }
+    }
+
+    // 使用帧指针或栈指针作为基址寄存器
+    unsigned base_reg = Reg::SP; // 默认使用栈指针
+
+    // 创建内存操作数和指令
+    std::vector<MOperand> ops;
+    ops.push_back(MOperand::create_reg(src_reg, false));      // 源寄存器操作数
+    ops.push_back(MOperand::create_mem_ri(base_reg, offset)); // 内存操作数
+
+    // 创建并插入存储指令
+    auto instr = std::make_unique<MachineInst>(store_op, ops);
+    instr->set_flag(MIFlag::MayStore);
+
+    mbb.insert(insert_point, std::move(instr));
+}
+
+namespace RISCV
+{
+
+    MachineBasicBlock *find_target_block_by_label(const MachineFunction &mf, const std::string &label)
+    {
+        const auto &blocks = mf.get_basic_blocks();
+        for (auto &target_mb_ptr : blocks)
+        {
+            MachineBasicBlock *target_mbb = target_mb_ptr.get();
+            if (target_mbb->label() == label)
+            {
+                return target_mbb;
+            }
+        }
+        return nullptr; // 未找到目标块
+    }
+
+    // 辅助函数：添加跳转目标作为后继节点
+    void add_target_as_successor(MachineBasicBlock *source_block,
+                                 const MOperand &target_operand,
+                                 MachineFunction &mf)
+    {
+        if (target_operand.is_global())
+        {
+            GlobalVariable *gv = target_operand.global();
+            MachineBasicBlock *target_block = find_target_block_by_label(mf, gv->name());
+            if (target_block)
+            {
+                source_block->add_successor(target_block);
+            }
+            else
+            {
+                MO_DEBUG("Invalid branch target global: %s", gv->name().c_str());
+            }
+        }
+        else if (target_operand.is_external_sym())
+        {
+            MachineBasicBlock *target_block = find_target_block_by_label(mf, target_operand.external_sym());
+            if (target_block)
+            {
+                source_block->add_successor(target_block);
+            }
+            else
+            {
+                MO_DEBUG("Invalid branch target external symbol: %s", target_operand.external_sym());
+            }
+        }
+        else if (target_operand.is_imm())
+        {
+            // 注意：对立即数偏移的处理需要更多上下文信息
+            // 在某些情况下，立即数可能是相对于PC的偏移
+            MO_DEBUG("Branch with immediate offset not fully supported yet");
+        }
+        else
+        {
+            MO_DEBUG("Target not processed: %s", target_operand.to_string().c_str());
+        }
+        // 注意：对于寄存器间接跳转，通常无法静态确定目标
+    }
+
+    void build_cfg_from_instructions(MachineFunction &mf)
+    {
+        auto module_ = mf.parent();
+        MO_ASSERT(module_, "Module not set");
+        const TargetInstInfo *tii = module_->target_inst_info();
+
+        // 清理所有基本块的CFG信息
+        for (auto &mb_ptr : mf.get_basic_blocks())
+        {
+            mb_ptr->clear_cfg();
+        }
+
+        // 创建标签到基本块的映射
+        std::unordered_map<std::string, MachineBasicBlock *> label_to_block;
+        for (auto &mb_ptr : mf.get_basic_blocks())
+        {
+            MachineBasicBlock *mbb = mb_ptr.get();
+            if (!mbb->label().empty())
+            {
+                label_to_block[mbb->label()] = mbb;
+            }
+        }
+
+        // 遍历所有基本块
+        const auto &blocks = mf.get_basic_blocks();
+        for (size_t i = 0; i < blocks.size(); ++i)
+        {
+            MachineBasicBlock *mbb = blocks[i].get();
+
+            // 如果基本块为空，跳过
+            if (mbb->begin() == mbb->end())
+            {
+                continue;
+            }
+
+            // 获取基本块的最后一条指令
+            auto last_inst_it = std::prev(mbb->end());
+            MachineInst &last_inst = **last_inst_it;
+            unsigned opcode = last_inst.opcode();
+            MO_DEBUG("Processing block %s, inst opcode: %s with %u operands",
+                     mbb->label().c_str(), opcode_to_str(static_cast<RISCV::Opcode>(opcode)), last_inst.operands().size());
+            bool is_fallthrough = true; // 默认情况下会落入下一块
+
+            // 检查最后一条指令的类型
+            if (tii->is_return(last_inst))
+            {
+                // 返回指令没有后继
+                is_fallthrough = false;
+            }
+            else if (opcode == RISCV::JAL || opcode == RISCV::J)
+            {
+                // 无条件跳转指令
+                is_fallthrough = false; // 无条件跳转不会落入下一块
+
+                // 添加跳转目标作为后继节点
+                if (last_inst.operands().size() >= 2)
+                {                                                          // JAL rd, target
+                    const MOperand &jump_target = last_inst.operands()[1]; // 第二个操作数是目标
+                    add_target_as_successor(mbb, jump_target, mf);
+                }
+                else if (opcode == RISCV::J && !last_inst.operands().empty())
+                {
+                    // J 伪指令可能只有一个操作数
+                    const MOperand &jump_target = last_inst.operands()[0];
+                    add_target_as_successor(mbb, jump_target, mf);
+                }
+            }
+            else if (opcode == RISCV::JALR)
+            {
+                // 间接跳转指令 - 使用寄存器作为目标
+                // 通常无法静态确定目标，除非是返回指令的特殊情况
+                is_fallthrough = false; // 通常不会落入下一块
+
+                // 特殊情况：ret 伪指令 (jalr x0, 0(ra))
+                // 不添加后继节点，因为目标在运行时确定
+            }
+            else if (opcode == RISCV::BEQ || opcode == RISCV::BNE ||
+                     opcode == RISCV::BLT || opcode == RISCV::BGE ||
+                     opcode == RISCV::BLTU || opcode == RISCV::BGEU)
+            {
+                // 条件分支指令
+
+                // 添加分支目标作为后继节点
+                if (last_inst.operands().size() >= 3)
+                {                                                            // 分支指令格式：rs1, rs2, target
+                    const MOperand &branch_target = last_inst.operands()[2]; // 第三个操作数是目标
+                    add_target_as_successor(mbb, branch_target, mf);
+                }
+
+                // 条件分支有fallthrough，将在下面处理
+                is_fallthrough = true;
+            }
+            else if (opcode == RISCV::CALL)
+            {
+                // 调用指令通常有fallthrough
+                is_fallthrough = true;
+
+                // 如果是间接调用，可能无法确定目标
+                // 直接调用会被扩展为伪指令序列，在这里不需特殊处理
+            }
+
+            // 处理fallthrough情况 - 连续的两个块之间的隐式连接
+            if (is_fallthrough && i + 1 < blocks.size())
+            {
+                MachineBasicBlock *next_block = blocks[i + 1].get();
+                mbb->add_successor(next_block);
+            }
+        }
+
+        // 验证CFG
+        for (auto &mb_ptr : mf.get_basic_blocks())
+        {
+            MachineBasicBlock *mbb = mb_ptr.get();
+            if (mbb->begin() != mbb->end())
+            {
+                MachineInst &last_inst = **std::prev(mbb->end());
+
+                // 返回指令不应有后继
+                if (tii->is_return(last_inst) && !mbb->successors().empty())
+                {
+                    MO_DEBUG("Warning: Return instruction has successors");
+                }
+
+                // 无条件跳转应该只有一个后继（除非是外部调用）
+                if ((last_inst.opcode() == RISCV::JAL || last_inst.opcode() == RISCV::J) && mbb->successors().size() > 1)
+                {
+                    MO_DEBUG("Warning: Unconditional jump has multiple successors");
+                }
+            }
+        }
+    }
+
+} // namespace RISCV
