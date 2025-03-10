@@ -16,40 +16,23 @@
 
 #include "ir.h"
 #include "lra.h"
+#include "reg_alloc/reg_alloc.h"
 
+// Forward declarations
+class CallingConv;
 class Function;
 class GlobalVariable;
+class MachineBasicBlock;
 class MachineFunction;
+class MachineInst;
 class Module;
+class RegisterAllocator;
+class TargetFrameLowering;
 class TargetInstInfo;
 class TargetRegisterInfo;
 class Value;
 
 #define MO_MAX_RC 16
-//===----------------------------------------------------------------------===//
-// Register Pressure Tracking
-//===----------------------------------------------------------------------===//
-
-class PressureTracker
-{
-private:
-    const TargetRegisterInfo &tri_;
-    std::map<unsigned, unsigned>
-        pressure_at_pos_; // Use ordered map for traversal
-    mutable bool max_pressure_dirty_ =
-        false; // Flag indicating whether to recalculate max pressure
-    mutable unsigned cached_max_pressure_ = 0;
-
-    void mark_dirty() { max_pressure_dirty_ = true; }
-
-public:
-    explicit PressureTracker(const TargetRegisterInfo &target_register_info)
-        : tri_(target_register_info) {}
-    void add_interval(const LiveRange &live_range);
-    void remove_interval(const LiveRange &live_range);
-    unsigned get_max_pressure() const;
-    void dump_pressure_curve() const;
-};
 
 //===----------------------------------------------------------------------===//
 // Machine Operand Types
@@ -117,9 +100,7 @@ public:
     bool is_mem_rix() const noexcept;
     bool is_valid() const noexcept;
 
-    static MOperand create_mem_rix(unsigned base_reg, unsigned index_reg, int scale,
-                                   int offset);
-    MEMrix get_mem_rix() const;
+    // Creation methods
     static MOperand create_reg(unsigned reg, bool is_def = false);
     static MOperand create_imm(int64_t val);
     static MOperand create_fp_imm(double val);
@@ -128,6 +109,8 @@ public:
     static MOperand create_external_sym(const char *symbol);
     static MOperand create_mem_ri(unsigned base_reg, int offset);
     static MOperand create_mem_rr(unsigned base_reg, unsigned index_reg);
+    static MOperand create_mem_rix(unsigned base_reg, unsigned index_reg, int scale,
+                                   int offset);
 
     // Access methods
     unsigned reg() const;
@@ -138,6 +121,7 @@ public:
     const char *external_sym() const;
     MEMri mem_ri() const;
     MEMrr mem_rr() const;
+    MEMrix get_mem_rix() const;
     unsigned base_reg() const;
 
     // Status flag operations
@@ -180,14 +164,6 @@ class MachineInst
 public:
     using FlagSet = std::bitset<static_cast<size_t>(MIFlag::TOTAL_FLAGS)>;
 
-    std::string to_string(const TargetInstInfo *target_info = nullptr) const;
-
-private:
-    unsigned opcode_;
-    std::vector<MOperand> ops_;
-    FlagSet flags_;
-
-public:
     enum VerificationLevel
     {
         QUICK_CHECK,     // Basic operand validity check
@@ -195,10 +171,17 @@ public:
         TARGET_SPECIFIC  // Target-related deep validation
     };
 
+private:
+    unsigned opcode_;
+    std::vector<MOperand> ops_;
+    FlagSet flags_;
+
+public:
     MachineInst(unsigned opcode, const std::vector<MOperand> &operands = {});
 
-    bool verify(VerificationLevel level, const TargetInstInfo *target_info = nullptr,
-                std::string *err_msg = nullptr) const;
+    // Register allocation support
+    void replace_reg(unsigned old_reg, unsigned new_reg);
+    void remap_registers(const std::map<unsigned, unsigned> &vreg_map);
 
     // Flag operations
     void set_flag(MIFlag flag, bool val = true);
@@ -213,6 +196,15 @@ public:
     // Accessors
     unsigned opcode() const { return opcode_; }
     const std::vector<MOperand> &operands() const { return ops_; }
+
+    // Analysis methods
+    void get_used_regs(std::set<unsigned> &regs) const;
+    void get_defined_regs(std::set<unsigned> &regs) const;
+
+    // Verification and string conversion
+    bool verify(VerificationLevel level, const TargetInstInfo *target_info = nullptr,
+                std::string *err_msg = nullptr) const;
+    std::string to_string(const TargetInstInfo *target_info = nullptr) const;
 };
 
 //===----------------------------------------------------------------------===//
@@ -221,59 +213,58 @@ public:
 
 class MachineBasicBlock
 {
+public:
+    using iterator = std::vector<std::unique_ptr<MachineInst>>::iterator;
+    using pred_iterator = std::vector<MachineBasicBlock *>::iterator;
+    using succ_iterator = std::vector<MachineBasicBlock *>::iterator;
+
+private:
     std::string label_;
     MachineFunction &mf_;
-    std::unordered_map<unsigned, LiveRange> vreg_live_ranges_;
-    mutable std::unique_ptr<PressureTracker> pressure_tracker_;
+    unsigned number_ = 0; // Unique identifier
     std::vector<std::unique_ptr<MachineInst>> insts_;
     std::vector<MachineBasicBlock *> predecessors_;
     std::vector<MachineBasicBlock *> successors_;
-    unsigned number_ = 0; // Unique identifier
+    std::unordered_map<unsigned, LiveRange> vreg_live_ranges_;
+    mutable std::unique_ptr<PressureTracker> pressure_tracker_;
 
 public:
     MachineBasicBlock(MachineFunction &mf, unsigned number);
 
-    using iterator = std::vector<std::unique_ptr<MachineInst>>::iterator;
+    MachineFunction *parent() const { return &mf_; }
+    // Instruction access and manipulation
     const auto &instructions() const { return insts_; }
-    iterator insert(iterator pos, std::unique_ptr<MachineInst> inst);
-    void erase(iterator pos);
     iterator begin() { return insts_.begin(); }
     iterator end() { return insts_.end(); }
-
+    iterator insert(iterator pos, std::unique_ptr<MachineInst> inst);
+    void erase(iterator pos);
     void add_instr(std::unique_ptr<MachineInst> mi);
-
     unsigned get_instr_position(iterator it) const;
 
     // CFG management
-    using pred_iterator = std::vector<MachineBasicBlock *>::iterator;
-    using succ_iterator = std::vector<MachineBasicBlock *>::iterator;
-
     pred_iterator pred_begin() { return predecessors_.begin(); }
     pred_iterator pred_end() { return predecessors_.end(); }
-
     succ_iterator succ_begin() { return successors_.begin(); }
     succ_iterator succ_end() { return successors_.end(); }
-
     size_t pred_size() const { return predecessors_.size(); }
     size_t succ_size() const { return successors_.size(); }
-
     void add_successor(MachineBasicBlock *successor);
-
     void remove_successor(MachineBasicBlock *successor);
 
+    // Label management
     void set_label(const std::string &label) { label_ = label; }
     std::string get_label() const;
-
-    std::string to_string() const;
 
     // Cached live range access
     const LiveRange &get_live_range(unsigned vreg) const;
 
-    unsigned get_instr_global_pos(iterator it) const;
+    std::string to_string() const;
 
 private:
     // Helper function to get max instruction position
     unsigned get_max_instr_position() const;
+
+    unsigned get_instr_global_pos(iterator it) const;
 };
 
 //===----------------------------------------------------------------------===//
@@ -307,7 +298,6 @@ struct FrameObjectInfo
     unsigned alignment;                // Minimum required alignment
     uint8_t flags;                     // Attribute flags
     Value *associated_value = nullptr; // Associated IR object
-    // For SPill
     unsigned spill_rc_id = 0;          // 溢出目标的寄存器类别 ID
     bool spill_needs_reload = true;    // 是否需重新加载
 
@@ -319,41 +309,47 @@ class MachineFunction
 {
 private:
     Function *ir_func_; // Source IR function
+    MachineModule *mm_; // Target machine module
 
+    // Basic blocks and frame objects
     std::vector<std::unique_ptr<MachineBasicBlock>> blocks_;
-    std::unordered_map<int, FrameObjectInfo>
-        frame_objects_;                         // Key is frame index
-    int next_frame_idx_ = 0;                    // Stack object index counter
+    std::unordered_map<int, FrameObjectInfo> frame_objects_; // Key is frame index
+    int next_frame_idx_ = 0;                                 // Stack object index counter
+
+    // Virtual register management
+    unsigned next_vreg_ = 0; // Virtual register counter
+    std::unordered_map<unsigned, VRegInfo> vreg_infos_;
+
+    // Analysis results
+    mutable std::unique_ptr<LiveRangeAnalysis> lra_;
+
+    // Stack frame layout cache
     mutable bool is_frame_layout_dirty_ = true; // Layout cache status
     mutable std::vector<int> layout_order_;     // Layout order cache
-    unsigned next_vreg_ = 0;                    // Virtual register counter
-    unsigned next_bb_number_ = 0;               // Basic block number generator
-    std::unordered_map<unsigned, VRegInfo> vreg_infos_;
-    mutable std::unique_ptr<LiveRangeAnalysis> lra_;
+
     // Global instruction position map: instruction pointer -> global position
     mutable std::unordered_map<const MachineInst *, unsigned>
         global_instr_positions_;
     mutable unsigned next_global_pos_ = 0;
     mutable bool global_positions_dirty_ = true;
+
+    // Register allocation
+    std::unique_ptr<RegisterAllocator> reg_allocator_;
+    bool registers_allocated_ = false;
+
+    // Disallow copy and assignment
     MachineFunction(const MachineFunction &) = delete;
     void operator=(const MachineFunction &) = delete;
 
-    // Create stack object and return frame index
-    int create_frame_object(FrameObjectInfo frame_object_info);
-
-    // Get stack object information
-    const FrameObjectInfo *get_frame_object(int index) const;
-
-    // Smart stack layout calculation (cached)
-    const std::vector<int> &get_frame_layout() const;
-
-    // Calculate total stack frame size (considering alignment padding)
-    int calculate_frame_size() const;
+    unsigned next_bb_number_ = 0; // Basic block number generator
+    static const unsigned FIRST_VIRT_REG = 1024;
 
 public:
-    static const unsigned FIRST_VIRTUAL_REGISTER = 1024;
+    static bool is_physical_reg(unsigned reg) { return reg < FIRST_VIRT_REG; }
+    static bool is_virtual_reg(unsigned reg) { return reg >= FIRST_VIRT_REG; }
 
-    explicit MachineFunction(Function *ir_function) : ir_func_(ir_function)
+    explicit MachineFunction(Function *ir_function, MachineModule *mm)
+        : ir_func_(ir_function), mm_(mm)
     {
         AliasCheckFn is_alias_fn = [this](unsigned reg1, unsigned reg2)
         {
@@ -363,30 +359,43 @@ public:
             new LiveRangeAnalysis(*this, is_alias_fn));
     }
 
+    // Basic block management
     MachineBasicBlock *create_block();
-    std::unique_ptr<PressureTracker> compute_pressure() const;
+    const std::vector<std::unique_ptr<MachineBasicBlock>> &get_basic_blocks() const;
+
+    // Virtual register management
     unsigned create_vreg(unsigned register_class_id, unsigned size = 4,
                          bool is_fp = false, Value *original_value = nullptr);
-
     const VRegInfo &get_vreg_info(unsigned reg) const;
-
-    // Get live range
-    const LiveRange &get_vreg_liverange(unsigned vreg) const;
-    // Enhanced frame index management
-    bool has_frame_index(Value *value) const;
 
     // Frame index management
     int create_frame_object(Value *value);
     int get_frame_index(Value *value) const;
+    bool has_frame_index(Value *value) const;
+    int create_frame_object(FrameObjectInfo frame_object_info);
+    const FrameObjectInfo *get_frame_object(int index) const;
 
-    std::string to_string() const;
+    // Live range analysis
+    const LiveRange &get_vreg_liverange(unsigned vreg) const;
+    void mark_live_ranges_dirty() { lra_->mark_dirty(); }
 
-    const std::vector<std::unique_ptr<MachineBasicBlock>> &get_basic_blocks() const;
+    // Stack frame layout
+    const std::vector<int> &get_frame_layout() const;
+    int calculate_frame_size() const;
 
-    // Mark global positions as needing recalculation
+    // Helper function to ensure global positions are computed
+    void ensure_global_positions_computed() const;
+
+    // Register allocation methods
+    bool allocate_registers(RegisterAllocatorFactory::AllocatorType type =
+                                RegisterAllocatorFactory::LINEAR_SCAN);
+    void set_register_allocator(std::unique_ptr<RegisterAllocator> allocator);
+    bool are_registers_allocated() const { return registers_allocated_; }
+    unsigned get_assigned_reg(unsigned vreg) const;
+    int create_register_spill_slot(unsigned vreg, unsigned reg_class_id);
+
+    // Instruction position management
     void mark_global_positions_dirty() { global_positions_dirty_ = true; }
-
-    // Get the global position of an instruction
     unsigned get_global_instr_pos(const MachineInst *mi) const
     {
         assert(!global_positions_dirty_ && "Global positions not computed!");
@@ -394,26 +403,11 @@ public:
         return global_instr_positions_.at(mi);
     }
 
-    void ensure_global_positions_computed() const
-    {
-        if (!global_positions_dirty_)
-            return;
+    std::unique_ptr<PressureTracker> compute_pressure() const;
 
-        global_instr_positions_.clear();
-        next_global_pos_ = 0;
+    MachineModule *parent() { return mm_; }
 
-        // Traverse all instructions in basic block order
-        for (const auto &bb : blocks_)
-        {
-            for (const auto &inst : bb->instructions())
-            {
-                global_instr_positions_[inst.get()] = next_global_pos_++;
-            }
-        }
-        global_positions_dirty_ = false;
-    }
-
-    void mark_live_ranges_dirty() { lra_->mark_dirty(); }
+    std::string to_string() const;
 };
 
 //===----------------------------------------------------------------------===//
@@ -456,10 +450,13 @@ public:
     virtual void analyze_call(MachineFunction &mf,
                               const std::vector<Value *> &args,
                               std::vector<ArgLocation> &locations) const = 0;
-    virtual void analyze_return(MachineFunction &mf,
-                                const Value *return_value,
+    virtual void analyze_return(MachineFunction &mf, const Value *return_value,
                                 RetLocation &location) const = 0;
 };
+
+//===----------------------------------------------------------------------===//
+// Target Register Information
+//===----------------------------------------------------------------------===//
 
 struct RegisterDesc
 {
@@ -482,10 +479,10 @@ struct RegisterClass
 
 struct ArgPassingRule
 {
-    std::vector<unsigned> int_regs; // 整型参数寄存器序列
-    std::vector<unsigned> fp_regs;  // 浮点参数寄存器序列
-    unsigned stack_align = 16;      // 栈对齐要求
-    bool shadow_space = false;      // Win64的阴影空间
+    std::vector<unsigned> int_regs; // int param reg sequence
+    std::vector<unsigned> fp_regs;  // float param reg sequence
+    unsigned stack_align = 16;      // stack alignment
+    bool shadow_space = false;      // shadow space for windows x64 calling convention
 };
 
 /// Target register information
@@ -494,13 +491,12 @@ class TargetRegisterInfo
 protected:
     // Table of all register descriptors
     std::vector<RegisterDesc> reg_descs_;
-    // TODO: define and support ArgPassingRule/RetPassingRule
-    std::unordered_map<CallingConv::ID, ArgPassingRule> arg_rules_;
-    // std::unordered_map<CallingConv::ID, RetPassingRule> ret_rules_;
 
+    // Register classes
     std::vector<std::unique_ptr<RegisterClass>> register_classes_;
 
-    // Pre-stored Callee/Caller Saved Registers based on calling convention
+    // Calling convention related data
+    std::unordered_map<CallingConv::ID, ArgPassingRule> arg_rules_;
     std::unordered_map<CallingConv::ID, std::vector<unsigned>> callee_saved_map_;
     std::unordered_map<CallingConv::ID, std::vector<unsigned>> caller_saved_map_;
 
@@ -515,98 +511,44 @@ public:
 
     //===---------------- Register Attribute Queries -------------------===//
     bool is_callee_saved(unsigned reg) const { return reg_descs_[reg].is_callee_saved; }
-
     bool is_reserved_reg(unsigned reg) const { return reg_descs_[reg].is_reserved; }
-
     unsigned get_spill_cost(unsigned reg) const { return reg_descs_[reg].spill_cost; }
-    const std::vector<unsigned> &get_reg_classes(unsigned reg) const
-    {
-        auto mask = reg_descs_[reg].rc_mask;
-        std::vector<unsigned> classes;
-        for (unsigned i = 0; i < register_classes_.size(); ++i)
-        {
-            if (mask[i])
-            {
-                classes.push_back(i);
-            }
-        }
-        return classes;
-    }
-    virtual unsigned get_primary_reg_class(unsigned reg) const
+    unsigned get_primary_reg_class(unsigned reg) const
     {
         return reg_descs_[reg].primary_rc_id;
     }
-    void add_register_class(const RegisterClass &register_class)
-    {
-        register_classes_.push_back(
-            std::make_unique<RegisterClass>(register_class));
-    }
+    const std::vector<unsigned> &get_reg_classes(unsigned reg) const;
+    unsigned get_reg_class_weight(unsigned register_class_id) const;
+    unsigned get_reg_weight(unsigned reg) const;
 
-    RegisterClass *get_reg_class(unsigned register_class_id) const
-    {
-        if (register_class_id >= register_classes_.size())
-            return nullptr;
-
-        RegisterClass *register_class =
-            register_classes_[register_class_id].get();
-        return register_class;
-    }
-
-    unsigned get_reg_class_weight(unsigned register_class_id) const
-    {
-        const RegisterClass *register_class =
-            get_reg_class(register_class_id);
-        return register_class ? register_class->weight : 1; // Default weight is 1
-    }
-
-    unsigned get_reg_weight(unsigned reg) const
-    {
-        return get_reg_class_weight(get_primary_reg_class(reg));
-    }
+    //===---------------- Register Class Management ----------------------===//
+    void add_register_class(const RegisterClass &register_class);
+    RegisterClass *get_reg_class(unsigned register_class_id) const;
 
     //===---------------- Calling Convention Related ----------------------===//
-    const std::vector<unsigned> &get_callee_saved_regs(CallingConv::ID cc) const
-    {
-        auto it = callee_saved_map_.find(cc);
-        return (it != callee_saved_map_.end()) ? it->second : empty_reg_list_;
-    }
-
-    const std::vector<unsigned> &get_caller_saved_regs(CallingConv::ID cc) const
-    {
-        auto it = caller_saved_map_.find(cc);
-        return (it != caller_saved_map_.end()) ? it->second : empty_reg_list_;
-    }
+    const std::vector<unsigned> &get_callee_saved_regs(CallingConv::ID cc) const;
+    const std::vector<unsigned> &get_caller_saved_regs(CallingConv::ID cc) const;
 
     //===---------------- Alias Relationship Handling ----------------------===//
-    // Precompute alias relationships (called during initialization)
-    void add_alias(unsigned reg, unsigned alias, bool bidirectional = true)
-    {
-        alias_map_[reg].insert(alias);
-        if (bidirectional)
-        {
-            alias_map_[alias].insert(reg);
-        }
-    }
+    void add_alias(unsigned reg, unsigned alias, bool bidirectional = true);
+    bool are_aliases(unsigned reg1, unsigned reg2) const;
+    void get_aliases(unsigned reg, std::vector<unsigned> &aliases) const;
 
-    bool are_aliases(unsigned reg1, unsigned reg2) const
-    {
-        if (reg1 >= alias_map_.size() || reg2 >= alias_map_.size())
-            return false;
-        return alias_map_[reg1].count(reg2) > 0;
-    }
-
-    void get_aliases(unsigned reg, std::vector<unsigned> &aliases) const
-    {
-        if (reg < alias_map_.size())
-        {
-            aliases.assign(alias_map_[reg].begin(), alias_map_[reg].end());
-        }
-    }
+    //===---------------- Register allocation support ----------------------===//
+    virtual std::vector<unsigned> get_allocatable_regs(unsigned reg_class_id) const;
+    virtual std::vector<unsigned> get_allocation_order(unsigned reg_class_id) const;
+    virtual bool can_allocate_reg(unsigned reg, bool ignore_reserved = false) const;
+    virtual unsigned get_reg_size_in_bytes(unsigned reg) const;
+    virtual unsigned get_suitable_reg_class(unsigned vreg) const;
 
     //===---------------- Other Helper Methods ----------------------===//
     unsigned get_num_regs() const { return reg_descs_.size(); }
     const RegisterDesc &get_reg_desc(unsigned reg) const { return reg_descs_[reg]; }
 };
+
+//===----------------------------------------------------------------------===//
+// Target Instruction Information
+//===----------------------------------------------------------------------===//
 
 /// Target instruction properties
 class TargetInstInfo
@@ -644,11 +586,26 @@ public:
                                unsigned src_reg) const = 0;
 
     // Legalization handling
-    virtual bool legalize_inst(MachineBasicBlock &mbb, MachineBasicBlock::iterator mii,
+    virtual bool legalize_inst(MachineBasicBlock &mbb,
+                               MachineBasicBlock::iterator mii,
                                MachineFunction &mf) const = 0;
+
+    // Spill/reload generation
+    virtual void insert_load_from_stack(MachineBasicBlock &mbb,
+                                        MachineBasicBlock::iterator insert_point,
+                                        unsigned dest_reg, int frame_index,
+                                        int64_t offset = 0) const = 0;
+
+    virtual void insert_store_to_stack(MachineBasicBlock &mbb,
+                                       MachineBasicBlock::iterator insert_point,
+                                       unsigned src_reg, int frame_index,
+                                       int64_t offset = 0) const = 0;
 };
 
-/// Target frame lowering interface
+//===----------------------------------------------------------------------===//
+// Target Frame Lowering
+//===----------------------------------------------------------------------===//
+
 struct FrameLayout
 {
     int stack_size;
@@ -664,8 +621,7 @@ public:
     virtual void emit_epilogue(MachineFunction &mf) const = 0;
     virtual int get_frame_index_offset(const MachineFunction &mf,
                                        int frame_index) const = 0;
-    virtual FrameLayout compute_frame_layout(
-        const MachineFunction &mf) const = 0;
+    virtual FrameLayout compute_frame_layout(const MachineFunction &mf) const = 0;
 
     virtual void emit_stack_protector(MachineFunction &mf,
                                       int guard_index) const = 0; // Insert stack protection code
@@ -677,6 +633,7 @@ public:
 
 class MachineModule
 {
+private:
     Module *ir_module_;
     std::vector<std::unique_ptr<MachineFunction>> functions_;
     const TargetRegisterInfo *tri_ = nullptr;
@@ -690,6 +647,31 @@ public:
     void set_target_info(const TargetRegisterInfo *target_register_info,
                          const TargetInstInfo *target_inst_info);
 
-    const TargetInstInfo *get_target_inst_info() const { return tii_; }
-    const TargetRegisterInfo *get_target_reg_info() const { return tri_; }
+    const TargetInstInfo *target_inst_info() const { return tii_; }
+    const TargetRegisterInfo *target_reg_info() const { return tri_; }
+};
+
+//===----------------------------------------------------------------------===//
+// Register Pressure Tracking
+//===----------------------------------------------------------------------===//
+
+class PressureTracker
+{
+private:
+    const TargetRegisterInfo &tri_;
+    std::map<unsigned, unsigned>
+        pressure_at_pos_; // Use ordered map for traversal
+    mutable bool max_pressure_dirty_ =
+        false; // Flag indicating whether to recalculate max pressure
+    mutable unsigned cached_max_pressure_ = 0;
+
+    void mark_dirty() { max_pressure_dirty_ = true; }
+
+public:
+    explicit PressureTracker(const TargetRegisterInfo &target_register_info)
+        : tri_(target_register_info) {}
+    void add_interval(const LiveRange &live_range);
+    void remove_interval(const LiveRange &live_range);
+    unsigned get_max_pressure() const;
+    void dump_pressure_curve() const;
 };
