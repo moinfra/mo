@@ -335,10 +335,19 @@ std::string MOperand::to_string() const
 //===----------------------------------------------------------------------===//
 // MachineInst Implementation
 //===----------------------------------------------------------------------===//
-size_t MachineInst::position() const {
+size_t MachineInst::position() const
+{
     MO_ASSERT(parent(), "Instruction has no parent function");
     auto mf = parent()->parent();
     return mf->get_global_instr_pos(this);
+}
+
+void MachineInst::erase_from_parent() const
+{
+    MO_ASSERT(parent(), "Instruction has no parent function");
+    auto bb = parent();
+    auto pos = bb->locate(this);
+    bb->erase(pos);
 }
 
 std::string MachineInst::to_string(const TargetInstInfo *target_info) const
@@ -672,7 +681,7 @@ void MachineBasicBlock::append(std::unique_ptr<MachineInst> mi)
     insts_.push_back(std::move(mi));
 }
 
-MachineBasicBlock::iterator MachineBasicBlock::locate(MachineInst *mi) 
+MachineBasicBlock::iterator MachineBasicBlock::locate(const MachineInst *mi)
 {
     auto it = std::find_if(insts_.begin(), insts_.end(), [mi](const std::unique_ptr<MachineInst> &ptr)
                            { return ptr.get() == mi; });
@@ -741,26 +750,6 @@ unsigned MachineBasicBlock::get_instr_global_pos(iterator it) const
 {
     return mf_.get_global_instr_pos(it->get());
 }
-//===----------------------------------------------------------------------===//
-// FrameObjectInfo Implementation
-//===----------------------------------------------------------------------===//
-
-bool FrameObjectInfo::validate(std::string *err) const
-{
-    if (size < -1)
-    {
-        if (err)
-            *err = "Invalid size value";
-        return false;
-    }
-    if ((flags & IsVariableSize) && size != -1)
-    {
-        if (err)
-            *err = "Variable-size object must have size=-1";
-        return false;
-    }
-    return true;
-}
 
 //===----------------------------------------------------------------------===//
 // MachineFunction Implementation
@@ -778,75 +767,6 @@ MachineBasicBlock *MachineFunction::create_block(std::string label)
     blocks_.push_back(std::move(block));
     next_bb_number_++;
     return ptr;
-}
-
-int MachineFunction::create_frame_object(FrameObjectInfo info)
-{
-    if (!info.validate())
-        return -1;
-
-    const int idx = next_frame_idx_++;
-    frame_objects_.emplace(idx, std::move(info));
-    is_frame_layout_dirty_ = true;
-    return idx;
-}
-
-const FrameObjectInfo *MachineFunction::get_frame_object(int idx) const
-{
-    auto it = frame_objects_.find(idx);
-    return it != frame_objects_.end() ? &it->second : nullptr;
-}
-
-const std::vector<int> &MachineFunction::get_frame_layout() const
-{
-    if (!is_frame_layout_dirty_)
-        return layout_order_;
-
-    // Reorder layout based on object attributes
-    layout_order_.clear();
-    for (const auto &[idx, obj] : frame_objects_)
-    {
-        layout_order_.push_back(idx);
-    }
-
-    // Sorting strategy: prioritize fixed-size and high-alignment objects
-    std::sort(layout_order_.begin(), layout_order_.end(),
-              [this](int a, int b)
-              {
-                  const auto &obj_a = frame_objects_.at(a);
-                  const auto &obj_b = frame_objects_.at(b);
-                  if (obj_a.flags != obj_b.flags)
-                      return (obj_a.flags & FrameObjectInfo::IsFixedSize) >
-                             (obj_b.flags & FrameObjectInfo::IsFixedSize);
-                  return obj_a.alignment > obj_b.alignment;
-              });
-
-    is_frame_layout_dirty_ = false;
-    return layout_order_;
-}
-
-int MachineFunction::calculate_frame_size() const
-{
-    int total = 0;
-    int max_align = 1;
-
-    for (int idx : get_frame_layout())
-    {
-        const auto &obj = frame_objects_.at(idx);
-        if (obj.flags & FrameObjectInfo::IsVariableSize)
-            continue; // Handle dynamic-size objects separately
-
-        const int align = obj.alignment;
-        max_align = std::max(max_align, align);
-
-        // Add padding to satisfy alignment
-        total = (total + align - 1) & -align;
-        total += std::abs(obj.size);
-    }
-
-    // Final alignment of the entire stack frame
-    total = (total + max_align - 1) & -max_align;
-    return total;
 }
 
 void MachineFunction::ensure_global_positions_computed() const
@@ -888,49 +808,12 @@ const VRegInfo &MachineFunction::get_vreg_info(unsigned reg) const
     return it->second;
 }
 
-// Enhanced frame index management
-bool MachineFunction::has_frame_index(Value *value) const
-{
-    for (const auto &[idx, obj] : frame_objects_)
-    {
-        if (obj.associated_value == value)
-        {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Frame index management
-int MachineFunction::create_frame_object(Value *value)
-{
-    FrameObjectInfo info;
-    info.size = 4;                             // Default size, adjust as needed
-    info.alignment = 4;                        // Default alignment, adjust as needed
-    info.flags = FrameObjectInfo::IsFixedSize; // Default flags
-    info.associated_value = value;
-
-    return create_frame_object(info);
-}
-int MachineFunction::get_frame_index(Value *value) const
-{
-    for (const auto &[idx, obj] : frame_objects_)
-    {
-        if (obj.associated_value == value)
-        {
-            return idx;
-        }
-    }
-    assert(false && "Frame object not found!");
-    return -1;
-}
-
 std::string MachineFunction::to_string() const
 {
     std::ostringstream oss;
     oss << "Function: " << ir_func_->name() << "\n";
     oss << "Stack objects:\n";
-    for (const auto &[idx, obj] : frame_objects_)
+    for (const auto &[idx, obj] : frame_->objects())
     {
         oss << "  fi#" << idx << " for " << obj.associated_value->name() << "\n";
     }
@@ -1162,15 +1045,15 @@ bool MachineFunction::allocate_registers(RegisterAllocatorFactory::AllocatorType
 
 int MachineFunction::create_register_spill_slot(unsigned vreg, unsigned reg_class_id)
 {
-    FrameObjectInfo spill_obj;
+    FrameObjectMetadata spill_obj;
     const VRegInfo &vreg_info = get_vreg_info(vreg);
 
     spill_obj.size = vreg_info.size_;
     spill_obj.alignment = spill_obj.size; // Align by size
-    spill_obj.flags = FrameObjectInfo::IsSpillSlot;
+    spill_obj.flags = FrameObjectMetadata::IsSpillSlot;
     spill_obj.spill_rc_id = reg_class_id;
 
-    return create_frame_object(spill_obj);
+    return frame_->create_frame_object(spill_obj);
 }
 
 //===----------------------------------------------------------------------===//

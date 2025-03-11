@@ -16,7 +16,8 @@
 
 #include "ir.h"
 #include "lra.h"
-#include "reg_alloc/reg_alloc.h"
+#include "reg_alloc.h"
+#include "machine_frame.h"
 
 // Forward declarations
 class CallingConv;
@@ -188,6 +189,7 @@ public:
     MachineInst(unsigned opcode, const std::vector<MOperand> &operands = {});
 
     size_t position() const;
+    void erase_from_parent() const;
     // Register allocation support
     void replace_reg(unsigned old_reg, unsigned new_reg);
     void remap_registers(const std::map<unsigned, unsigned> &vreg_map);
@@ -213,7 +215,7 @@ public:
     // Accessors
     unsigned opcode() const { return opcode_; }
     const std::vector<MOperand> &operands() const { return ops_; }
-    auto parent() const { return parent_bb_; }
+    MachineBasicBlock *parent() const { return parent_bb_; }
 
     // Analysis methods
     std::set<unsigned> defs() const;
@@ -250,7 +252,7 @@ public:
     iterator insert(iterator pos, std::unique_ptr<MachineInst> inst);
     void erase(iterator pos);
     void append(std::unique_ptr<MachineInst> mi);
-    iterator locate(MachineInst *mi);
+    iterator locate(const MachineInst *mi);
 
     // CFG management
     const std::vector<MachineBasicBlock *> &predecessors() const { return predecessors_; }
@@ -291,32 +293,6 @@ struct VRegInfo
     Value *original_value_ = nullptr; // Associated IR value
 };
 
-//===----------------------------------------------------------------------===//
-// Stack Object Metadata
-//===----------------------------------------------------------------------===//
-
-struct FrameObjectInfo
-{
-    enum Flags : uint8_t
-    {
-        IsFixedSize = 1 << 0,    // Fixed-size object (normal local variable)
-        IsVariableSize = 1 << 1, // Variable-size object (e.g., alloca)
-        IsSpillSlot = 1 << 2,    // Register spill slot
-        NeedsRealign = 1 << 3,   // Requires special alignment (e.g., SIMD type)
-        IsStackGuard = 1 << 4    // Stack guard region
-    };
-
-    int64_t size;                      // Object size in bytes (-1 for runtime)
-    unsigned alignment;                // Minimum required alignment
-    uint8_t flags;                     // Attribute flags
-    Value *associated_value = nullptr; // Associated IR object
-    unsigned spill_rc_id = 0;          // 溢出目标的寄存器类别 ID
-    bool spill_needs_reload = true;    // 是否需重新加载
-
-    // Validity check
-    bool validate(std::string *err = nullptr) const;
-};
-
 class MachineFunction
 {
 
@@ -325,10 +301,11 @@ private:
     MachineModule *mm_; // Target machine module
     static const unsigned FIRST_VIRT_REG = 1000;
 
-    // Basic blocks and frame objects
+    // Basic blocks
     std::vector<std::unique_ptr<MachineBasicBlock>> blocks_;
-    std::unordered_map<int, FrameObjectInfo> frame_objects_; // Key is frame index
-    int next_frame_idx_ = 0;                                 // Stack object index counter
+
+    // Frame management
+    std::unique_ptr<MachineFrame> frame_;
 
     // Virtual register management
     unsigned next_vreg_ = FIRST_VIRT_REG; // Virtual register counter
@@ -336,10 +313,6 @@ private:
 
     // Analysis results
     mutable std::unique_ptr<LiveRangeAnalyzer> lra_;
-
-    // Stack frame layout cache
-    mutable bool is_frame_layout_dirty_ = true; // Layout cache status
-    mutable std::vector<int> layout_order_;     // Layout order cache
 
     // Global instruction position map: instruction pointer -> global position
     mutable std::unordered_map<const MachineInst *, size_t>
@@ -349,6 +322,7 @@ private:
 
     // Register allocation
     std::unique_ptr<RegisterAllocator> reg_allocator_;
+
     bool registers_allocated_ = false;
 
     // Disallow copy and assignment
@@ -362,7 +336,7 @@ public:
     static bool is_virtual_reg(unsigned reg) { return reg >= FIRST_VIRT_REG; }
 
     explicit MachineFunction(Function *ir_function, MachineModule *mm)
-        : ir_func_(ir_function), mm_(mm)
+        : ir_func_(ir_function), mm_(mm), frame_(new MachineFrame())
     {
         AliasCheckFn is_alias_fn = [this](unsigned reg1, unsigned reg2)
         {
@@ -383,17 +357,6 @@ public:
                          bool is_fp = false, Value *original_value = nullptr);
     const VRegInfo &get_vreg_info(unsigned reg) const;
 
-    // Frame index management
-    int create_frame_object(Value *value);
-    int get_frame_index(Value *value) const;
-    bool has_frame_index(Value *value) const;
-    int create_frame_object(FrameObjectInfo frame_object_info);
-    const FrameObjectInfo *get_frame_object(int index) const;
-
-    // Stack frame layout
-    const std::vector<int> &get_frame_layout() const;
-    int calculate_frame_size() const;
-
     // Helper function to ensure global positions are computed
     void ensure_global_positions_computed() const;
 
@@ -402,7 +365,6 @@ public:
                                 RegisterAllocatorFactory::LINEAR_SCAN);
     void set_register_allocator(std::unique_ptr<RegisterAllocator> allocator);
     bool are_registers_allocated() const { return registers_allocated_; }
-    unsigned get_assigned_reg(unsigned vreg) const;
     int create_register_spill_slot(unsigned vreg, unsigned reg_class_id);
 
     // Instruction position management
@@ -418,6 +380,7 @@ public:
 
     MachineModule *parent() const { return mm_; }
     LiveRangeAnalyzer *live_range_analyzer() const { return lra_.get(); }
+    MachineFrame* frame() const { return frame_.get(); }
     std::string to_string() const;
 };
 
