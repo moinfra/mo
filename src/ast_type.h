@@ -9,7 +9,7 @@
 #include <cstdint>
 #include <stdexcept>
 
-#include "utils.h"
+#include "mo_debug.h"
 
 #define MO_DEFAULT_INT_BITWIDTH (32)
 #define MO_DEFAULT_FLOAT_PRECISION (32)

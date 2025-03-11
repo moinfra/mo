@@ -1,5 +1,5 @@
 #include "ir_builder.h"
-#include "utils.h"
+#include "mo_debug.h"
 
 IRBuilder::IRBuilder(Module *module)
     : module_(module), insert_block_(nullptr), insert_pos_(nullptr)

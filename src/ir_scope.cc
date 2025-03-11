@@ -1,5 +1,5 @@
 #include "ir_scope.h"
-#include "utils.h"
+#include "mo_debug.h"
 
 // Find a variable in the current or parent scopes
 Value *Scope::resolve_variable(const std::string &name) const

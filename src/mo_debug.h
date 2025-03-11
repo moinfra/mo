@@ -1,3 +1,4 @@
+// mo_debug.h -- Utility macros and functions for Mo Project.
 #pragma once
 
 #include <cstdio>
