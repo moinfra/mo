@@ -91,3 +91,15 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "asimov_vm_test",
+    srcs = ["asimov_vm_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:machine",
+        "//src/targets:asimov_target",
+        "//src/vm:asimov_vm",
+        "@googletest//:gtest_main",
+    ],
+)
