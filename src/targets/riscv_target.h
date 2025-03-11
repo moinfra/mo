@@ -520,7 +520,7 @@ namespace RISCV
         RISCVTargetInstInfo(ABIVersion abi = ABIVersion::LP64D);
 
         // TargetInstInfo接口实现
-        const char *get_opcode_name(unsigned opcode) const override;
+        const char *opcode_name(unsigned opcode) const override;
         unsigned get_inst_size(const MachineInst &MI) const override;
         bool verify_instruction(const MachineInst &MI, std::string &error_msg) const override;
         uint32_t get_binary_encoding(const MachineInst &MI) const override;

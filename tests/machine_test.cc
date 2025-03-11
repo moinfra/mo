@@ -56,8 +56,8 @@ TEST(MachineFunctionTest, GlobalInstrPosition)
     auto inst1 = std::make_unique<MachineInst>(1);
     auto inst2 = std::make_unique<MachineInst>(2);
 
-    bb->add_instr(std::move(inst1));
-    bb->add_instr(std::move(inst2));
+    bb->append(std::move(inst1));
+    bb->append(std::move(inst2));
 
     mf.ensure_global_positions_computed();
     EXPECT_NE(mf.get_global_instr_pos(bb->begin()->get()),

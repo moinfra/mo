@@ -100,6 +100,7 @@ void RISCVRegisterInfo::initializeRegisterClasses(ABIVersion abi)
 {
     // 定义整型寄存器类 (GR32)
     RegisterClass gr32_class = {
+        GR32,
         "GR32", // 类名称
         {
             // 所有可分配的32位整型寄存器
@@ -118,6 +119,7 @@ void RISCVRegisterInfo::initializeRegisterClasses(ABIVersion abi)
 
     // 定义64位整型寄存器类 (GR64)
     RegisterClass gr64_class = {
+        GR64,
         "GR64", // 类名称
         {
             // 与GR32相同的寄存器集合，但在LP64模式下是64位宽
@@ -136,6 +138,7 @@ void RISCVRegisterInfo::initializeRegisterClasses(ABIVersion abi)
 
     // 定义单精度浮点寄存器类 (FP32)
     RegisterClass fp32_class = {
+        FP32,
         "FP32", // 类名称
         {
             // 所有浮点寄存器F0-F31
@@ -153,6 +156,7 @@ void RISCVRegisterInfo::initializeRegisterClasses(ABIVersion abi)
 
     // 定义双精度浮点寄存器类 (FP64)
     RegisterClass fp64_class = {
+        FP64,
         "FP64", // 类名称
         {
             // 与FP32相同的寄存器，但在D扩展下是64位宽
@@ -443,7 +447,7 @@ RISCVTargetInstInfo::RISCVTargetInstInfo(ABIVersion abi)
     }
 }
 
-const char *RISCVTargetInstInfo::get_opcode_name(unsigned opcode) const
+const char *RISCVTargetInstInfo::opcode_name(unsigned opcode) const
 {
     auto it = opcode_names_.find(opcode);
     if (it != opcode_names_.end())
@@ -1305,7 +1309,7 @@ namespace RISCV
 
     MachineBasicBlock *find_target_block_by_label(const MachineFunction &mf, const std::string &label)
     {
-        const auto &blocks = mf.get_basic_blocks();
+        const auto &blocks = mf.basicblocks();
         for (auto &target_mb_ptr : blocks)
         {
             MachineBasicBlock *target_mbb = target_mb_ptr.get();
@@ -1367,14 +1371,14 @@ namespace RISCV
         const TargetInstInfo *tii = module_->target_inst_info();
 
         // 清理所有基本块的CFG信息
-        for (auto &mb_ptr : mf.get_basic_blocks())
+        for (auto &mb_ptr : mf.basicblocks())
         {
             mb_ptr->clear_cfg();
         }
 
         // 创建标签到基本块的映射
         std::unordered_map<std::string, MachineBasicBlock *> label_to_block;
-        for (auto &mb_ptr : mf.get_basic_blocks())
+        for (auto &mb_ptr : mf.basicblocks())
         {
             MachineBasicBlock *mbb = mb_ptr.get();
             if (!mbb->label().empty())
@@ -1384,7 +1388,7 @@ namespace RISCV
         }
 
         // 遍历所有基本块
-        const auto &blocks = mf.get_basic_blocks();
+        const auto &blocks = mf.basicblocks();
         for (size_t i = 0; i < blocks.size(); ++i)
         {
             MachineBasicBlock *mbb = blocks[i].get();
@@ -1399,7 +1403,7 @@ namespace RISCV
             auto last_inst_it = std::prev(mbb->end());
             MachineInst &last_inst = **last_inst_it;
             unsigned opcode = last_inst.opcode();
-            MO_DEBUG("Processing block %s, inst opcode: %s with %u operands",
+            MO_DEBUG("Processing block %s, inst opcode: %s with %zu operands",
                      mbb->label().c_str(), opcode_to_str(static_cast<RISCV::Opcode>(opcode)), last_inst.operands().size());
             bool is_fallthrough = true; // 默认情况下会落入下一块
 
@@ -1470,7 +1474,7 @@ namespace RISCV
         }
 
         // 验证CFG
-        for (auto &mb_ptr : mf.get_basic_blocks())
+        for (auto &mb_ptr : mf.basicblocks())
         {
             MachineBasicBlock *mbb = mb_ptr.get();
             if (mbb->begin() != mbb->end())

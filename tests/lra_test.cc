@@ -257,18 +257,18 @@ public:
         mi1->add_operand(MOperand::create_reg(vreg0, true)); // 定义 vreg0
         mi1->add_operand(MOperand::create_reg(Reg::ZERO));
         mi1->add_operand(MOperand::create_imm(10));
-        bb->add_instr(std::move(mi1));
+        bb->append(std::move(mi1));
 
         auto mi2 = std::make_unique<MachineInst>(RISCV::ADD);
         mi2->add_operand(MOperand::create_reg(vreg1, true)); // 定义 vreg1
         mi2->add_operand(MOperand::create_reg(vreg0));       // 使用 vreg0
         mi2->add_operand(MOperand::create_reg(Reg::A0));
-        bb->add_instr(std::move(mi2));
+        bb->append(std::move(mi2));
 
         auto mi3 = std::make_unique<MachineInst>(RISCV::SW);
         mi3->add_operand(MOperand::create_reg(vreg0)); // 最后使用 vreg0
         mi3->add_operand(MOperand::create_mem_ri(Reg::SP, 0));
-        bb->add_instr(std::move(mi3));
+        bb->append(std::move(mi3));
 
         build_cfg_from_instructions(*this);
         return {vreg0, vreg1};
@@ -297,27 +297,27 @@ public:
         mi1->add_operand(MOperand::create_reg(vreg0, true));
         mi1->add_operand(MOperand::create_reg(Reg::ZERO));
         mi1->add_operand(MOperand::create_imm(10));
-        bb->add_instr(std::move(mi1));
+        bb->append(std::move(mi1));
 
         // 1: addi vreg1, x0, 10
         auto mi2 = std::make_unique<MachineInst>(RISCV::ADDI);
         mi2->add_operand(MOperand::create_reg(vreg1, true));
         mi2->add_operand(MOperand::create_reg(Reg::ZERO));
         mi2->add_operand(MOperand::create_imm(20));
-        bb->add_instr(std::move(mi2));
+        bb->append(std::move(mi2));
 
         // 2: add vreg2, vreg0, vreg1
         auto mi3 = std::make_unique<MachineInst>(RISCV::ADD);
         mi3->add_operand(MOperand::create_reg(vreg2, true));
         mi3->add_operand(MOperand::create_reg(vreg0));
         mi3->add_operand(MOperand::create_reg(vreg1));
-        bb->add_instr(std::move(mi3));
+        bb->append(std::move(mi3));
 
         // 3: sw vreg2, 0(sp)
         auto mi4 = std::make_unique<MachineInst>(RISCV::SW);
         mi4->add_operand(MOperand::create_reg(vreg2));
         mi4->add_operand(MOperand::create_mem_ri(Reg::SP, 0));
-        bb->add_instr(std::move(mi4));
+        bb->append(std::move(mi4));
 
         build_cfg_from_instructions(*this);
         return {vreg0, vreg1, vreg2};
@@ -341,32 +341,32 @@ public:
         mi1->add_operand(MOperand::create_reg(vreg0, true));
         mi1->add_operand(MOperand::create_reg(Reg::ZERO));
         mi1->add_operand(MOperand::create_imm(10));
-        bb->add_instr(std::move(mi1));
+        bb->append(std::move(mi1));
 
         auto mi2 = std::make_unique<MachineInst>(RISCV::ADDI);
         mi2->add_operand(MOperand::create_reg(vreg1, true));
         mi2->add_operand(MOperand::create_reg(Reg::ZERO));
         mi2->add_operand(MOperand::create_imm(20));
-        bb->add_instr(std::move(mi2));
+        bb->append(std::move(mi2));
 
         // vreg0 和 vreg1 同时活跃
         auto mi3 = std::make_unique<MachineInst>(RISCV::ADD);
         mi3->add_operand(MOperand::create_reg(vreg2, true));
         mi3->add_operand(MOperand::create_reg(vreg0));
         mi3->add_operand(MOperand::create_reg(vreg1));
-        bb->add_instr(std::move(mi3));
+        bb->append(std::move(mi3));
 
         // vreg0 结束活跃
         auto mi4 = std::make_unique<MachineInst>(RISCV::SW);
         mi4->add_operand(MOperand::create_reg(vreg1));
         mi4->add_operand(MOperand::create_mem_ri(Reg::SP, 0));
-        bb->add_instr(std::move(mi4));
+        bb->append(std::move(mi4));
 
         // vreg1 和 vreg2 同时活跃
         auto mi5 = std::make_unique<MachineInst>(RISCV::SW);
         mi5->add_operand(MOperand::create_reg(vreg2));
         mi5->add_operand(MOperand::create_mem_ri(Reg::SP, 4));
-        bb->add_instr(std::move(mi5));
+        bb->append(std::move(mi5));
 
         build_cfg_from_instructions(*this);
         return {vreg0, vreg1, vreg2};
@@ -397,47 +397,47 @@ public:
         mi1->add_operand(MOperand::create_reg(vreg0, true));
         mi1->add_operand(MOperand::create_reg(Reg::ZERO));
         mi1->add_operand(MOperand::create_imm(10));
-        entry_bb->add_instr(std::move(mi1));
+        entry_bb->append(std::move(mi1));
 
         auto mi2 = std::make_unique<MachineInst>(RISCV::ADDI);
         mi2->add_operand(MOperand::create_reg(vreg1, true));
         mi2->add_operand(MOperand::create_reg(Reg::ZERO));
         mi2->add_operand(MOperand::create_imm(0));
-        entry_bb->add_instr(std::move(mi2));
+        entry_bb->append(std::move(mi2));
 
         auto branch1 = std::make_unique<MachineInst>(RISCV::JAL);
         branch1->add_operand(MOperand::create_reg(Reg::ZERO));
         branch1->add_operand(loop_bb_sym); // 跳转到 loop_bb
-        entry_bb->add_instr(std::move(branch1));
+        entry_bb->append(std::move(branch1));
 
         // 循环基本块
         auto mi3 = std::make_unique<MachineInst>(RISCV::ADD);
         mi3->add_operand(MOperand::create_reg(vreg1, true));
         mi3->add_operand(MOperand::create_reg(vreg1));
         mi3->add_operand(MOperand::create_reg(vreg0));
-        loop_bb->add_instr(std::move(mi3));
+        loop_bb->append(std::move(mi3));
 
         auto mi4 = std::make_unique<MachineInst>(RISCV::ADDI);
         mi4->add_operand(MOperand::create_reg(vreg0, true));
         mi4->add_operand(MOperand::create_reg(vreg0));
         mi4->add_operand(MOperand::create_imm(-1));
-        loop_bb->add_instr(std::move(mi4));
+        loop_bb->append(std::move(mi4));
 
         auto mi5 = std::make_unique<MachineInst>(RISCV::BNE);
         mi5->add_operand(MOperand::create_reg(vreg0));
         mi5->add_operand(MOperand::create_reg(Reg::ZERO));
         mi5->add_operand(loop_bb_sym); // 如果 vreg0 != 0，跳回 loop_bb
-        loop_bb->add_instr(std::move(mi5));
+        loop_bb->append(std::move(mi5));
 
         // 出口基本块
         auto mi6 = std::make_unique<MachineInst>(RISCV::ADDI);
         mi6->add_operand(MOperand::create_reg(vreg2, true));
         mi6->add_operand(MOperand::create_reg(vreg1));
         mi6->add_operand(MOperand::create_imm(1));
-        exit_bb->add_instr(std::move(mi6));
+        exit_bb->append(std::move(mi6));
 
         auto mi7 = std::make_unique<MachineInst>(RISCV::RET);
-        exit_bb->add_instr(std::move(mi7));
+        exit_bb->append(std::move(mi7));
 
         build_cfg_from_instructions(*this);
         return {vreg0, vreg1, vreg2};
@@ -489,21 +489,21 @@ public:
         mi0->add_operand(MOperand::create_reg(vreg0, true));
         mi0->add_operand(MOperand::create_reg(Reg::ZERO));
         mi0->add_operand(MOperand::create_imm(10));
-        bb0->add_instr(std::move(mi0));
+        bb0->append(std::move(mi0));
 
         // 1: ADDI vreg1, zero, 20
         auto mi1 = std::make_unique<MachineInst>(RISCV::ADDI);
         mi1->add_operand(MOperand::create_reg(vreg1, true));
         mi1->add_operand(MOperand::create_reg(Reg::ZERO));
         mi1->add_operand(MOperand::create_imm(20));
-        bb0->add_instr(std::move(mi1));
+        bb0->append(std::move(mi1));
 
         // 2: BEQ ra, zero, bb2 （条件分支，ra 作为普通寄存器使用）
         auto mi2 = std::make_unique<MachineInst>(RISCV::BEQ);
         mi2->add_operand(MOperand::create_reg(Reg::RA));   // rs1
         mi2->add_operand(MOperand::create_reg(Reg::ZERO)); // rs2
         mi2->add_operand(bb2_sym);                         // 使用符号目标
-        bb0->add_instr(std::move(mi2));
+        bb0->append(std::move(mi2));
 
         /******************** BB1 ​********************/
         // 3: ADD vreg2, vreg0, ra （使用物理寄存器 ra）
@@ -511,20 +511,20 @@ public:
         mi3->add_operand(MOperand::create_reg(vreg2, true));
         mi3->add_operand(MOperand::create_reg(vreg0));
         mi3->add_operand(MOperand::create_reg(Reg::RA));
-        bb1->add_instr(std::move(mi3));
+        bb1->append(std::move(mi3));
 
         // 4: ADDI vreg4, vreg2, 0 （模拟 mv 指令）
         auto mi4 = std::make_unique<MachineInst>(RISCV::ADDI);
         mi4->add_operand(MOperand::create_reg(vreg4, true));
         mi4->add_operand(MOperand::create_reg(vreg2));
         mi4->add_operand(MOperand::create_imm(0));
-        bb1->add_instr(std::move(mi4));
+        bb1->append(std::move(mi4));
 
         // 5: JAL bb3 （直接跳转）
         auto mi5 = std::make_unique<MachineInst>(RISCV::JAL);
         mi5->add_operand(MOperand::create_reg(Reg::ZERO));
         mi5->add_operand(bb3_sym);
-        bb1->add_instr(std::move(mi5));
+        bb1->append(std::move(mi5));
 
         /******************** BB2 ​********************/
         // 6: SUB vreg3, vreg1, ra
@@ -532,27 +532,27 @@ public:
         mi6->add_operand(MOperand::create_reg(vreg3, true));
         mi6->add_operand(MOperand::create_reg(vreg1));
         mi6->add_operand(MOperand::create_reg(Reg::RA));
-        bb2->add_instr(std::move(mi6));
+        bb2->append(std::move(mi6));
 
         // 7: ADD vreg_temp, vreg3, zero
         auto mi7 = std::make_unique<MachineInst>(RISCV::ADD);
         mi7->add_operand(MOperand::create_reg(vreg_temp, true));
         mi7->add_operand(MOperand::create_reg(vreg3));
         mi7->add_operand(MOperand::create_reg(Reg::ZERO));
-        bb2->add_instr(std::move(mi7));
+        bb2->append(std::move(mi7));
 
         // 8: ADDI vreg4, vreg_temp, 0
         auto mi8 = std::make_unique<MachineInst>(RISCV::ADDI);
         mi8->add_operand(MOperand::create_reg(vreg4, true));
         mi8->add_operand(MOperand::create_reg(vreg_temp));
         mi8->add_operand(MOperand::create_imm(0));
-        bb2->add_instr(std::move(mi8));
+        bb2->append(std::move(mi8));
 
         // 9: JAL bb3
         auto mi9 = std::make_unique<MachineInst>(RISCV::JAL);
         mi9->add_operand(MOperand::create_reg(Reg::ZERO));
         mi9->add_operand(bb3_sym);
-        bb2->add_instr(std::move(mi9));
+        bb2->append(std::move(mi9));
 
         /******************** BB3 ​********************/
         // 10: ADDI vreg0, zero, 30 （重新定义）
@@ -560,13 +560,13 @@ public:
         mi10->add_operand(MOperand::create_reg(vreg0, true));
         mi10->add_operand(MOperand::create_reg(Reg::ZERO));
         mi10->add_operand(MOperand::create_imm(30));
-        bb3->add_instr(std::move(mi10));
+        bb3->append(std::move(mi10));
 
         // 11: SW vreg4, 0(vreg0)
         auto mi11 = std::make_unique<MachineInst>(RISCV::SW);
         mi11->add_operand(MOperand::create_reg(vreg4));
         mi11->add_operand(MOperand::create_mem_ri(vreg0, 0));
-        bb3->add_instr(std::move(mi11));
+        bb3->append(std::move(mi11));
 
         build_cfg_from_instructions(*this);
 
