@@ -180,10 +180,14 @@ private:
     unsigned opcode_;
     std::vector<MOperand> ops_;
     FlagSet flags_;
+    MachineBasicBlock *parent_bb_ = nullptr;
+
+    friend class MachineBasicBlock;
 
 public:
     MachineInst(unsigned opcode, const std::vector<MOperand> &operands = {});
 
+    size_t position() const;
     // Register allocation support
     void replace_reg(unsigned old_reg, unsigned new_reg);
     void remap_registers(const std::map<unsigned, unsigned> &vreg_map);
@@ -194,23 +198,26 @@ public:
     void clear_all_flags() { flags_.reset(); }
 
     // Operand management
+    MOperand &operand(unsigned index) { return ops_.at(index); }
     void add_operand(const MOperand &operand);
     void insert_operand(unsigned index, const MOperand &operand);
     void remove_operand(unsigned index);
     bool is_operand_def(unsigned index) const noexcept;
 
-    // Accessors
-    unsigned opcode() const { return opcode_; }
-    const std::vector<MOperand> &operands() const { return ops_; }
-
-    // Analysis methods
-    std::set<unsigned> defs() const;
-    std::set<unsigned> uses() const;
-
     // Verification and string conversion
     bool verify(VerificationLevel level, const TargetInstInfo *target_info = nullptr,
                 std::string *err_msg = nullptr) const;
     std::string to_string(const TargetInstInfo *target_info = nullptr) const;
+
+public:
+    // Accessors
+    unsigned opcode() const { return opcode_; }
+    const std::vector<MOperand> &operands() const { return ops_; }
+    auto parent() const { return parent_bb_; }
+
+    // Analysis methods
+    std::set<unsigned> defs() const;
+    std::set<unsigned> uses() const;
 };
 
 //===----------------------------------------------------------------------===//
@@ -242,8 +249,8 @@ public:
     iterator end() { return insts_.end(); }
     iterator insert(iterator pos, std::unique_ptr<MachineInst> inst);
     void erase(iterator pos);
-    void add_instr(std::unique_ptr<MachineInst> mi);
-    unsigned get_instr_position(iterator it) const;
+    void append(std::unique_ptr<MachineInst> mi);
+    iterator locate(MachineInst *mi);
 
     // CFG management
     const std::vector<MachineBasicBlock *> &predecessors() const { return predecessors_; }
@@ -335,9 +342,9 @@ private:
     mutable std::vector<int> layout_order_;     // Layout order cache
 
     // Global instruction position map: instruction pointer -> global position
-    mutable std::unordered_map<const MachineInst *, unsigned>
+    mutable std::unordered_map<const MachineInst *, size_t>
         global_instr_positions_;
-    mutable unsigned next_global_pos_ = 0;
+    mutable size_t next_global_pos_ = 0;
     mutable bool global_positions_dirty_ = true;
 
     // Register allocation
@@ -369,7 +376,7 @@ public:
 
     // Basic block management
     MachineBasicBlock *create_block(std::string label = "");
-    const std::vector<std::unique_ptr<MachineBasicBlock>> &get_basic_blocks() const;
+    const std::vector<std::unique_ptr<MachineBasicBlock>> &basicblocks() const;
 
     // Virtual register management
     unsigned create_vreg(unsigned register_class_id, unsigned size = 4,
@@ -475,6 +482,7 @@ struct RegisterDesc
 /// Target register class - represents a set of registers
 struct RegisterClass
 {
+    unsigned id;
     std::string name;
     std::vector<unsigned> regs; // List of registers
     unsigned copy_cost;         // Register-to-register copy cost
@@ -561,7 +569,7 @@ class TargetInstInfo
 public:
     virtual ~TargetInstInfo() = default;
     // Core interfaces
-    virtual const char *get_opcode_name(unsigned opcode) const = 0;
+    virtual const char *opcode_name(unsigned opcode) const = 0;
     virtual unsigned get_inst_size(const MachineInst &mi) const = 0;
 
     // Instruction verification

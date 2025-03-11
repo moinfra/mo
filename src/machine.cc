@@ -335,6 +335,11 @@ std::string MOperand::to_string() const
 //===----------------------------------------------------------------------===//
 // MachineInst Implementation
 //===----------------------------------------------------------------------===//
+size_t MachineInst::position() const {
+    MO_ASSERT(parent(), "Instruction has no parent function");
+    auto mf = parent()->parent();
+    return mf->get_global_instr_pos(this);
+}
 
 std::string MachineInst::to_string(const TargetInstInfo *target_info) const
 {
@@ -345,7 +350,7 @@ std::string MachineInst::to_string(const TargetInstInfo *target_info) const
     if (target_info)
     {
         // If target info is available, query opcode name
-        oss << target_info->get_opcode_name(opcode_);
+        oss << target_info->opcode_name(opcode_);
     }
     else
     {
@@ -649,6 +654,7 @@ MachineBasicBlock::iterator MachineBasicBlock::insert(
 {
     mf_.mark_global_positions_dirty();
     mf_.live_range_analyzer()->mark_dirty();
+    inst->parent_bb_ = this;
     return insts_.insert(pos, std::move(inst));
 }
 
@@ -659,11 +665,18 @@ void MachineBasicBlock::erase(iterator pos)
     insts_.erase(pos);
 }
 
-void MachineBasicBlock::add_instr(std::unique_ptr<MachineInst> mi)
+void MachineBasicBlock::append(std::unique_ptr<MachineInst> mi)
 {
     mf_.mark_global_positions_dirty();
     mf_.live_range_analyzer()->mark_dirty();
     insts_.push_back(std::move(mi));
+}
+
+MachineBasicBlock::iterator MachineBasicBlock::locate(MachineInst *mi) 
+{
+    auto it = std::find_if(insts_.begin(), insts_.end(), [mi](const std::unique_ptr<MachineInst> &ptr)
+                           { return ptr.get() == mi; });
+    return it;
 }
 
 void MachineBasicBlock::add_successor(MachineBasicBlock *successor)
@@ -1177,7 +1190,7 @@ void MachineModule::set_target_info(const TargetRegisterInfo *tri,
     tii_ = tii;
 }
 
-const std::vector<std::unique_ptr<MachineBasicBlock>> &MachineFunction::get_basic_blocks() const
+const std::vector<std::unique_ptr<MachineBasicBlock>> &MachineFunction::basicblocks() const
 {
     return blocks_;
 }
