@@ -1,7 +1,7 @@
 // type_checker.cc
 #include "type_checker.h"
 #include "lexer.h"
-#include "utils.h"
+#include "mo_debug.h"
 
 #include <cassert>
 #include <algorithm>

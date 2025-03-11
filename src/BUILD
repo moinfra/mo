@@ -1,7 +1,7 @@
 cc_library(
     name = "utils",
-    srcs = ["utils.cc"],
-    hdrs = ["utils.h"],
+    srcs = ["mo_debug.cc"],
+    hdrs = ["mo_debug.h"],
     visibility = ["//visibility:public"],
 )
 
