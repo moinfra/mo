@@ -15,6 +15,9 @@
 using AliasCheckFn = std::function<bool(unsigned reg1, unsigned reg2)>;
 class MachineFunction;
 class MachineBasicBlock;
+class MachineInst;
+
+class LiveRange;
 
 //===----------------------------------------------------------------------===//
 // Live Range Representation
@@ -26,13 +29,15 @@ struct LiveInterval
 private:
     unsigned start_; // Inclusive
     unsigned end_;   // Exclusive
+    LiveRange *parent_;
 
 public:
-    LiveInterval(unsigned start, unsigned end);
+    LiveInterval(unsigned start, unsigned end, LiveRange *parent = nullptr);
 
     // Accessors
     unsigned start() const;
     unsigned end() const;
+    LiveRange *parent() const { return parent_; }
 
     // Interval overlap check (including adjacent intervals)
     bool overlaps(const LiveInterval &other) const;
@@ -43,7 +48,8 @@ public:
     // Comparison for sorting
     bool operator<(const LiveInterval &rhs) const;
 
-    std::string to_string() const {
+    std::string to_string() const
+    {
         std::ostringstream oss;
         oss << "LiveInterval [" << start_ << ", " << end_ << ")";
         return oss.str();
@@ -60,7 +66,10 @@ private:
     bool is_physical_ = false; // Whether it is bound to a physical register
     bool is_spilled_ = false;  // Whether it has been spilled to the stack
     int spill_slot_ = -1;      // Stack slot index
+    mutable std::unordered_set<MachineInst *> def_insts_;
+    mutable std::unordered_set<MachineInst *> use_insts_;
 
+private:
     // Internal function to merge overlapping intervals
     void merge_intervals();
 
@@ -71,6 +80,10 @@ public:
 
     // Add an interval and automatically merge overlaps
     void add_interval(unsigned start, unsigned end);
+    void add_def_inst(MachineInst *inst) const { def_insts_.insert(inst); }
+    void add_use_inst(MachineInst *inst) const { use_insts_.insert(inst); }
+    std::unordered_set<MachineInst *> &def_insts() const { return def_insts_; }
+    std::unordered_set<MachineInst *> &use_insts() const { return use_insts_; }
 
     // Check if it is live at the specified position
     bool live_at(unsigned pos) const;
@@ -91,6 +104,11 @@ public:
     const auto &intervals() const { return intervals_; }
 };
 
+const AliasCheckFn none_alias = [](unsigned reg1, unsigned reg2)
+{
+    return false;
+};
+
 class LiveRangeAnalyzer
 {
 private:
@@ -109,28 +127,31 @@ private:
 
     mutable std::unordered_map<MachineBasicBlock *, BlockLiveness> block_info;
 
+private:
     LiveRange *live_range_of(unsigned reg) const;
     void compute_data_flow() const;
     unsigned find_first_def_pos(MachineBasicBlock *bb, unsigned reg) const;
     unsigned find_last_def_pos(MachineBasicBlock *bb, unsigned reg) const;
     void compute_local_use_def(MachineBasicBlock *bb, std::unordered_set<unsigned> &use, std::unordered_set<unsigned> &def) const;
 
-
 public:
-    void set_compute_metric_counter(size_t &counter) const { compute_metric_counter_ = &counter; }
-    void dump_cfg_graphviz(std::ostream &out) const;
-public:
-    explicit LiveRangeAnalyzer(
-        const MachineFunction &mf,
-        AliasCheckFn is_alias = [](unsigned, unsigned)
-        { return false; }) : mf_(mf), is_alias_(std::move(is_alias)) {}
+    explicit LiveRangeAnalyzer(const MachineFunction &mf, AliasCheckFn is_alias = none_alias)
+        : mf_(mf), is_alias_(std::move(is_alias)) {}
 
     bool has_conflict(unsigned reg1, unsigned reg2) const;
 
     void compute() const;
 
     LiveRange *get_live_range(unsigned reg) const;
+    LiveRange *get_physical_live_range(unsigned phys_reg) const;
+
     std::map<unsigned, std::set<unsigned>> build_interference_graph() const;
 
     void mark_dirty() { live_ranges_dirty_ = true; }
+
+    std::unordered_map<unsigned, std::unique_ptr<LiveRange>> &get_all_live_ranges() const { return reg_live_ranges_; }
+
+public:
+    void set_compute_metric_counter(size_t &counter) const { compute_metric_counter_ = &counter; }
+    void dump_cfg_graphviz(std::ostream &out) const;
 };

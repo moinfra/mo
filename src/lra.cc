@@ -18,11 +18,15 @@
 // Live Interval Implementation
 //===----------------------------------------------------------------------===//
 
-LiveInterval::LiveInterval(unsigned start, unsigned end)
-    : start_(start), end_(end)
+LiveInterval::LiveInterval(unsigned start, unsigned end, LiveRange *parent)
+    : start_(start), end_(end), parent_(parent)
 {
     // assert(start < end && "Invalid interval range");
     MO_ASSERT(start < end, "Invalid interval range [%u, %u)", start, end);
+    if (!parent)
+    {
+        MO_WARN("Live interval has no parent");
+    }
 }
 
 unsigned LiveInterval::start() const { return start_; }
@@ -156,7 +160,7 @@ void LiveRangeAnalyzer::compute() const
 
     reg_live_ranges_.clear();
 
-    for (auto &bb : mf_.get_basic_blocks())
+    for (auto &bb : mf_.basicblocks())
     {
         MO_DEBUG("处理基本块入口处的活跃性");
         // 如果在入口活跃，那么从这个点到最后一次（本定义）使用都活跃
@@ -177,6 +181,7 @@ void LiveRangeAnalyzer::compute() const
             {
                 LiveRange *lr = live_range_of(reg);
                 lr->add_interval(pos, pos + 1);
+                lr->add_def_inst(inst.get());
             }
 
             MO_DEBUG("处理使用");
@@ -189,12 +194,13 @@ void LiveRangeAnalyzer::compute() const
                 LiveRange *lr = live_range_of(reg);
                 auto in_block_last_def = find_last_def_pos(bb.get(), reg);
                 lr->add_interval(in_block_last_def, std::max(pos, in_block_last_def) + 1);
+                lr->add_use_inst(inst.get());
             }
         }
     }
 
     MO_DEBUG("处理跨块活跃区间");
-    for (auto &bb : mf_.get_basic_blocks())
+    for (auto &bb : mf_.basicblocks())
     {
         auto &info = block_info[bb.get()];
         // for (auto reg : info.in)
@@ -281,14 +287,14 @@ void LiveRangeAnalyzer::compute_data_flow() const
     block_info.clear();
 
     // 初始化 USE/DEF 集合
-    for (auto &bb : mf_.get_basic_blocks())
+    for (auto &bb : mf_.basicblocks())
     {
         auto &info = block_info[bb.get()];
         compute_local_use_def(bb.get(), info.use, info.def);
     }
 
     // 获取逆后序序列（反向遍历）
-    std::vector<MachineBasicBlock *> rpo_order = compute_reverse_post_order(mf_.get_basic_blocks().front().get());
+    std::vector<MachineBasicBlock *> rpo_order = compute_reverse_post_order(mf_.basicblocks().front().get());
     for (size_t i = 0; i < rpo_order.size(); i++)
     {
         MO_DEBUG("Block %zu: %s", i, rpo_order[i]->label().c_str());
@@ -370,7 +376,8 @@ bool LiveRangeAnalyzer::has_conflict(unsigned reg1, unsigned reg2) const
         return false;
     }
 
-    if (reg1 == 0 || reg2 == 0) // 0 寄存器不参与冲突
+    // FIXME: 对于 RISCV 架构，0 寄存器不参与冲突，但是其它架构得换个方式处理，比如 ia64 的 0 号是 rax，并非零值寄存器
+    if (reg1 == 0 || reg2 == 0)
     {
         return false;
     }
@@ -462,7 +469,9 @@ void LiveRangeAnalyzer::compute_local_use_def(MachineBasicBlock *bb, std::unorde
 LiveRange *LiveRangeAnalyzer::get_live_range(unsigned reg) const
 {
     if (live_ranges_dirty_)
+    {
         compute();
+    }
 
     auto it = reg_live_ranges_.find(reg);
     if (it == reg_live_ranges_.end())
@@ -470,6 +479,16 @@ LiveRange *LiveRangeAnalyzer::get_live_range(unsigned reg) const
         return nullptr;
     }
     return it->second.get();
+}
+
+LiveRange *LiveRangeAnalyzer::get_physical_live_range(unsigned reg) const
+{
+    auto range = get_live_range(reg);
+    if (range && range->is_physical())
+    {
+        return range;
+    }
+    return nullptr;
 }
 
 std::map<unsigned, std::set<unsigned>> LiveRangeAnalyzer::build_interference_graph() const
@@ -509,7 +528,7 @@ void LiveRangeAnalyzer::dump_cfg_graphviz(std::ostream &out) const
     out << "  node [shape=rectangle];\n";
 
     // 输出基本块节点
-    for (const auto &bb : mf_.get_basic_blocks())
+    for (const auto &bb : mf_.basicblocks())
     {
         out << "  " << bb->label() << " [label=\""
             << bb->label() << " [" << bb->global_start() << ", " << bb->global_end_inclusive() << "]\\n";
@@ -555,7 +574,7 @@ void LiveRangeAnalyzer::dump_cfg_graphviz(std::ostream &out) const
     }
 
     // 输出边
-    for (const auto &bb : mf_.get_basic_blocks())
+    for (const auto &bb : mf_.basicblocks())
     {
         for (auto succ : bb->successors())
         {
