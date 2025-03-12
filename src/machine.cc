@@ -128,8 +128,16 @@ MOperand MOperand::create_global(GlobalVariable *global_variable)
 MOperand MOperand::create_external_sym(const char *symbol)
 {
     MOperand op;
-    op.storage_ = symbol;
+    op.storage_ = ExternalSymbol{symbol};
     op.type_ = MOperandType::ExternalSymbol;
+    return op;
+}
+
+MOperand MOperand::create_label(const char *symbol)
+{
+    MOperand op;
+    op.storage_ = Label{symbol};
+    op.type_ = MOperandType::Label;
     return op;
 }
 
@@ -181,7 +189,13 @@ GlobalVariable *MOperand::global() const
 const char *MOperand::external_sym() const
 {
     assert(is_external_sym());
-    return std::get<const char *>(storage_);
+    return std::get<ExternalSymbol>(storage_).value.c_str();
+}
+
+const char *MOperand::label() const
+{
+    assert(is_label());
+    return std::get<Label>(storage_).value.c_str();
 }
 
 MOperand::MEMri MOperand::mem_ri() const
@@ -247,8 +261,16 @@ bool MOperand::is_global() const noexcept
 }
 bool MOperand::is_external_sym() const noexcept
 {
-    bool expected = std::holds_alternative<const char *>(storage_);
+    bool expected = std::holds_alternative<ExternalSymbol>(storage_);
     bool actual = type_ == MOperandType::ExternalSymbol;
+    assert(expected == actual);
+    return actual;
+}
+
+bool MOperand::is_label() const noexcept
+{
+    bool expected = std::holds_alternative<Label>(storage_);
+    bool actual = type_ == MOperandType::Label;
     assert(expected == actual);
     return actual;
 }
@@ -328,6 +350,10 @@ std::string MOperand::to_string() const
     else if (is_external_sym())
     {
         oss << "sym(" << external_sym() << ")";
+    }
+    else if (is_label())
+    {
+        oss << "label(" << label() << ")";
     }
     return oss.str();
 }

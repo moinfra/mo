@@ -63,6 +63,16 @@ public:
         int offset;
     };
 
+    struct ExternalSymbol
+    {
+        std::string value;
+    };
+
+    struct Label
+    {
+        std::string value;
+    };
+
     enum class MOperandType : unsigned
     {
         Invalid,
@@ -72,6 +82,7 @@ public:
         FrameIndex,
         GlobalAddress,
         ExternalSymbol,
+        Label,
         MEMri,
         MEMrr,
         MEMrix
@@ -85,7 +96,8 @@ private:
         double,           // FPImmediate (floating-point immediate)
         int,              // FrameIndex (stack frame index)
         GlobalVariable *, // Global (global variable)
-        const char *,     // ExternalSym (external symbol)
+        ExternalSymbol,     // ExternalSym (external symbol)
+        Label,             // Label (label to be resolved to a constant value)
         MEMri,            // MEMri memory operand
         MEMrr,            // MEMrr memory operand
         MEMrix            // MEMrix memory operand
@@ -109,6 +121,7 @@ public:
     bool is_frame_index() const noexcept;
     bool is_global() const noexcept;
     bool is_external_sym() const noexcept;
+    bool is_label() const noexcept;
     bool is_mem_ri() const noexcept;
     bool is_mem_rr() const noexcept;
     bool is_mem_rix() const noexcept;
@@ -121,6 +134,7 @@ public:
     static MOperand create_frame_index(int index);
     static MOperand create_global(GlobalVariable *global_variable);
     static MOperand create_external_sym(const char *symbol);
+    static MOperand create_label(const char *symbol);
     static MOperand create_mem_ri(unsigned base_reg, int offset);
     static MOperand create_mem_rr(unsigned base_reg, unsigned index_reg);
     static MOperand create_mem_rix(unsigned base_reg, unsigned index_reg, int scale,
@@ -133,6 +147,7 @@ public:
     int frame_index() const;
     GlobalVariable *global() const;
     const char *external_sym() const;
+    const char *label() const;
     MEMri mem_ri() const;
     MEMrr mem_rr() const;
     MEMrix get_mem_rix() const;
@@ -380,7 +395,7 @@ public:
 
     MachineModule *parent() const { return mm_; }
     LiveRangeAnalyzer *live_range_analyzer() const { return lra_.get(); }
-    MachineFrame* frame() const { return frame_.get(); }
+    MachineFrame *frame() const { return frame_.get(); }
     std::string to_string() const;
 };
 

@@ -380,7 +380,7 @@ public:
         auto *loop_bb = create_block("loop");
         auto *exit_bb = create_block("exit");
 
-        auto loop_bb_sym = MOperand::create_external_sym("loop");
+        auto loop_bb_sym = MOperand::create_label("loop");
 
         // 创建虚拟寄存器
         unsigned vreg0 = create_vreg(RegClass::GR32, 4, false);
@@ -471,9 +471,9 @@ public:
         auto *bb3 = create_block("bb3");
 
         // 创建外部符号标签（模拟基本块地址）
-        auto bb1_sym = MOperand::create_external_sym("bb1");
-        auto bb2_sym = MOperand::create_external_sym("bb2");
-        auto bb3_sym = MOperand::create_external_sym("bb3");
+        auto bb1_sym = MOperand::create_label("bb1");
+        auto bb2_sym = MOperand::create_label("bb2");
+        auto bb3_sym = MOperand::create_label("bb3");
 
         // 创建虚拟寄存器（GR32）
         unsigned vreg0 = create_vreg(RegClass::GR32, 4, false);
