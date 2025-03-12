@@ -33,7 +33,7 @@ namespace ASIMOV
         R5,
         R6, // SP 栈指针寄存器
         R7, // BP 基址指针寄存器（不强制要求）
-        // 浮点寄存器 (F0-F7)
+            // 浮点寄存器 (F0-F7)
         F0 = 8,
         F1,
         F2,
@@ -61,21 +61,23 @@ namespace ASIMOV
         JMP,         // jmp target (J-type)
         JZ,          // jz rs1, target (B-type)
         JNZ,         // jnz rs1, target (B-type)
-        MOV,         // mov rd, imm (I-type)
+        MOVW,         // mov rd, imm (I-type)
         MOVD,        // movd rd; (next dword) imm (I-type)
         NOP,         // nop (无操作数)
         HALT = 0xFF, // halt (无操作数)
-        RET,         // ret (无操作数)
-        CALL         // call target (J-type)
+        // 伪指令
+        RET,   // ret (无操作数)
+        CALL,  // call target (J-type)
+        LABEL, // label (无操作数，无大小）
     };
     // 指令类型分类
     enum OpType
     {
-        OP_TYPE_R, // 寄存器操作（ADD等）
-        OP_TYPE_I, // 立即数操作（MOV）
-        OP_TYPE_J, // 直接跳转（JMP）
-        OP_TYPE_B, // 条件跳转（JZ/JNZ）
-        OP_TYPE_M  // 内存访问（LOAD/STORE）
+        OP_TYPE_R,    // 寄存器操作（ADD等）
+        OP_TYPE_I,    // 立即数操作（MOV）
+        OP_TYPE_J,    // 直接跳转（JMP）
+        OP_TYPE_B,    // 条件跳转（JZ/JNZ）
+        OP_TYPE_M,    // 内存访问（LOAD/STORE）
     };
 
     // 寄存器信息类

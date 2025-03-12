@@ -19,7 +19,7 @@ namespace ASIMOV
         case FMUL:
         case FDIV:
             return (opcode << 24) | (rd << 16) | (rs1 << 8) | rs2;
-        case MOV:
+        case MOVW:
             return (opcode << 24) | (rd << 16) | (imm & 0xFFFF);
         case MOVD:
             return (opcode << 24) | (rd << 16);
@@ -93,8 +93,8 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, AddInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R1, 0, 0, 10),
-            asimv_inst(MOV, R2, 0, 0, 20),
+            asimv_inst(MOVW, R1, 0, 0, 10),
+            asimv_inst(MOVW, R2, 0, 0, 20),
             asimv_inst(ADD, R0, R1, R2),
             asimv_inst(HALT)};
         load_and_run(program);
@@ -105,8 +105,8 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, SubInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R1, 0, 0, 20),
-            asimv_inst(MOV, R2, 0, 0, 10),
+            asimv_inst(MOVW, R1, 0, 0, 20),
+            asimv_inst(MOVW, R2, 0, 0, 10),
             asimv_inst(SUB, R0, R1, R2),
             asimv_inst(HALT)};
         load_and_run(program);
@@ -117,8 +117,8 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, MulInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R1, 0, 0, 5),
-            asimv_inst(MOV, R2, 0, 0, 6),
+            asimv_inst(MOVW, R1, 0, 0, 5),
+            asimv_inst(MOVW, R2, 0, 0, 6),
             asimv_inst(MUL, R0, R1, R2),
             asimv_inst(HALT)};
         load_and_run(program);
@@ -129,8 +129,8 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, DivInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R1, 0, 0, 30),
-            asimv_inst(MOV, R2, 0, 0, 5),
+            asimv_inst(MOVW, R1, 0, 0, 30),
+            asimv_inst(MOVW, R2, 0, 0, 5),
             asimv_inst(DIV, R0, R1, R2),
             asimv_inst(HALT)};
         load_and_run(program);
@@ -203,11 +203,11 @@ namespace ASIMOV
         EXPECT_TRUE(float_equal(bits_to_float(get_register_value(F0)), 2.5f, 1e-6f));
     }
 
-    // 测试 MOV 指令
+    // 测试 MOVW 指令
     TEST_F(ASIMOVVMTest, MovInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R0, 0, 0, 12345),
+            asimv_inst(MOVW, R0, 0, 0, 12345),
             asimv_inst(HALT)};
         load_and_run(program);
         EXPECT_EQ(get_register_value(R0), 12345);
@@ -217,8 +217,8 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, LoadStoreInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R1, 0, 0, 100),  // R1 = 100 (address)
-            asimv_inst(MOV, R2, 0, 0, 42),   // R2 = 42 (value to store)
+            asimv_inst(MOVW, R1, 0, 0, 100),  // R1 = 100 (address)
+            asimv_inst(MOVW, R2, 0, 0, 42),   // R2 = 42 (value to store)
             asimv_inst(STORE, R2, R1, 0, 0), // [R1 + 0] = R2
             asimv_inst(LOAD, R0, R1, 0, 0),  // R0 = [R1 + 0]
             asimv_inst(HALT)};
@@ -231,9 +231,9 @@ namespace ASIMOV
     {
         std::vector<uint32_t> program = {
             asimv_inst(JMP, 0, 0, 0, 12), // 0:  JMP to address 12
-            asimv_inst(MOV, R0, 0, 0, 1), // 4:  This should be skipped
+            asimv_inst(MOVW, R0, 0, 0, 1), // 4:  This should be skipped
             asimv_inst(HALT),             // 8:  This should be skipped
-            asimv_inst(MOV, R0, 0, 0, 2), // 12: Jump target
+            asimv_inst(MOVW, R0, 0, 0, 2), // 12: Jump target
             asimv_inst(HALT)};
         load_and_run(program);
         EXPECT_EQ(get_register_value(R0), 2);
@@ -243,11 +243,11 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, JzInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R1, 0, 0, 0), // 0:  R1 = 0
+            asimv_inst(MOVW, R1, 0, 0, 0), // 0:  R1 = 0
             asimv_inst(JZ, 0, R1, 0, 16), // 4:  JZ R1, to address 16
-            asimv_inst(MOV, R0, 0, 0, 1), // 8:  This should be skipped
+            asimv_inst(MOVW, R0, 0, 0, 1), // 8:  This should be skipped
             asimv_inst(HALT),             // 12: This should be skipped
-            asimv_inst(MOV, R0, 0, 0, 2), // 16: Jump target
+            asimv_inst(MOVW, R0, 0, 0, 2), // 16: Jump target
             asimv_inst(HALT)};
         load_and_run(program);
         EXPECT_EQ(get_register_value(R0), 2);
@@ -257,11 +257,11 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, JnzInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R1, 0, 0, 1),  // 0:  R1 = 1
+            asimv_inst(MOVW, R1, 0, 0, 1),  // 0:  R1 = 1
             asimv_inst(JNZ, 0, R1, 0, 16), // 4:  JNZ R1, to address 16
-            asimv_inst(MOV, R0, 0, 0, 1),  // 8:  This should be skipped
+            asimv_inst(MOVW, R0, 0, 0, 1),  // 8:  This should be skipped
             asimv_inst(HALT),              // 12: This should be skipped
-            asimv_inst(MOV, R0, 0, 0, 2),  // 16: Jump target
+            asimv_inst(MOVW, R0, 0, 0, 2),  // 16: Jump target
             asimv_inst(HALT)};
         load_and_run(program);
         EXPECT_EQ(get_register_value(R0), 2);
@@ -271,9 +271,9 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, HaltInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R0, 0, 0, 1), // R0 = 1
+            asimv_inst(MOVW, R0, 0, 0, 1), // R0 = 1
             asimv_inst(HALT),
-            asimv_inst(MOV, R0, 0, 0, 2) // This should be skipped
+            asimv_inst(MOVW, R0, 0, 0, 2) // This should be skipped
         };
         load_and_run(program);
         EXPECT_EQ(get_register_value(R0), 1);
@@ -283,7 +283,7 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, MemoryOutOfBounds)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R1, 0, 0, memory_size + 1), // R1 = memory_size_ + 1 (超出内存范围)
+            asimv_inst(MOVW, R1, 0, 0, memory_size + 1), // R1 = memory_size_ + 1 (超出内存范围)
             asimv_inst(STORE, R2, R1, 0, 0),            // [R1 + 0] = R2 (应该抛出异常)
             asimv_inst(HALT)};
         vm.load_program(program, 0);
@@ -294,8 +294,8 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, DivideByZero)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R1, 0, 0, 10),
-            asimv_inst(MOV, R2, 0, 0, 0),
+            asimv_inst(MOVW, R1, 0, 0, 10),
+            asimv_inst(MOVW, R2, 0, 0, 0),
             asimv_inst(DIV, R0, R1, R2), // R0 = R1 / R2 (应该输出错误信息)
             asimv_inst(HALT)};
         load_and_run(program);
@@ -306,9 +306,9 @@ namespace ASIMOV
     TEST_F(ASIMOVVMTest, NopInstruction)
     {
         std::vector<uint32_t> program = {
-            asimv_inst(MOV, R0, 0, 0, 1),
+            asimv_inst(MOVW, R0, 0, 0, 1),
             asimv_inst(NOP),
-            asimv_inst(MOV, R0, 0, 0, 2),
+            asimv_inst(MOVW, R0, 0, 0, 2),
             asimv_inst(HALT)};
         load_and_run(program);
         EXPECT_EQ(get_register_value(R0), 2);

@@ -279,7 +279,7 @@ namespace ASIMOV
             write_register(rd_reg, *reinterpret_cast<uint32_t *>(&result));
             break;
         }
-        case MOV:
+        case MOVW:
         {
             unsigned rd = (instruction >> 16) & 0xFF;
             Reg rd_reg = static_cast<Reg>(rd);

@@ -66,7 +66,7 @@ namespace ASIMOV
         case FMUL:
         case FDIV:
             return OP_TYPE_R;
-        case MOV:
+        case MOVW:
         case MOVD:
             return OP_TYPE_I;
         case JMP:
@@ -169,8 +169,8 @@ namespace ASIMOV
             return "JZ";
         case JNZ:
             return "JNZ";
-        case MOV:
-            return "MOV";
+        case MOVW:
+            return "MOVW";
         case NOP:
             return "NOP";
         case HALT:
@@ -220,10 +220,10 @@ namespace ASIMOV
                 return false;
             }
             break;
-        case MOV:
+        case MOVW:
             if (num_operands != 2)
             {
-                error_msg = "MOV instruction requires 2 operands";
+                error_msg = "MOVW instruction requires 2 operands";
                 return false;
             }
             break;
@@ -290,7 +290,7 @@ namespace ASIMOV
         case FMUL:
         case FDIV:
             return encode_R(opcode, MI);
-        case MOV:
+        case MOVW:
             return encode_I(opcode, MI);
         case LOAD:
         case STORE:
@@ -513,7 +513,7 @@ namespace ASIMOV
         MOperand src = MOperand::create_reg(src_reg);
 
         // 选择适当操作码
-        unsigned op = (dest_reg >= F0) ? FADD : MOV;
+        unsigned op = (dest_reg >= F0) ? FADD : MOVW;
 
         auto mi = std::make_unique<MachineInst>(op);
         mi->add_operand(dest);
@@ -534,7 +534,7 @@ namespace ASIMOV
         MachineInst &mi = **mii;
 
         // MOV指令立即数超限处理(MOVD为加载32位整数)
-        if (mi.opcode() == MOV && mi.operands().size() >= 2 &&
+        if (mi.opcode() == MOVW && mi.operands().size() >= 2 &&
             mi.operands()[1].is_imm())
         {
             int64_t imm = mi.operands()[1].imm();
