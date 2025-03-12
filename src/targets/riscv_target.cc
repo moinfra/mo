@@ -1199,6 +1199,7 @@ void RISCVTargetInstInfo::expand_j(MachineBasicBlock &MBB, MachineBasicBlock::it
     mii++;
     MBB.erase(mii);
 }
+
 void RISCVTargetInstInfo::insert_load_from_stack(MachineBasicBlock &mbb,
                                                  MachineBasicBlock::iterator insert_point,
                                                  unsigned dest_reg, int frame_index,
@@ -1206,7 +1207,7 @@ void RISCVTargetInstInfo::insert_load_from_stack(MachineBasicBlock &mbb,
 {
     // 获取函数和帧索引信息
     MachineFunction *mf = mbb.parent();
-    const FrameObjectInfo *fobjinfo = mf->get_frame_object(frame_index);
+    const FrameObjectMetadata *fobjinfo = mf->frame()->get_frame_object(frame_index);
 
     // 选择适当的加载指令
     unsigned load_op = RISCV::LW; // 默认使用字加载
@@ -1238,7 +1239,7 @@ void RISCVTargetInstInfo::insert_load_from_stack(MachineBasicBlock &mbb,
     }
 
     // 使用帧指针或栈指针作为基址寄存器
-    unsigned base_reg = Reg::SP; // 默认使用栈指针
+    unsigned base_reg = Reg::S0; // 默认使用栈指针
 
     // 创建内存操作数和指令
     std::vector<MOperand> ops;
@@ -1258,7 +1259,7 @@ void RISCVTargetInstInfo::insert_store_to_stack(MachineBasicBlock &mbb,
 {
     // 获取函数和帧索引信息
     MachineFunction *mf = mbb.parent();
-    const FrameObjectInfo *fobjinfo = mf->get_frame_object(frame_index);
+    const FrameObjectMetadata *fobjinfo = mf->frame()->get_frame_object(frame_index);
 
     // 选择适当的存储指令
     unsigned store_op = RISCV::SW; // 默认使用字存储

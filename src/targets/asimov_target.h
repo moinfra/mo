@@ -31,8 +31,8 @@ namespace ASIMOV
         R3,
         R4,
         R5,
-        R6, // 栈指针寄存器
-        R7,
+        R6, // SP 栈指针寄存器
+        R7, // BP 基址指针寄存器（不强制要求）
         // 浮点寄存器 (F0-F7)
         F0 = 8,
         F1,
@@ -45,38 +45,29 @@ namespace ASIMOV
 
         TOTAL_REG
     };
-
     // 指令操作码定义
     enum Opcode : unsigned
     {
-        // 整数算术指令
-        ADD,
-        SUB,
-        MUL,
-        DIV,
-        // 浮点算术指令
-        FADD,
-        FSUB,
-        FMUL,
-        FDIV,
-        // 内存指令
-        LOAD,
-        STORE,
-        // 控制流指令
-        JMP,
-        JZ,
-        JNZ,
-        // 立即数指令
-        MOV,
-        MOVD,
-        // 其他指令
-        NOP,
-        HALT = 0xFF,
-        // 伪指令
-        RET,
-        CALL
+        ADD,         // add rd, rs1, rs2 (R-type)
+        SUB,         // sub rd, rs1, rs2 (R-type)
+        MUL,         // mul rd, rs1, rs2 (R-type)
+        DIV,         // div rd, rs1, rs2 (R-type)
+        FADD,        // fadd rd, rs1, rs2 (R-type)
+        FSUB,        // fsub rd, rs1, rs2 (R-type)
+        FMUL,        // fmul rd, rs1, rs2 (R-type)
+        FDIV,        // fdiv rd, rs1, rs2 (R-type)
+        LOAD,        // load rd, offset(rs1) (M-type)
+        STORE,       // store rs1, offset(rs2) (M-type)
+        JMP,         // jmp target (J-type)
+        JZ,          // jz rs1, target (B-type)
+        JNZ,         // jnz rs1, target (B-type)
+        MOV,         // mov rd, imm (I-type)
+        MOVD,        // movd rd; (next dword) imm (I-type)
+        NOP,         // nop (无操作数)
+        HALT = 0xFF, // halt (无操作数)
+        RET,         // ret (无操作数)
+        CALL         // call target (J-type)
     };
-
     // 指令类型分类
     enum OpType
     {
@@ -123,6 +114,21 @@ namespace ASIMOV
         // 操作数类型判断
         bool is_operand_def(unsigned op, unsigned index) const override;
         bool is_operand_use(unsigned op, unsigned index) const override;
+
+        unsigned ASIMOVTargetInstInfo::get_instruction_latency(unsigned opcode) const override;
+
+        void copy_phys_reg(MachineBasicBlock &mbb, MachineBasicBlock::iterator insert,
+                           unsigned dest_reg,
+                           unsigned src_reg) const override;
+        bool legalize_inst(MachineBasicBlock &mbb, MachineBasicBlock::iterator mii,
+                           MachineFunction &mf) const override;
+
+        void insert_load_from_stack(MachineBasicBlock &mbb, MachineBasicBlock::iterator insert_point,
+                                    unsigned dest_reg, int frame_index,
+                                    int64_t offset) const override;
+        void insert_store_to_stack(MachineBasicBlock &mbb, MachineBasicBlock::iterator insert_point,
+                                   unsigned src_reg, int frame_index,
+                                   int64_t offset) const override;
 
     private:
         // 编码辅助函数

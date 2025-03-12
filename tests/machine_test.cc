@@ -175,16 +175,16 @@ TEST(MachineFunctionTest, VirtualRegisterManagement)
 TEST(MachineFunctionTest, FrameObjectManagement)
 {
     MachineFunction mf(nullptr, nullptr);
-    FrameObjectInfo info;
+    FrameObjectMetadata info;
     info.size = 8;
     info.alignment = 4;
-    info.flags = FrameObjectInfo::IsFixedSize;
+    info.flags = FrameObjectMetadata::IsFixedSize;
 
     int idx = mf.create_frame_object(info);
     EXPECT_GE(idx, 0);
 
-    const FrameObjectInfo *retrieved = mf.get_frame_object(idx);
+    const FrameObjectMetadata *retrieved = mf.get_frame_object(idx);
     EXPECT_EQ(retrieved->size, 8);
     EXPECT_EQ(retrieved->alignment, 4);
-    EXPECT_EQ(retrieved->flags, FrameObjectInfo::IsFixedSize);
+    EXPECT_EQ(retrieved->flags, FrameObjectMetadata::IsFixedSize);
 }

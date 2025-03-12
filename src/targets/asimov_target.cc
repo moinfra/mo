@@ -351,7 +351,7 @@ namespace ASIMOV
         //     ++MI;
 
         //     // 6. 删除原始的 CALL 指令
-        //     mi.eraseFromParent();
+        //     mi.erase_from_parent();
         //     break;
         // }
         // case ASIMOV::RET:
@@ -380,7 +380,7 @@ namespace ASIMOV
         //     ++MI;
 
         //     // 4. 删除原始的 RET 指令
-        //     mi.eraseFromParent();
+        //     mi.erase_from_parent();
         //     break;
         // }
         // default:
@@ -479,4 +479,127 @@ namespace ASIMOV
 
         return (opcode << 24) | (rs1 << 16) | (target & 0xFFFF); // 假设目标地址为16位
     }
+
+    unsigned ASIMOVTargetInstInfo::get_instruction_latency(unsigned opcode) const
+    {
+        switch (static_cast<Opcode>(opcode))
+        {
+        case MUL:
+        case FMUL:
+            return 3; // 乘指令3周期延迟
+        case DIV:
+        case FDIV:
+            return 6; // 除指令6周期延迟
+        case LOAD:
+        case STORE:
+            return 2; // 内存操作2周期
+        default:
+            return 1; // 其他指令1周期
+        }
+    }
+
+    void ASIMOVTargetInstInfo::copy_phys_reg(
+        MachineBasicBlock &mbb,
+        MachineBasicBlock::iterator insert,
+        unsigned dest_reg,
+        unsigned src_reg) const
+    {
+        // 检查寄存器类别一致性
+        assert((dest_reg < F0 || src_reg < F0) ||
+               (dest_reg >= F0 && src_reg >= F0) &&
+                   "Cannot copy between different reg classes");
+
+        MOperand dest = MOperand::create_reg(dest_reg, true);
+        MOperand src = MOperand::create_reg(src_reg);
+
+        // 选择适当操作码
+        unsigned op = (dest_reg >= F0) ? FADD : MOV;
+
+        auto mi = std::make_unique<MachineInst>(op);
+        mi->add_operand(dest);
+
+        // 浮点拷贝使用 FADD Rd, Rs, F0（假设 F0=0）
+        if (op == FADD)
+            mi->add_operand(MOperand::create_reg(F0));
+
+        mi->add_operand(src);
+        mbb.insert(insert, std::move(mi));
+    }
+
+    bool ASIMOVTargetInstInfo::legalize_inst(
+        MachineBasicBlock &mbb,
+        MachineBasicBlock::iterator mii,
+        MachineFunction &mf) const
+    {
+        MachineInst &mi = **mii;
+
+        // MOV指令立即数超限处理(MOVD为加载32位整数)
+        if (mi.opcode() == MOV && mi.operands().size() >= 2 &&
+            mi.operands()[1].is_imm())
+        {
+            int64_t imm = mi.operands()[1].imm();
+            if (imm > 0xFFFF || imm < -0x8000)
+            {
+                // 替换为MOVD
+                auto movd = std::make_unique<MachineInst>(MOVD);
+                movd->add_operand(mi.operands()[0]);
+                movd->add_operand(MOperand::create_imm(imm));
+                mii = mbb.insert(mii, std::move(movd));
+                mi.erase_from_parent();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    void ASIMOVTargetInstInfo::insert_load_from_stack(
+        MachineBasicBlock &mbb,
+        MachineBasicBlock::iterator insert_point,
+        unsigned dest_reg, int frame_index,
+        int64_t offset) const
+    {
+        // 获取总偏移
+        MachineFunction &mf = *mbb.parent();
+        unsigned base_reg = Reg::R7; // 默认使用栈指针
+
+        int total_offset = mf.frame()->get_frame_index_offset(frame_index) + offset;
+
+        // 生成: LOAD dest, [R6 + offset]
+        auto mi = std::make_unique<MachineInst>(LOAD);
+        mi->add_operand(MOperand::create_reg(dest_reg, true));
+        mi->add_operand(MOperand::create_mem_ri(base_reg, total_offset));
+
+        mbb.insert(insert_point, std::move(mi));
+    }
+
+    void ASIMOVTargetInstInfo::insert_store_to_stack(
+        MachineBasicBlock &mbb,
+        MachineBasicBlock::iterator insert_point,
+        unsigned src_reg, int frame_index,
+        int64_t offset) const
+    {
+        auto mf = mbb.parent();
+        int total_offset = mf->frame()->get_frame_index_offset(frame_index) + offset;
+
+        // 生成: STORE src, [R6 + offset]
+        auto mi = std::make_unique<MachineInst>(STORE);
+        mi->add_operand(MOperand::create_reg(src_reg));
+        mi->add_operand(MOperand::create_mem_ri(R6, total_offset));
+
+        mbb.insert(insert_point, std::move(mi));
+    }
+
+    bool ASIMOVTargetInstInfo::is_legal_immediate(int64_t imm, unsigned size) const
+    {
+        switch (size)
+        {
+        case 16:
+            return imm >= -32768 && imm <= 65535; // 16位符号/无符号
+        case 32:
+            return true; // 32位全支持
+        default:
+            return false;
+        }
+    }
+
 } // namespace ASIMOV

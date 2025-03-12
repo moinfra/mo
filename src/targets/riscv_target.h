@@ -21,6 +21,7 @@ namespace RISCV
     };
 
     // RISC-V寄存器枚举定义
+    // https://riscv.org/wp-content/uploads/2024/12/riscv-calling.pdf
     enum Reg : unsigned
     {
         // 整型寄存器 (x0-x31)
@@ -32,7 +33,7 @@ namespace RISCV
         T0 = 5,   // x5: 临时寄存器/备用链接寄存器
         T1 = 6,   // x6: 临时寄存器
         T2 = 7,   // x7: 临时寄存器
-        S0 = 8,   // x8: 保存寄存器/帧指针
+        S0 = 8,   // x8: 保存寄存器/帧指针 S0/FP
         S1 = 9,   // x9: 保存寄存器
         A0 = 10,  // x10: 函数参数/返回值
         A1 = 11,  // x11: 函数参数/返回值
