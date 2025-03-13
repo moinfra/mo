@@ -13,6 +13,10 @@
 namespace ASIMOV
 {
 
+    const size_t SIZE_DWORD = 4;
+    const size_t SIZE_WORD = 2;
+    const size_t ALIGN = 4;
+
     // 寄存器类别定义
     enum RegClass : unsigned
     {
@@ -61,23 +65,28 @@ namespace ASIMOV
         JMP,         // jmp target (J-type)
         JZ,          // jz rs1, target (B-type)
         JNZ,         // jnz rs1, target (B-type)
-        MOVW,         // mov rd, imm (I-type)
+        MOVW,        // mov rd, imm (I-type)
         MOVD,        // movd rd; (next dword) imm (I-type)
         NOP,         // nop (无操作数)
         HALT = 0xFF, // halt (无操作数)
         // 伪指令
-        RET,   // ret (无操作数)
-        CALL,  // call target (J-type)
-        LABEL, // label (无操作数，无大小）
+        MOV,  // 根据 imm 展开为 movw 或 movd
+        CMP,  // cmp rd, rs1, rs2 (R-type) 展开为 sub rd, rs1, rs2
+        RET,  // ret (无操作数)
+        CALL, // call target (J-type)
     };
     // 指令类型分类
     enum OpType
     {
-        OP_TYPE_R,    // 寄存器操作（ADD等）
-        OP_TYPE_I,    // 立即数操作（MOV）
-        OP_TYPE_J,    // 直接跳转（JMP）
-        OP_TYPE_B,    // 条件跳转（JZ/JNZ）
-        OP_TYPE_M,    // 内存访问（LOAD/STORE）
+        OP_TYPE_R, // 寄存器操作（ADD等）
+        OP_TYPE_I, // 立即数操作（MOV）
+        OP_TYPE_J, // 直接跳转（JMP）
+        OP_TYPE_B, // 条件跳转（JZ/JNZ）
+        OP_TYPE_M, // 内存访问（LOAD/STORE）
+    };
+
+    constexpr std::array<Reg, 2> RESERVED_REGS = {
+        Reg::R6, // 栈指针
     };
 
     // 寄存器信息类
@@ -90,10 +99,6 @@ namespace ASIMOV
         void initializeRegisters();
         void initializeRegisterClasses();
         void initializeCallingConventions();
-
-        std::array<RegisterDesc, TOTAL_REG> reg_descs_;
-        std::vector<std::vector<unsigned>> callee_saved_map_;
-        std::vector<std::vector<unsigned>> caller_saved_map_;
     };
 
     // 目标指令信息类
@@ -117,7 +122,7 @@ namespace ASIMOV
         bool is_operand_def(unsigned op, unsigned index) const override;
         bool is_operand_use(unsigned op, unsigned index) const override;
 
-        unsigned ASIMOVTargetInstInfo::get_instruction_latency(unsigned opcode) const override;
+        unsigned get_instruction_latency(unsigned opcode) const override;
 
         void copy_phys_reg(MachineBasicBlock &mbb, MachineBasicBlock::iterator insert,
                            unsigned dest_reg,
@@ -131,6 +136,11 @@ namespace ASIMOV
         void insert_store_to_stack(MachineBasicBlock &mbb, MachineBasicBlock::iterator insert_point,
                                    unsigned src_reg, int frame_index,
                                    int64_t offset) const override;
+        bool analyze_branch(
+            MachineBasicBlock &mbb,
+            MachineInst *terminator,
+            std::unordered_set<MachineBasicBlock *> &branch_targets,
+            MachineBasicBlock *&fall_through) const override;
 
     private:
         // 编码辅助函数
@@ -139,7 +149,45 @@ namespace ASIMOV
         uint32_t encode_M(unsigned opcode, const MachineInst &MI) const;
         uint32_t encode_J(unsigned opcode, const MachineInst &MI) const;
         uint32_t encode_B(unsigned opcode, const MachineInst &MI) const;
-    };
+    }; // class ASIMOVTargetInstInfo
+
+    class ASIMOVFrameLowering : public TargetFrameLowering
+    {
+    public:
+        void emit_prologue(MachineFunction &mf) const override
+        {
+            MachineFrame &frame = *mf.frame();
+            int stack_size = frame.get_total_frame_size();
+
+            if (stack_size > 0)
+            {
+                // SUB R6, R6, stack_size
+                auto &mbb = *mf.basic_blocks().front();
+                auto mi = std::make_unique<MachineInst>(SUB);
+                mi->add_operand(MOperand::create_reg(R6, true));
+                mi->add_operand(MOperand::create_reg(R6));
+                mi->add_operand(MOperand::create_imm(stack_size));
+                mbb.insert(mbb.begin(), std::move(mi));
+            }
+        }
+
+        void emit_epilogue(MachineFunction &mf) const override
+        {
+            MachineFrame &frame = *mf.frame();
+            int stack_size = frame.get_total_frame_size();
+
+            if (stack_size > 0)
+            {
+                // ADD R6, R6, stack_size
+                auto &mbb = *mf.basic_blocks().back();
+                auto mi = std::make_unique<MachineInst>(ADD);
+                mi->add_operand(MOperand::create_reg(R6, true));
+                mi->add_operand(MOperand::create_reg(R6));
+                mi->add_operand(MOperand::create_imm(stack_size));
+                mbb.insert(std::prev(mbb.end()), std::move(mi));
+            }
+        }
+    }; // class ASIMOVFrameLowering
 
     // 操作码到指令类型映射
     OpType opcode_to_type(ASIMOV::Opcode op);

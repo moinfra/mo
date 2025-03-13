@@ -5,50 +5,115 @@ namespace ASIMOV
     // 寄存器信息初始化实现
     ASIMOVRegisterInfo::ASIMOVRegisterInfo() : TargetRegisterInfo(Reg::TOTAL_REG)
     {
-        initializeRegisters();
-        initializeRegisterClasses();
+        MO_DEBUG("Initializing calling conventions for ASIMOV target\n");
         initializeCallingConventions();
+        MO_DEBUG("Initializing register classes for ASIMOV target\n");
+        initializeRegisterClasses();
+        MO_DEBUG("Initializing registers for ASIMOV target\n");
+        initializeRegisters();
     }
 
     void ASIMOVRegisterInfo::initializeRegisters()
     {
-        // 初始化通用寄存器
+        /******************** 通用寄存器初始化 ​********************/
+        // 设置默认属性
         for (unsigned i = R0; i <= R7; ++i)
         {
-            reg_descs_[i].primary_rc_id = GR32;
-            reg_descs_[i].is_reserved = (i == R6); // R6作为栈指针
+            reg_descs_[i] = {
+                .spill_cost = 6, // 默认溢出代价
+                .is_callee_saved = false,
+                .is_reserved = false,
+                .is_allocatable = true,
+                .primary_rc_id = GR32,
+                .rc_mask = 0x1 // 位掩码对应GR32
+            };
+
+            reg_descs_[R5].is_allocatable = false;
+            reg_descs_[R5].is_reserved = false;
         }
 
-        // 初始化浮点寄存器
+        // 标记保留寄存器（不可分配）
+        for (auto reg : RESERVED_REGS)
+        {
+            reg_descs_[reg].is_reserved = true;
+            reg_descs_[reg].is_allocatable = false;
+            reg_descs_[reg].spill_cost = 0; // 保留寄存器无需溢出
+        }
+
+        // 特殊处理栈指针R6
+        reg_descs_[R6].spill_cost = 0; // 栈指针不可溢出
+        reg_descs_[R6].is_callee_saved = true;
+
+        // 配置被调用者保存的寄存器
+        for (auto reg : callee_saved_map_[CallingConv::C])
+        {
+            auto rc = reg_descs_[reg].primary_rc_id;
+            if (rc == GR32)
+            {
+                reg_descs_[reg].is_callee_saved = true;
+                reg_descs_[reg].spill_cost = 10; // 更高溢出代价
+            }
+        }
+
+        /******************** 浮点寄存器初始化 ​********************/
         for (unsigned i = F0; i <= F7; ++i)
         {
-            reg_descs_[i].primary_rc_id = FP32;
+            reg_descs_[i] = {
+                .spill_cost = 8, // 浮点默认溢出代价
+                .is_callee_saved = false,
+                .is_reserved = false,
+                .is_allocatable = true,
+                .primary_rc_id = FP32,
+                .rc_mask = 0x2 // 位掩码对应FP32
+            };
+        }
+
+        // 配置被调用者保存的浮点寄存器
+        for (auto reg : callee_saved_map_[CallingConv::C])
+        {
+            auto rc = reg_descs_[reg].primary_rc_id;
+            if (rc == FP32)
+            {
+                reg_descs_[reg].is_callee_saved = true;
+                reg_descs_[reg].spill_cost = 12; // 更高溢出代价
+            }
         }
     }
 
     void ASIMOVRegisterInfo::initializeRegisterClasses()
     {
-        // 创建寄存器类
-        auto &gr32 = register_classes_[GR32];
-        gr32 = std::make_unique<RegisterClass>();
-        gr32->id = GR32;
-        gr32->name = "GR32";
-        gr32->copy_cost = 1;
-        gr32->weight = 1;
-        for (unsigned i = R0; i <= R7; ++i)
+        // 创建通用寄存器类 (GR32)
         {
-            gr32->regs.push_back(i);
+            RegisterClass gr32_class;
+            gr32_class.id = GR32;
+            gr32_class.name = "GR32";
+            gr32_class.copy_cost = 1;
+            gr32_class.weight = 1;
+
+            // 使用循环生成寄存器列表
+            for (unsigned i = R0; i <= R7; ++i)
+            {
+                gr32_class.regs.push_back(static_cast<Reg>(i));
+            }
+
+            add_register_class(std::move(gr32_class));
         }
 
-        auto &fp32 = register_classes_[FP32];
-        fp32 = std::make_unique<RegisterClass>();
-        fp32->id = FP32;
-        fp32->name = "FP32";
-        fp32->copy_cost = 1;
-        fp32->weight = 1;
-        for (unsigned i = F0; i <= F7; ++i)
+        // 创建浮点寄存器类 (FP32)
         {
-            fp32->regs.push_back(i);
+            RegisterClass fp32_class;
+            fp32_class.id = FP32;
+            fp32_class.name = "FP32";
+            fp32_class.copy_cost = 1;
+            fp32_class.weight = 1;
+
+            // 使用循环生成寄存器列表
+            for (unsigned i = F0; i <= F7; ++i)
+            {
+                fp32_class.regs.push_back(static_cast<Reg>(i));
+            }
+
+            add_register_class(std::move(fp32_class));
         }
     }
 
@@ -65,9 +130,11 @@ namespace ASIMOV
         case FSUB:
         case FMUL:
         case FDIV:
+        case CMP:
             return OP_TYPE_R;
         case MOVW:
         case MOVD:
+        case MOV:
             return OP_TYPE_I;
         case JMP:
             return OP_TYPE_J;
@@ -78,6 +145,7 @@ namespace ASIMOV
         case STORE:
             return OP_TYPE_M;
         default:
+            MO_ERROR("Unknown opcode %s (%u)", ASIMOV::opcode_to_str(op), op);
             throw std::invalid_argument("Unknown opcode");
         }
     }
@@ -85,8 +153,8 @@ namespace ASIMOV
     void ASIMOVRegisterInfo::initializeCallingConventions()
     {
         // 确保调用约定映射有足够空间
-        callee_saved_map_.resize(CallingConv::ID::NUM_CALLING_CONV);
-        caller_saved_map_.resize(CallingConv::ID::NUM_CALLING_CONV);
+        callee_saved_map_.reserve(CallingConv::ID::NUM_CALLING_CONV);
+        caller_saved_map_.reserve(CallingConv::ID::NUM_CALLING_CONV);
 
         // 定义被调用者保存的寄存器 (Callee-saved)
         // 这些寄存器在函数调用前后需要保持不变，如果函数内部修改了这些寄存器，需要负责保存和恢复
@@ -165,12 +233,18 @@ namespace ASIMOV
             return "STORE";
         case JMP:
             return "JMP";
+        case CMP:
+            return "CMP";
         case JZ:
             return "JZ";
         case JNZ:
             return "JNZ";
+        case MOV:
+            return "MOV";
         case MOVW:
             return "MOVW";
+        case MOVD:
+            return "MOVD";
         case NOP:
             return "NOP";
         case HALT:
@@ -271,6 +345,33 @@ namespace ASIMOV
             return false;
         }
 
+        // 增强内存访问检查
+        if (MI.opcode() == LOAD || MI.opcode() == STORE)
+        {
+            if (!MI.operands().back().is_mem_ri())
+            {
+                error_msg = "Memory operand must be [reg + offset] form";
+                return false;
+            }
+
+            const auto &mem = MI.operands().back().mem_ri();
+            if (mem.base_reg == R6 && mem.offset % 4 != 0)
+            {
+                error_msg = "Stack access requires 4-byte alignment";
+                return false;
+            }
+        }
+
+        // 检查分支目标有效性
+        if (MI.has_flag(MIFlag::Branch))
+        {
+            if (!MI.operands().back().is_basic_block())
+            {
+                error_msg = "Branch target must be a basic block";
+                return false;
+            }
+        }
+
         return true;
     }
 
@@ -312,81 +413,100 @@ namespace ASIMOV
             return 0; // 未知指令
         }
     }
+
     void ASIMOVTargetInstInfo::expand_pseudo(MachineBasicBlock &mbb,
                                              MachineBasicBlock::iterator mii) const
     {
-        // MachineInst &mi = **mii;
+        MachineInst &mi = **mii;
+        auto next_it = std::next(mii);
 
-        // switch (mi.opcode())
-        // {
-        // case ASIMOV::CALL:
-        // {
-        //     // CALL 指令展开
+        switch (mi.opcode())
+        {
+        case CALL:
+        {
+            // 展开CALL伪指令到实际指令序列
+            // 1. 保存返回地址到栈中
+            // 2. 调整栈指针
+            // 3. 执行跳转
 
-        //     // 1. 获取目标地址
-        //     int target = mi.operand(0).imm();
+            // 保存返回地址到栈
+            mbb.parent()->frame()->create_fixed_size(nullptr, SIZE_DWORD, ALIGN);
 
-        //     // 2. 计算返回地址 (下一条指令的地址)
-        //     unsigned return_address = mi.address() + 4;
+            // STORE R7, [R6]
+            auto store = std::make_unique<MachineInst>(STORE);
+            store->add_operand(MOperand::create_reg(R7));
+            store->add_operand(MOperand::create_mem_ri(R6, 0));
+            mbb.insert(mii, std::move(store));
 
-        //     // 3. 将栈指针减 4 (为返回地址腾出空间)
-        //     auto mi_sub = std::make_unique<MachineInst>(ASIMOV::SUB);
-        //     mi_sub->add_operand(MOperand::create_reg(Reg::R6, true)); // R6 = R6 - 4
-        //     mi_sub->add_operand(MOperand::create_reg(Reg::R6));
-        //     mi_sub->add_operand(MOperand::create_imm(4));
-        //     MI = mbb.insert(MI, std::move(mi_sub)); // 插入到当前指令之前
-        //     ++MI;                                   // 移动迭代器到新插入的指令之后
+            // SUB R6, R6, 4 (栈向下增长)
+            auto sub = std::make_unique<MachineInst>(SUB);
+            sub->add_operand(MOperand::create_reg(R6, true));
+            sub->add_operand(MOperand::create_reg(R6));
+            sub->add_operand(MOperand::create_imm(4));
+            mbb.insert(mii, std::move(sub));
 
-        //     // 4. 将返回地址压栈
-        //     auto mi_store = std::make_unique<MachineInst>(ASIMOV::STORE);
-        //     mi_store->add_operand(MOperand::create_reg(return_address)); // 要保存的返回地址
-        //     mi_store->add_operand(MOperand::create_mem_ri(Reg::R6, 0));  // 栈指针指向的位置
-        //     MI = mbb.insert(MI, std::move(mi_store));
-        //     ++MI;
+            // 获取目标地址
+            MachineBasicBlock *target = mi.operands()[0].basic_block();
 
-        //     // 5. 跳转到目标地址
-        //     auto mi_jmp = std::make_unique<MachineInst>(ASIMOV::JMP);
-        //     mi_jmp->add_operand(MOperand::create_imm(target)); // 目标地址
-        //     MI = mbb.insert(MI, std::move(mi_jmp));
-        //     ++MI;
+            // JMP target
+            auto jmp = std::make_unique<MachineInst>(JMP);
+            jmp->add_operand(MOperand::create_basic_block(target));
+            mbb.insert(mii, std::move(jmp));
 
-        //     // 6. 删除原始的 CALL 指令
-        //     mi.erase_from_parent();
-        //     break;
-        // }
-        // case ASIMOV::RET:
-        // {
-        //     // RET 指令展开
+            mi.erase_from_parent();
+            return;
+        }
+        case RET:
+        {
+            // 展开RET伪指令
+            // 1. 恢复返回地址
+            // 2. 调整栈指针
+            // 3. 返回跳转
 
-        //     // 1. 从栈中弹出返回地址
-        //     auto mi_load = std::make_unique<MachineInst>(ASIMOV::LOAD);
-        //     mi_load->add_operand(MOperand::create_reg(Reg::R7, true)); // 将返回地址加载到 R7
-        //     mi_load->add_operand(MOperand::create_mem_ri(Reg::R6, 0)); // 从栈指针指向的位置加载
-        //     MI = mbb.insert(MI, std::move(mi_load));
-        //     ++MI;
+            // ADD R6, R6, 4
+            auto add = std::make_unique<MachineInst>(ADD);
+            add->add_operand(MOperand::create_reg(R6, true));
+            add->add_operand(MOperand::create_reg(R6));
+            add->add_operand(MOperand::create_imm(4));
+            mbb.insert(mii, std::move(add));
 
-        //     // 2. 将栈指针加 4 (恢复栈指针)
-        //     auto mi_add = std::make_unique<MachineInst>(ASIMOV::ADD);
-        //     mi_add->add_operand(MOperand::create_reg(Reg::R6, true)); // R6 = R6 + 4
-        //     mi_add->add_operand(MOperand::create_reg(Reg::R6));
-        //     mi_add->add_operand(MOperand::create_imm(4));
-        //     MI = mbb.insert(MI, std::move(mi_add));
-        //     ++MI;
+            // LOAD R7, [R6]
+            auto load = std::make_unique<MachineInst>(LOAD);
+            load->add_operand(MOperand::create_reg(R7, true));
+            load->add_operand(MOperand::create_mem_ri(R6, 0));
+            mbb.insert(mii, std::move(load));
 
-        //     // 3. 跳转到返回地址
-        //     auto mi_jmp = std::make_unique<MachineInst>(ASIMOV::JMP);
-        //     mi_jmp->add_operand(MOperand::create_reg(Reg::R7)); // 跳转到 R7 中保存的地址
-        //     MI = mbb.insert(MI, std::move(mi_jmp));
-        //     ++MI;
+            // JMP R7
+            auto jmp = std::make_unique<MachineInst>(JMP);
+            jmp->add_operand(MOperand::create_reg(R7));
+            mbb.insert(mii, std::move(jmp));
 
-        //     // 4. 删除原始的 RET 指令
-        //     mi.erase_from_parent();
-        //     break;
-        // }
-        // default:
-        //     // 其他指令，不需要展开
-        //     break;
-        // }
+            mi.erase_from_parent();
+            return;
+        }
+        case MOV:
+        {
+            // 展开MOV到MOVW/MOVD
+            if (mi.operands().size() != 2)
+                break;
+
+            const auto &src = mi.operands()[1];
+            if (src.is_imm())
+            {
+                int64_t imm = src.imm();
+                unsigned new_op = (imm > 0xFFFF || imm < -0x8000) ? MOVD : MOVW;
+
+                auto new_mi = std::make_unique<MachineInst>(new_op);
+                new_mi->add_operand(mi.operands()[0]);
+                new_mi->add_operand(MOperand::create_imm(imm));
+                mbb.insert(mii, std::move(new_mi));
+                mi.erase_from_parent();
+            }
+            return;
+        }
+        default:
+            break;
+        }
     }
 
     bool ASIMOVTargetInstInfo::is_return(const MachineInst &MI) const
@@ -397,12 +517,6 @@ namespace ASIMOV
     bool ASIMOVTargetInstInfo::is_call(const MachineInst &MI) const
     {
         return MI.opcode() == CALL;
-    }
-
-    bool ASIMOVTargetInstInfo::is_legal_immediate(int64_t imm, unsigned size) const
-    {
-        // 简化处理，假设所有立即数都是合法的
-        return true;
     }
 
     // 操作数类型判断
@@ -505,9 +619,8 @@ namespace ASIMOV
         unsigned src_reg) const
     {
         // 检查寄存器类别一致性
-        assert((dest_reg < F0 || src_reg < F0) ||
-               (dest_reg >= F0 && src_reg >= F0) &&
-                   "Cannot copy between different reg classes");
+        MO_ASSERT((dest_reg < F0 || src_reg < F0) || (dest_reg >= F0 && src_reg >= F0),
+                  "Cannot copy between different reg classes");
 
         MOperand dest = MOperand::create_reg(dest_reg, true);
         MOperand src = MOperand::create_reg(src_reg);
@@ -593,13 +706,110 @@ namespace ASIMOV
     {
         switch (size)
         {
-        case 16:
-            return imm >= -32768 && imm <= 65535; // 16位符号/无符号
-        case 32:
-            return true; // 32位全支持
+        case 8: // 8位立即数
+            return imm >= -128 && imm <= 255;
+        case 16: // 16位立即数
+            return imm >= -32768 && imm <= 65535;
+        case 32:         // 32位立即数
+            return true; // 通过MOVD处理
         default:
             return false;
         }
+    }
+
+    // ​BranchTargets: 存储分支目标块指针的列表，需在分析前清空。
+    // ​FallThrough: 用于存储顺序执行的下一个块，初始化为nullptr。
+    bool ASIMOVTargetInstInfo::analyze_branch(
+        MachineBasicBlock &mbb,
+        MachineInst *terminator,
+        std::unordered_set<MachineBasicBlock *> &branch_targets,
+        MachineBasicBlock *&fall_through) const
+    {
+        // 初始化为无分支状态
+        branch_targets.clear();
+        fall_through = nullptr;
+
+        // 如果没有终止指令，返回false
+        if (!terminator || !terminator->has_flag(MIFlag::Terminator))
+            return false;
+
+        unsigned opcode = terminator->opcode();
+        const auto &operands = terminator->operands();
+        MachineFunction &mf = *mbb.parent();
+
+        // 处理不同分支指令类型
+        switch (static_cast<ASIMOV::Opcode>(opcode))
+        {
+        case JMP:
+        { // 无条件跳转
+            if (operands.size() != 1)
+                return false; // 操作数检查
+            // 操作数应为基本块标签
+            if (operands[0].is_basic_block())
+            {
+                MachineBasicBlock *target = operands[0].basic_block();
+                branch_targets.insert(target);
+                // 无条件跳转无fall-through
+                fall_through = nullptr;
+                return true;
+            }
+            else
+            {
+                MO_NOT_IMPLEMENTED();
+            }
+            break;
+        }
+        case JZ:
+        case JNZ:
+        { // 条件跳转
+            if (operands.size() != 2)
+                return false;
+            // 第一个操作数是条件寄存器，第二个是目标块
+            if (operands[1].is_basic_block())
+            {
+                MachineBasicBlock *target = operands[1].basic_block();
+                branch_targets.insert(target);
+                // Fall-through块是物理顺序的下一个块
+                auto next_it = std::next(mf.locate(&mbb));
+                fall_through = (next_it != mbb.parent()->basic_blocks().end()) ? next_it->get() : nullptr;
+                return true;
+            }
+            else
+            {
+                MO_NOT_IMPLEMENTED();
+            }
+            break;
+        }
+        case CALL:
+        { // 函数调用视为无条件跳转
+            if (operands.size() != 1)
+                return false;
+            if (operands[0].is_basic_block())
+            {
+                branch_targets.insert(operands[0].basic_block());
+                // 函数调用后的下一条指令是fall-through
+                fall_through = mbb.next_physical_block();
+                return true;
+            }
+            else
+            {
+                MO_NOT_IMPLEMENTED();
+            }
+            // 应该还要处理函数目标，暂时不搞了
+            break;
+        }
+        case RET: // 返回指令无后继
+            fall_through = nullptr;
+            return false; // 返回false表示无法继续执行
+        default:
+            // 其他指令不视为分支
+            break;
+        }
+
+        // 默认处理：非分支指令或解析失败
+        // 尝试获取隐式fall-through块
+        fall_through = mbb.next_physical_block();
+        return false;
     }
 
 } // namespace ASIMOV
