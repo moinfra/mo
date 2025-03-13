@@ -1310,7 +1310,7 @@ namespace RISCV
 
     MachineBasicBlock *find_target_block_by_label(const MachineFunction &mf, const std::string &label)
     {
-        const auto &blocks = mf.basicblocks();
+        const auto &blocks = mf.basic_blocks();
         for (auto &target_mb_ptr : blocks)
         {
             MachineBasicBlock *target_mbb = target_mb_ptr.get();
@@ -1372,14 +1372,14 @@ namespace RISCV
         const TargetInstInfo *tii = module_->target_inst_info();
 
         // 清理所有基本块的CFG信息
-        for (auto &mb_ptr : mf.basicblocks())
+        for (auto &mb_ptr : mf.basic_blocks())
         {
             mb_ptr->clear_cfg();
         }
 
         // 创建标签到基本块的映射
         std::unordered_map<std::string, MachineBasicBlock *> label_to_block;
-        for (auto &mb_ptr : mf.basicblocks())
+        for (auto &mb_ptr : mf.basic_blocks())
         {
             MachineBasicBlock *mbb = mb_ptr.get();
             if (!mbb->label().empty())
@@ -1389,7 +1389,7 @@ namespace RISCV
         }
 
         // 遍历所有基本块
-        const auto &blocks = mf.basicblocks();
+        const auto &blocks = mf.basic_blocks();
         for (size_t i = 0; i < blocks.size(); ++i)
         {
             MachineBasicBlock *mbb = blocks[i].get();
@@ -1475,7 +1475,7 @@ namespace RISCV
         }
 
         // 验证CFG
-        for (auto &mb_ptr : mf.basicblocks())
+        for (auto &mb_ptr : mf.basic_blocks())
         {
             MachineBasicBlock *mbb = mb_ptr.get();
             if (mbb->begin() != mbb->end())
@@ -1494,6 +1494,169 @@ namespace RISCV
                     MO_DEBUG("Warning: Unconditional jump has multiple successors");
                 }
             }
+        }
+    }
+
+    bool RISCVTargetInstInfo::analyze_branch(
+        MachineBasicBlock &mbb,
+        MachineInst *terminator,
+        std::unordered_set<MachineBasicBlock *> &branch_targets,
+        MachineBasicBlock *&fall_through) const
+    {
+        // 初始化输出参数
+        branch_targets.clear();
+        fall_through = nullptr;
+
+        // 1. 检查终止指令有效性
+        if (!terminator || !terminator->has_flag(MIFlag::Terminator))
+        {
+            // 非终止指令，尝试获取fall-through块
+            fall_through = mbb.next_physical_block();
+            return false;
+        }
+
+        unsigned opcode = terminator->opcode();
+        const auto &operands = terminator->operands();
+
+        // 2. 根据指令类型处理分支
+        switch (opcode)
+        {
+        // 条件分支指令 (B-type): beq, bne, blt等
+        case RISCV::BEQ:
+        case RISCV::BNE:
+        case RISCV::BLT:
+        case RISCV::BGE:
+        case RISCV::BLTU:
+        case RISCV::BGEU:
+        {
+            // 操作数格式: rs1, rs2, target_label
+            if (operands.size() != 3)
+                return false;
+
+            // 提取分支目标
+            const MOperand &target_op = operands[2];
+            if (target_op.is_basic_block())
+            {
+                branch_targets.insert(target_op.basic_block());
+            }
+            else if (target_op.is_label())
+            {
+                // 通过标签查找基本块
+                MachineFunction *mf = mbb.parent();
+                MachineBasicBlock *target_bb = mf->get_basic_block_by_label(target_op.label());
+                if (target_bb)
+                    branch_targets.insert(target_bb);
+            }
+
+            // Fall-through块是物理顺序的下一个块
+            fall_through = mbb.next_physical_block();
+            return true;
+        }
+
+        // 无条件跳转指令 (J-type): jal
+        case RISCV::JAL:
+        {
+            // 操作数格式: rd, target_label (rd通常为x0或ra)
+            if (operands.size() != 2)
+                return false;
+
+            // 提取跳转目标
+            const MOperand &target_op = operands[1];
+            if (target_op.is_basic_block())
+            {
+                branch_targets.insert(target_op.basic_block());
+            }
+            else if (target_op.is_label())
+            {
+                MachineFunction *mf = mbb.parent();
+                MachineBasicBlock *target_bb = mf->get_basic_block_by_label(target_op.label());
+                if (target_bb)
+                    branch_targets.insert(target_bb);
+            }
+
+            // 无条件跳转无fall-through
+            fall_through = nullptr;
+            return true;
+        }
+
+        // 间接跳转指令 (I-type): jalr
+        case RISCV::JALR:
+        {
+            // 操作数格式: rd, offset(rs1)
+            // 特殊处理返回指令 (ret伪指令)
+            if (is_return(*terminator))
+            {
+                // ret指令无后继
+                fall_through = nullptr;
+                return false;
+            }
+
+            // 无法静态解析间接跳转目标
+            fall_through = nullptr;
+            return false;
+        }
+
+        // 伪指令: j (等效于jal x0, target)
+        case RISCV::J:
+        {
+            if (operands.size() != 1)
+                return false;
+
+            const MOperand &target_op = operands[0];
+            if (target_op.is_basic_block())
+            {
+                branch_targets.insert(target_op.basic_block());
+            }
+            else if (target_op.is_label())
+            {
+                MachineFunction *mf = mbb.parent();
+                MachineBasicBlock *target_bb = mf->get_basic_block_by_label(target_op.label());
+                if (target_bb)
+                    branch_targets.insert(target_bb);
+            }
+
+            fall_through = nullptr;
+            return true;
+        }
+
+        // 函数调用伪指令: call
+        case RISCV::CALL:
+        {
+            // 展开后的call通常包含多个指令，此处处理未展开的伪指令
+            if (operands.size() != 1)
+                return false;
+
+            const MOperand &target_op = operands[0];
+            if (target_op.is_basic_block())
+            {
+                branch_targets.insert(target_op.basic_block());
+            }
+            else if (target_op.is_label())
+            {
+                MachineFunction *mf = mbb.parent();
+                MachineBasicBlock *target_bb = mf->get_basic_block_by_label(target_op.label());
+                if (target_bb)
+                    branch_targets.insert(target_bb);
+            }
+
+            // 函数调用后的下一条指令是fall-through
+            fall_through = mbb.next_physical_block();
+            return true;
+        }
+
+        // 返回指令: ret (jalr x0, 0(x1))
+        case RISCV::RET:
+        {
+            fall_through = nullptr;
+            return false;
+        }
+
+        default:
+        {
+            // 未知终止指令，尝试获取fall-through
+            fall_through = mbb.next_physical_block();
+            return false;
+        }
         }
     }
 

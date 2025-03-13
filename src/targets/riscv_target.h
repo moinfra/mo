@@ -596,6 +596,11 @@ namespace RISCV
                                    MachineBasicBlock::iterator insert_point,
                                    unsigned src_reg, int frame_index,
                                    int64_t offset = 0) const override;
+        bool analyze_branch(
+            MachineBasicBlock &mbb,
+            MachineInst *terminator,
+            std::unordered_set<MachineBasicBlock *> &branch_targets,
+            MachineBasicBlock *&fall_through) const override;
 
     private:
         // 指令编码辅助函数
