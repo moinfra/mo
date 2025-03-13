@@ -1,9 +1,33 @@
 // mo_debug.h -- Utility macros and functions for Mo Project.
 #pragma once
 
+#include <cassert>
 #include <cstdio>
 #include <cstdlib>
-#include <cassert>
+#include <list>
+#include <set>
+#include <sstream>
+#include <string>
+#include <vector>
+
+template <typename Container>
+std::string mo_join(const Container &vec, const std::string &sep)
+{
+    std::string res;
+    std::ostringstream oss;
+    for (auto it = vec.begin(); it != vec.end(); ++it)
+    {
+        if (it != vec.begin())
+        {
+            res += sep;
+        }
+        oss.str(""); // 清空流内容
+        oss.clear(); // 清除错误状态
+        oss << *it;
+        res += oss.str();
+    }
+    return res;
+}
 
 #define MO_DEBUG(fmt, ...)                              \
     do                                                  \
@@ -58,3 +82,5 @@
     } while (0)
 
 #define MO_NOP(x) ((void)(x))
+
+std::string escape_json_string(const std::string &s);
