@@ -2,6 +2,7 @@
 #include "machine.h"
 #include <algorithm>
 #include <stdexcept>
+#include <limits>
 #include <iomanip>
 #include <algorithm>
 #include <cassert>
@@ -39,10 +40,12 @@ bool LiveInterval::overlaps(const LiveInterval &other) const
 
 LiveInterval LiveInterval::merge(const LiveInterval &other) const
 {
-    assert((overlaps(other) || end() == other.start() || other.end() == start()) &&
-           "Merging non-overlapping intervals");
+    MO_ASSERT((overlaps(other) || end() == other.start() || other.end() == start()),
+              "Merging non-overlapping intervals");
+    MO_ASSERT(parent_ == other.parent_, "Merging intervals with different parents");
+
     return LiveInterval(std::min(start(), other.start()),
-                        std::max(end(), other.end()));
+                        std::max(end(), other.end()), parent_);
 }
 
 bool LiveInterval::operator<(const LiveInterval &rhs) const
@@ -53,8 +56,8 @@ bool LiveInterval::operator<(const LiveInterval &rhs) const
 
 void LiveRange::add_interval(unsigned start, unsigned end)
 {
-    MO_DEBUG("Extend reg %u live range with [%u, %u)", reg_, start, end);
-    intervals_.emplace_back(start, end);
+    MO_DEBUG("Extend reg %u live range with [%u, %u)", preg_, start, end);
+    intervals_.emplace_back(start, end, this);
     merge_intervals(); // Ensure intervals are ordered and non-overlapping
 }
 
@@ -93,33 +96,36 @@ bool LiveRange::interferes_with(const LiveRange &other) const
 std::string LiveRange::to_string() const
 {
     std::ostringstream oss;
-    oss << "LiveRange {\n";
-    oss << "  Reg: " << reg_ << "\n";
-    oss << "  IsPhysical: " << is_physical_ << "\n";
-    oss << "  IsSpilled: " << is_spilled_ << "\n";
-    oss << "  SpillSlot: " << spill_slot_ << "\n";
-    oss << "  Intervals: {\n";
+    oss << "LiveRange {";
+    oss << " preg: " << preg_;
+    oss << " vreg: " << vreg_;
+    oss << " alloc: " << is_allocated_;
+    oss << " spill: " << is_spilled_;
+    oss << " slot: " << spill_slot_;
+    oss << " subs: { ";
     for (const auto &interval : intervals_)
     {
-        oss << "    [" << interval.start() << ", " << interval.end() << ")\n";
+        oss << "[" << interval.start() << ", " << interval.end() << ") ";
     }
-    oss << "  }\n";
+    oss << " } ";
     oss << "}";
     return oss.str();
 }
 
-void LiveRange::assign_physical_reg(unsigned phys_reg)
+void LiveRange::assign(unsigned preg)
 {
-    is_physical_ = true;
-    reg_ = phys_reg;
+    MO_ASSERT(!is_spilled(), "Live range is already spilled. Cannot assign a register.");
+    is_allocated_ = true;
+    preg_ = preg;
     is_spilled_ = false;
 }
 
-void LiveRange::spill(int slot)
+void LiveRange::mark_spilled(int slot)
 {
+    MO_ASSERT(is_allocated(), "Live range is not allocated. Cannot spill.");
     is_spilled_ = true;
     spill_slot_ = slot;
-    is_physical_ = false;
+    preg_ = std::numeric_limits<unsigned>::max();
 }
 
 void LiveRange::merge_intervals()
@@ -160,11 +166,11 @@ void LiveRangeAnalyzer::compute() const
 
     reg_live_ranges_.clear();
 
-    for (auto &bb : mf_.basicblocks())
+    for (auto &bb : mf_.basic_blocks())
     {
         MO_DEBUG("处理基本块入口处的活跃性");
         // 如果在入口活跃，那么从这个点到最后一次（本定义）使用都活跃
-        // for (auto reg : block_info[bb.get()].in)
+        // for (auto reg : block_info_[bb.get()].in)
         // {
         //     LiveRange *lr = live_range_of(reg);
         //     lr->add_interval(bb->global_start(), bb->global_start() + 1);
@@ -173,15 +179,15 @@ void LiveRangeAnalyzer::compute() const
         MO_DEBUG("处理指令级活跃区间");
         for (auto &inst : bb->instructions())
         {
-            unsigned pos = mf_.get_global_instr_pos(inst.get());
-
+            size_t pos = mf_.get_global_instr_pos(inst.get());
+            MO_DEBUG("current pos: %zu", pos);
             MO_DEBUG("处理定义");
             // 如果当前程序点定义了一个变量，那么从这次定义直到最后一次（本定义）使用都活跃。
             for (auto &reg : inst->defs())
             {
                 LiveRange *lr = live_range_of(reg);
                 lr->add_interval(pos, pos + 1);
-                lr->add_def_inst(inst.get());
+                lr->add_def_inst(pos, inst.get());
             }
 
             MO_DEBUG("处理使用");
@@ -189,20 +195,22 @@ void LiveRangeAnalyzer::compute() const
             // 怎么寻找上次的定义呢？尝试在本指令块中找，如果没找到，说明变量在之前的基本块中定义过，
             // 那么暂且从开头到当前点都添加给这个变量的活跃区间。
             // 至于之前基本块的区间，交给那个块的 live out 集合处理，这里不管。
-            for (auto &reg : inst->uses())
+            auto uses = inst->uses();
+            MO_DEBUG("%s uses: %s", inst->to_string().c_str(), mo_join(uses, ", ").c_str());
+            for (auto &reg : uses)
             {
                 LiveRange *lr = live_range_of(reg);
-                auto in_block_last_def = find_last_def_pos(bb.get(), reg);
+                size_t in_block_last_def = find_last_def_pos(bb.get(), reg, pos);
                 lr->add_interval(in_block_last_def, std::max(pos, in_block_last_def) + 1);
-                lr->add_use_inst(inst.get());
+                lr->add_use_inst(pos, inst.get());
             }
         }
     }
 
     MO_DEBUG("处理跨块活跃区间");
-    for (auto &bb : mf_.basicblocks())
+    for (auto &bb : mf_.basic_blocks())
     {
-        auto &info = block_info[bb.get()];
+        auto &info = block_info_[bb.get()];
         // for (auto reg : info.in)
         // {
         //     // 如果一个变量在入口活跃，则从块头到首次定义都活跃
@@ -215,12 +223,12 @@ void LiveRangeAnalyzer::compute() const
         {
             // 如果一个变量在出口活跃，则从上次定义点到块尾都活跃
             LiveRange *lr = live_range_of(reg);
-            auto first_def_pos = find_last_def_pos(bb.get(), reg);
+            size_t first_def_pos = find_last_def_pos(bb.get(), reg, -1);
             // auto reg_def_pos = first_def_pos != bb->global_end_inclusive() ? first_def_pos : bb->global_start();
             lr->add_interval(first_def_pos, bb->global_end_inclusive() + 1);
             // for (auto *succ : bb->successors())
             // {
-            //     auto &succ_info = block_info[succ];
+            //     auto &succ_info = block_info_[succ];
             //     if (succ_info.in.count(reg))
             //     {
             //         unsigned bb_end = bb->global_end_inclusive();
@@ -256,7 +264,7 @@ LiveRange *LiveRangeAnalyzer::live_range_of(unsigned reg) const
         reg_live_ranges_[reg] = std::make_unique<LiveRange>(reg);
         if (MachineFunction::is_physical_reg(reg))
         {
-            reg_live_ranges_[reg]->assign_physical_reg(reg);
+            reg_live_ranges_[reg]->assign(reg);
         }
     }
     return reg_live_ranges_[reg].get();
@@ -284,21 +292,17 @@ std::vector<MachineBasicBlock *> compute_reverse_post_order(MachineBasicBlock *e
 // 关键修正1: 正确的数据流方程
 void LiveRangeAnalyzer::compute_data_flow() const
 {
-    block_info.clear();
+    block_info_.clear();
 
     // 初始化 USE/DEF 集合
-    for (auto &bb : mf_.basicblocks())
+    for (auto &bb : mf_.basic_blocks())
     {
-        auto &info = block_info[bb.get()];
+        auto &info = block_info_[bb.get()];
         compute_local_use_def(bb.get(), info.use, info.def);
     }
 
     // 获取逆后序序列（反向遍历）
-    std::vector<MachineBasicBlock *> rpo_order = compute_reverse_post_order(mf_.basicblocks().front().get());
-    for (size_t i = 0; i < rpo_order.size(); i++)
-    {
-        MO_DEBUG("Block %zu: %s", i, rpo_order[i]->label().c_str());
-    }
+    std::vector<MachineBasicBlock *> rpo_order = compute_reverse_post_order(mf_.basic_blocks().front().get());
 
     // 迭代直到收敛
     bool changed;
@@ -308,14 +312,14 @@ void LiveRangeAnalyzer::compute_data_flow() const
         changed = false;
         for (auto *bb : rpo_order)
         { // 按逆后序处理
-            auto &info = block_info[bb];
+            auto &info = block_info_[bb];
 
             // 计算 OUT[B] = ∪ IN[S] (S 是 B 的后继)
             std::unordered_set<unsigned> new_out;
             for (auto *succ : bb->successors())
             {
-                new_out.insert(block_info[succ].in.begin(),
-                               block_info[succ].in.end());
+                new_out.insert(block_info_[succ].in.begin(),
+                               block_info_[succ].in.end());
             }
 
             // 计算 IN[B] = use[B] ∪ (OUT[B] - def[B])
@@ -342,11 +346,15 @@ void LiveRangeAnalyzer::compute_data_flow() const
 }
 
 // 查找块内首次定义位置
-unsigned LiveRangeAnalyzer::find_first_def_pos(MachineBasicBlock *bb, unsigned reg) const
+size_t LiveRangeAnalyzer::find_first_def_pos(MachineBasicBlock *bb, unsigned reg, size_t after_pos_exclusive) const
 {
     for (auto &inst : bb->instructions())
     {
-        unsigned pos = mf_.get_global_instr_pos(inst.get());
+        size_t pos = mf_.get_global_instr_pos(inst.get());
+        if (after_pos_exclusive != std::numeric_limits<size_t>::max() && pos <= after_pos_exclusive)
+        {
+            continue;
+        }
         if (inst->defs().size())
         {
             return pos;
@@ -355,11 +363,15 @@ unsigned LiveRangeAnalyzer::find_first_def_pos(MachineBasicBlock *bb, unsigned r
     return bb->global_end_inclusive(); // 无定义则延续到块尾
 }
 
-unsigned LiveRangeAnalyzer::find_last_def_pos(MachineBasicBlock *bb, unsigned reg) const
+size_t LiveRangeAnalyzer::find_last_def_pos(MachineBasicBlock *bb, unsigned reg, size_t before_pos_exclusive) const
 {
     for (auto it = bb->instructions().rbegin(); it != bb->instructions().rend(); ++it)
     {
-        unsigned pos = mf_.get_global_instr_pos((*it).get());
+        size_t pos = mf_.get_global_instr_pos((*it).get());
+        if (before_pos_exclusive != std::numeric_limits<size_t>::max() && pos >= before_pos_exclusive)
+        {
+            continue;
+        }
         if ((*it)->defs().count(reg))
         {
             return pos;
@@ -391,7 +403,7 @@ bool LiveRangeAnalyzer::has_conflict(unsigned reg1, unsigned reg2) const
         }
         if (auto *lr = get_live_range(virt))
         {
-            return lr->is_physical() && is_alias_(phys, lr->reg());
+            return lr->is_allocated() && is_alias_(phys, lr->vreg());
         }
         return is_alias_(phys, virt);
     };
@@ -484,7 +496,7 @@ LiveRange *LiveRangeAnalyzer::get_live_range(unsigned reg) const
 LiveRange *LiveRangeAnalyzer::get_physical_live_range(unsigned reg) const
 {
     auto range = get_live_range(reg);
-    if (range && range->is_physical())
+    if (range && range->is_allocated())
     {
         return range;
     }
@@ -519,72 +531,106 @@ std::map<unsigned, std::set<unsigned>> LiveRangeAnalyzer::build_interference_gra
     return graph;
 }
 
-void LiveRangeAnalyzer::dump_cfg_graphviz(std::ostream &out) const
+void LiveRangeAnalyzer::dump(std::ostream &os)
 {
-    auto tii = mf_.parent()->target_inst_info();
-    compute(); // 确保信息是最新的
-
-    out << "digraph CFG {\n";
-    out << "  node [shape=rectangle];\n";
-
-    // 输出基本块节点
-    for (const auto &bb : mf_.basicblocks())
+    os << "Live Range Analysis Result:\n";
+    for (auto &lr : reg_live_ranges_)
     {
-        out << "  " << bb->label() << " [label=\""
-            << bb->label() << " [" << bb->global_start() << ", " << bb->global_end_inclusive() << "]\\n";
+        os << lr.first << ":\n";
+        os << lr.second->to_string() << "\n";
+        os << "-----------\n";
+    }
+}
 
-        // 输出指令
-        for (const auto &inst : bb->instructions())
-        {
-            unsigned pos = mf_.get_global_instr_pos(inst.get());
-            out << std::setw(4) << pos << ": " << inst->to_string(tii) << "\\n"; // 假设 MachineInstr 有 to_string 方法
-        }
-
-        // 输出 Use/Def
-        out << "Use: {";
-        for (unsigned reg : block_info[bb.get()].use)
-        {
-            out << reg << " ";
-        }
-        out << "}\\n";
-
-        out << "Def: {";
-        for (unsigned reg : block_info[bb.get()].def)
-        {
-            out << reg << " ";
-        }
-        out << "}\\n";
-
-        // 输出 In/Out
-        out << "In: {";
-        for (unsigned reg : block_info[bb.get()].in)
-        {
-            out << reg << " ";
-        }
-        out << "}\\n";
-
-        out << "Out: {";
-        for (unsigned reg : block_info[bb.get()].out)
-        {
-            out << reg << " ";
-        }
-        out << "}\\n";
-
-        out << "\"];\n";
+void LiveRangeAnalyzer::export_to_gantt_chart(std::ostream &os) const
+{
+    if (live_ranges_dirty_)
+    {
+        compute();
     }
 
-    // 输出边
-    for (const auto &bb : mf_.basicblocks())
+    // Mermaid 甘特图头部
+    os << "```";
+    os << "gantt\n";
+    os << "    title Active Range\n";
+    os << "    dateFormat X\n";  // 使用自定义格式，X 表示指令位置
+    os << "    axisFormat %s\n"; // 显示数字格式
+
+    // 为每个寄存器创建一个部分
+    for (const auto &[reg, live_range_ptr] : reg_live_ranges_)
     {
-        for (auto succ : bb->successors())
+        const LiveRange &lr = *live_range_ptr;
+        std::string reg_type = lr.is_allocated() ? "pr" : "vr";
+        std::string reg_status = lr.is_spilled() ? " (spill to " + std::to_string(lr.spill_slot()) + ")" : "";
+
+        os << "    section " << reg_type << " " << reg << reg_status << "\n";
+
+        // 为每个区间创建一个任务
+        int interval_idx = 0;
+        for (const auto &interval : lr.intervals())
         {
-            out << "  " << bb->label() << " -> " << succ->label() << ";\n";
-        }
-        if (bb->successors().size() == 0)
-        {
-            out << "  # " << bb->label() << " has no successors\n";
+            os << "    " << "R" << reg << "_" << interval_idx
+               << " :active, " << interval.start() << ", " << interval.end() << "\n";
+            interval_idx++;
         }
     }
 
-    out << "}\n";
+    os << "```\n";
+}
+
+void LiveRangeAnalyzer::export_to_json(std::ostream &os) const
+{
+    if (live_ranges_dirty_)
+    {
+        compute();
+    }
+
+    std::stringstream json;
+    json << "{\n";
+    json << "  \"title\": \"Active Range\",\n";
+    json << "  \"axisFormat\": \"X\",\n";
+    json << "  \"sections\": [\n";
+
+    bool first_section = true;
+    for (const auto &[reg, live_range_ptr] : reg_live_ranges_)
+    {
+        const LiveRange &lr = *live_range_ptr;
+        if (!first_section)
+        {
+            json << ",\n";
+        }
+        first_section = false;
+
+        std::string reg_type = lr.is_allocated() ? "pr" : "vr";
+        bool spilled = lr.is_spilled();
+        int spill_slot = spilled ? lr.spill_slot() : -1;
+
+        json << "    {\n";
+        json << "      \"regType\": \"" << reg_type << "\",\n";
+        json << "      \"reg\": " << reg << ",\n";
+        json << "      \"spilled\": " << (spilled ? "true" : "false") << ",\n";
+        json << "      \"spillSlot\": " << spill_slot << ",\n";
+        json << "      \"intervals\": [\n";
+
+        bool first_interval = true;
+        for (const auto &interval : lr.intervals())
+        {
+            if (!first_interval)
+            {
+                json << ",\n";
+            }
+            first_interval = false;
+
+            json << "        { \"start\": " << interval.start()
+                 << ", \"end\": " << interval.end() << " }";
+        }
+
+        json << "\n      ]\n";
+        json << "    }";
+    }
+
+    json << "\n  ]\n";
+    json << "}\n";
+
+    os << json.str();
 }

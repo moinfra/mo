@@ -5,6 +5,8 @@
 #include <optional>
 #include <unordered_set>
 #include <set>
+#include <cassert>
+#include <limits>
 #include <map>
 #include <vector>
 #include <string>
@@ -30,6 +32,8 @@ private:
     unsigned start_; // Inclusive
     unsigned end_;   // Exclusive
     LiveRange *parent_;
+    mutable std::unordered_set<MachineInst *> def_insts_;
+    mutable std::unordered_set<MachineInst *> use_insts_;
 
 public:
     LiveInterval(unsigned start, unsigned end, LiveRange *parent = nullptr);
@@ -37,7 +41,12 @@ public:
     // Accessors
     unsigned start() const;
     unsigned end() const;
-    LiveRange *parent() const { return parent_; }
+    LiveRange *parent() { return parent_; }
+
+    void add_def_inst(MachineInst *inst) const { def_insts_.insert(inst); }
+    void add_use_inst(MachineInst *inst) const { use_insts_.insert(inst); }
+    const auto &def_insts() const { return def_insts_; }
+    const auto &use_insts() const { return use_insts_; }
 
     // Interval overlap check (including adjacent intervals)
     bool overlaps(const LiveInterval &other) const;
@@ -54,6 +63,8 @@ public:
         oss << "LiveInterval [" << start_ << ", " << end_ << ")";
         return oss.str();
     }
+
+    friend class LiveRange;
 };
 
 // A collection of live intervals that are related to a register.
@@ -62,10 +73,11 @@ class LiveRange
 private:
     std::vector<LiveInterval> intervals_;
 
-    unsigned reg_;             // Assigned register (physical or virtual)
-    bool is_physical_ = false; // Whether it is bound to a physical register
-    bool is_spilled_ = false;  // Whether it has been spilled to the stack
-    int spill_slot_ = -1;      // Stack slot index
+    unsigned preg_ = std::numeric_limits<unsigned>::max(); // Currently assigned register (physical or virtual)
+    unsigned vreg_ = std::numeric_limits<unsigned>::max(); // Original virtual register
+    bool is_allocated_ = false;                            // Whether it is bound to a physical register
+    bool is_spilled_ = false;                              // Whether it has been spilled to the stack
+    int spill_slot_ = -1;                                  // Stack slot index
     mutable std::unordered_set<MachineInst *> def_insts_;
     mutable std::unordered_set<MachineInst *> use_insts_;
 
@@ -74,14 +86,36 @@ private:
     void merge_intervals();
 
 public:
-    LiveRange(unsigned reg) : reg_(reg) {}
-    LiveRange(unsigned reg, std::vector<LiveInterval> intervals)
-        : intervals_(std::move(intervals)), reg_(reg) {}
+    LiveRange(unsigned vreg) : vreg_(vreg) {}
+    LiveRange(unsigned vreg, std::vector<LiveInterval> intervals)
+        : intervals_(std::move(intervals)), vreg_(vreg) {}
 
     // Add an interval and automatically merge overlaps
     void add_interval(unsigned start, unsigned end);
-    void add_def_inst(MachineInst *inst) const { def_insts_.insert(inst); }
-    void add_use_inst(MachineInst *inst) const { use_insts_.insert(inst); }
+
+    void add_def_inst(size_t pos, MachineInst *inst) const
+    {
+        def_insts_.insert(inst);
+        for (auto &interval : intervals_)
+        {
+            if (interval.start() <= pos && pos < interval.end())
+            {
+                interval.add_def_inst(inst);
+            }
+        }
+    }
+
+    void add_use_inst(size_t pos, MachineInst *inst) const
+    {
+        use_insts_.insert(inst);
+        for (auto &interval : intervals_)
+        {
+            if (interval.start() <= pos && pos < interval.end())
+            {
+                interval.add_use_inst(inst);
+            }
+        }
+    }
     std::unordered_set<MachineInst *> &def_insts() const { return def_insts_; }
     std::unordered_set<MachineInst *> &use_insts() const { return use_insts_; }
 
@@ -93,15 +127,55 @@ public:
 
     std::string to_string() const;
     // --- Register allocation related ---
-    void assign_physical_reg(unsigned phys_reg);
-    void spill(int slot);
+    void assign(unsigned preg);
+    void mark_spilled(int slot);
 
     // --- Accessors ---
-    unsigned reg() const { return reg_; }
-    bool is_physical() const { return is_physical_; }
+    unsigned vreg() const { return vreg_; }
+    unsigned preg() const { return preg_; }
+    bool is_allocated() const { return is_allocated_; }
     bool is_spilled() const { return is_spilled_; }
     int spill_slot() const { return spill_slot_; }
     const auto &intervals() const { return intervals_; }
+
+    bool is_atomized() const { return intervals_.size() == 1; }
+
+    LiveInterval &atomized_interval()
+    {
+        assert(is_atomized() && "Live range is not atomized.");
+        return intervals_[0];
+    }
+    const LiveInterval &atomized_interval() const
+    {
+        assert(is_atomized() && "Live range is not atomized.");
+        return intervals_[0];
+    }
+
+    std::vector<std::unique_ptr<LiveRange>> atomized_ranges()
+    {
+        std::vector<std::unique_ptr<LiveRange>> ret;
+        ret.reserve(intervals_.size());
+
+        for (LiveInterval interval_ : intervals_)
+        {
+            LiveInterval copied(interval_);
+            std::unique_ptr<LiveRange> new_range(new LiveRange(vreg_));
+            copied.parent_ = new_range.get();
+            new_range->intervals_.push_back(copied);
+            new_range->preg_ = preg_;
+            new_range->is_allocated_ = is_allocated_;
+            new_range->is_spilled_ = is_spilled_;
+            new_range->spill_slot_ = spill_slot_;
+
+            new_range->def_insts_ = copied.def_insts();
+            new_range->use_insts_ = copied.use_insts();
+
+            assert(new_range->is_atomized() && "New range is not atomized.");
+            ret.emplace_back(std::move(new_range));
+        }
+
+        return ret;
+    }
 };
 
 const AliasCheckFn none_alias = [](unsigned reg1, unsigned reg2)
@@ -125,13 +199,13 @@ private:
         std::unordered_set<unsigned> def;
     };
 
-    mutable std::unordered_map<MachineBasicBlock *, BlockLiveness> block_info;
+    mutable std::unordered_map<MachineBasicBlock *, BlockLiveness> block_info_;
 
 private:
     LiveRange *live_range_of(unsigned reg) const;
     void compute_data_flow() const;
-    unsigned find_first_def_pos(MachineBasicBlock *bb, unsigned reg) const;
-    unsigned find_last_def_pos(MachineBasicBlock *bb, unsigned reg) const;
+    size_t find_first_def_pos(MachineBasicBlock *bb, unsigned reg, size_t after_pos_exclusive) const;
+    size_t find_last_def_pos(MachineBasicBlock *bb, unsigned reg, size_t before_pos_exclusive) const;
     void compute_local_use_def(MachineBasicBlock *bb, std::unordered_set<unsigned> &use, std::unordered_set<unsigned> &def) const;
 
 public:
@@ -150,8 +224,11 @@ public:
     void mark_dirty() { live_ranges_dirty_ = true; }
 
     std::unordered_map<unsigned, std::unique_ptr<LiveRange>> &get_all_live_ranges() const { return reg_live_ranges_; }
+    BlockLiveness &block_info(MachineBasicBlock *bb) const { return block_info_[bb]; }
+    void dump(std::ostream &os);
+    void export_to_gantt_chart(std::ostream &os) const;
+    void export_to_json(std::ostream &os) const;
 
 public:
     void set_compute_metric_counter(size_t &counter) const { compute_metric_counter_ = &counter; }
-    void dump_cfg_graphviz(std::ostream &out) const;
 };
