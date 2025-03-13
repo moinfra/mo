@@ -83,6 +83,7 @@ public:
         GlobalAddress,
         ExternalSymbol,
         Label,
+        BasicBlock,
         MEMri,
         MEMrr,
         MEMrix
@@ -90,17 +91,18 @@ public:
 
 private:
     using Storage = std::variant<
-        std::monostate,   // Invalid
-        unsigned,         // Register (physical/virtual register number)
-        int64_t,          // Immediate (integer immediate)
-        double,           // FPImmediate (floating-point immediate)
-        int,              // FrameIndex (stack frame index)
-        GlobalVariable *, // Global (global variable)
-        ExternalSymbol,     // ExternalSym (external symbol)
-        Label,             // Label (label to be resolved to a constant value)
-        MEMri,            // MEMri memory operand
-        MEMrr,            // MEMrr memory operand
-        MEMrix            // MEMrix memory operand
+        std::monostate,      // Invalid
+        unsigned,            // Register (physical/virtual register number)
+        int64_t,             // Immediate (integer immediate)
+        double,              // FPImmediate (floating-point immediate)
+        int,                 // FrameIndex (stack frame index)
+        GlobalVariable *,    // Global (global variable)
+        ExternalSymbol,      // ExternalSym (external symbol)
+        Label,               // Label (label to be resolved to a constant value)
+        MachineBasicBlock *, // BasicBlock (basic block reference)
+        MEMri,               // MEMri memory operand
+        MEMrr,               // MEMrr memory operand
+        MEMrix               // MEMrix memory operand
         >;
 
     Storage storage_;
@@ -122,6 +124,7 @@ public:
     bool is_global() const noexcept;
     bool is_external_sym() const noexcept;
     bool is_label() const noexcept;
+    bool is_basic_block() const noexcept;
     bool is_mem_ri() const noexcept;
     bool is_mem_rr() const noexcept;
     bool is_mem_rix() const noexcept;
@@ -133,8 +136,9 @@ public:
     static MOperand create_fp_imm(double val);
     static MOperand create_frame_index(int index);
     static MOperand create_global(GlobalVariable *global_variable);
-    static MOperand create_external_sym(const char *symbol);
-    static MOperand create_label(const char *symbol);
+    static MOperand create_external_sym(std::string value);
+    static MOperand create_label(std::string value);
+    static MOperand create_basic_block(MachineBasicBlock *bb);
     static MOperand create_mem_ri(unsigned base_reg, int offset);
     static MOperand create_mem_rr(unsigned base_reg, unsigned index_reg);
     static MOperand create_mem_rix(unsigned base_reg, unsigned index_reg, int scale,
@@ -148,10 +152,12 @@ public:
     GlobalVariable *global() const;
     const char *external_sym() const;
     const char *label() const;
+    MachineBasicBlock *basic_block() const;
     MEMri mem_ri() const;
     MEMrr mem_rr() const;
     MEMrix get_mem_rix() const;
     unsigned base_reg() const;
+
     bool is_def() const { return is_def_; }
 
     std::string to_string() const;
@@ -245,14 +251,15 @@ class MachineBasicBlock
 {
 public:
     using iterator = std::vector<std::unique_ptr<MachineInst>>::iterator;
+    using const_iterator = std::vector<std::unique_ptr<MachineInst>>::const_iterator;
 
 private:
     MachineFunction &mf_;
     unsigned number_ = 0; // Unique identifier
     std::string label_;
     std::vector<std::unique_ptr<MachineInst>> insts_;
-    std::vector<MachineBasicBlock *> predecessors_;
-    std::vector<MachineBasicBlock *> successors_;
+    std::unordered_set<MachineBasicBlock *> predecessors_;
+    std::unordered_set<MachineBasicBlock *> successors_;
     mutable std::unique_ptr<PressureTracker> pressure_tracker_;
 
 public:
@@ -268,10 +275,12 @@ public:
     void erase(iterator pos);
     void append(std::unique_ptr<MachineInst> mi);
     iterator locate(const MachineInst *mi);
+    MachineBasicBlock* next_physical_block() const;
+    MachineBasicBlock* prev_physical_block() const;
 
     // CFG management
-    const std::vector<MachineBasicBlock *> &predecessors() const { return predecessors_; }
-    const std::vector<MachineBasicBlock *> &successors() const { return successors_; }
+    const std::unordered_set<MachineBasicBlock *> &predecessors() const { return predecessors_; }
+    const std::unordered_set<MachineBasicBlock *> &successors() const { return successors_; }
     void clear_cfg()
     {
         predecessors_.clear();
@@ -280,14 +289,17 @@ public:
     size_t pred_size() const { return predecessors_.size(); }
     size_t succ_size() const { return successors_.size(); }
     void add_successor(MachineBasicBlock *successor);
+    void add_predecessor(MachineBasicBlock *predecessor);
     void remove_successor(MachineBasicBlock *successor);
+    void remove_predecessor(MachineBasicBlock *predecessor);
+
     size_t global_start() const;
     size_t global_end_inclusive() const;
     // Label management
     void set_label(const std::string &label) { label_ = label; }
-    std::string get_label() const;
 
     std::string to_string() const;
+    size_t index() const { return number_; }
 
 private:
     // Helper function to get max instruction position
@@ -338,7 +350,7 @@ private:
     // Register allocation
     std::unique_ptr<RegisterAllocator> reg_allocator_;
 
-    bool registers_allocated_ = false;
+    std::optional<RegAllocResult> reg_alloc_result_ = std::nullopt;
 
     // Disallow copy and assignment
     MachineFunction(const MachineFunction &) = delete;
@@ -347,6 +359,9 @@ private:
     unsigned next_bb_number_ = 0; // Basic block number generator
 
 public:
+    using iterator = std::vector<std::unique_ptr<MachineBasicBlock>>::iterator;
+    using const_iterator = std::vector<std::unique_ptr<MachineBasicBlock>>::const_iterator;
+
     static bool is_physical_reg(unsigned reg) { return reg < FIRST_VIRT_REG; }
     static bool is_virtual_reg(unsigned reg) { return reg >= FIRST_VIRT_REG; }
 
@@ -365,7 +380,12 @@ public:
 
     // Basic block management
     MachineBasicBlock *create_block(std::string label = "");
-    const std::vector<std::unique_ptr<MachineBasicBlock>> &basicblocks() const;
+    const std::vector<std::unique_ptr<MachineBasicBlock>> &basic_blocks() const;
+    iterator locate(const MachineBasicBlock *mbb);
+    void build_cfg();
+    void dump_cfg(std::ostream &out) const;
+    void export_cfg_to_json(std::ostream &out) const;
+    MachineBasicBlock* get_basic_block_by_label(const std::string& label) const;
 
     // Virtual register management
     unsigned create_vreg(unsigned register_class_id, unsigned size = 4,
@@ -376,15 +396,14 @@ public:
     void ensure_global_positions_computed() const;
 
     // Register allocation methods
-    bool allocate_registers(RegisterAllocatorFactory::AllocatorType type =
-                                RegisterAllocatorFactory::LINEAR_SCAN);
+    RegAllocResult allocate_registers(RegisterAllocator &allocator);
     void set_register_allocator(std::unique_ptr<RegisterAllocator> allocator);
-    bool are_registers_allocated() const { return registers_allocated_; }
+    bool are_registers_allocated() const { return reg_alloc_result_ && (*reg_alloc_result_).successful; }
     int create_register_spill_slot(unsigned vreg, unsigned reg_class_id);
 
     // Instruction position management
     void mark_global_positions_dirty() { global_positions_dirty_ = true; }
-    unsigned get_global_instr_pos(const MachineInst *mi) const
+    size_t get_global_instr_pos(const MachineInst *mi) const
     {
         ensure_global_positions_computed();
         MO_ASSERT(global_instr_positions_.count(mi) != 0, "Instruction %p not found in global position map!", mi);
@@ -407,20 +426,20 @@ public:
 // Calling Convention
 //===----------------------------------------------------------------------===//
 
+struct ArgLocation
+{
+    enum LocType
+    {
+        Register,
+        Stack
+    };
+    LocType type_;
+    unsigned reg_or_offset_;
+};
+
 class CallingConv
 {
 public:
-    struct ArgLocation
-    {
-        enum LocType
-        {
-            Register,
-            Stack
-        };
-        LocType type_;
-        unsigned reg_or_offset_;
-    };
-
     enum ID
     {
         C,    // C calling convention
@@ -508,7 +527,8 @@ public:
     {
         return reg_descs_[reg].primary_rc_id;
     }
-    const std::vector<unsigned> get_reg_classes(unsigned reg) const;
+    const std::vector<unsigned> get_classes_of_reg(unsigned reg) const;
+    const std::vector<RegisterClass*> get_reg_classes() const;
     unsigned get_reg_class_weight(unsigned register_class_id) const;
     unsigned get_reg_weight(unsigned reg) const;
 
@@ -596,6 +616,14 @@ public:
                                        MachineBasicBlock::iterator insert_point,
                                        unsigned src_reg, int frame_index,
                                        int64_t offset = 0) const = 0;
+
+    virtual bool analyze_branch(
+        MachineBasicBlock &mbb,
+        MachineInst *terminator,
+        std::unordered_set<MachineBasicBlock *> &branch_targets /*out*/,
+        MachineBasicBlock *&fall_through /*out*/
+    ) const = 0;
+
 };
 
 //===----------------------------------------------------------------------===//

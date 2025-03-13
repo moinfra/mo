@@ -8,7 +8,7 @@
 
 void PressureTracker::add_interval(const LiveRange &live_range)
 {
-    unsigned weight = tri_.get_reg_weight(live_range.reg());
+    unsigned weight = tri_.get_reg_weight(live_range.vreg());
     for (const auto &interval : live_range.intervals())
     {
         auto start = interval.start();
@@ -25,7 +25,7 @@ void PressureTracker::add_interval(const LiveRange &live_range)
 
 void PressureTracker::remove_interval(const LiveRange &live_range)
 {
-    unsigned weight = tri_.get_reg_weight(live_range.reg());
+    unsigned weight = tri_.get_reg_weight(live_range.vreg());
     for (const auto &interval : live_range.intervals())
     {
         auto start = interval.start();
@@ -125,19 +125,27 @@ MOperand MOperand::create_global(GlobalVariable *global_variable)
     return op;
 }
 
-MOperand MOperand::create_external_sym(const char *symbol)
+MOperand MOperand::create_external_sym(std::string symbol)
 {
     MOperand op;
-    op.storage_ = ExternalSymbol{symbol};
+    op.storage_ = ExternalSymbol{std::move(symbol)};
     op.type_ = MOperandType::ExternalSymbol;
     return op;
 }
 
-MOperand MOperand::create_label(const char *symbol)
+MOperand MOperand::create_label(std::string symbol)
 {
     MOperand op;
-    op.storage_ = Label{symbol};
+    op.storage_ = Label{std::move(symbol)};
     op.type_ = MOperandType::Label;
+    return op;
+}
+
+MOperand MOperand::create_basic_block(MachineBasicBlock *bb)
+{
+    MOperand op;
+    op.storage_ = bb;
+    op.type_ = MOperandType::BasicBlock;
     return op;
 }
 
@@ -196,6 +204,12 @@ const char *MOperand::label() const
 {
     assert(is_label());
     return std::get<Label>(storage_).value.c_str();
+}
+
+MachineBasicBlock *MOperand::basic_block() const
+{
+    assert(is_basic_block());
+    return std::get<MachineBasicBlock *>(storage_);
 }
 
 MOperand::MEMri MOperand::mem_ri() const
@@ -274,6 +288,15 @@ bool MOperand::is_label() const noexcept
     assert(expected == actual);
     return actual;
 }
+
+bool MOperand::is_basic_block() const noexcept
+{
+    bool expected = std::holds_alternative<MachineBasicBlock *>(storage_);
+    bool actual = type_ == MOperandType::BasicBlock;
+    assert(expected == actual);
+    return actual;
+}
+
 bool MOperand::is_mem_ri() const noexcept
 {
     bool expected = std::holds_alternative<MEMri>(storage_);
@@ -281,6 +304,7 @@ bool MOperand::is_mem_ri() const noexcept
     assert(expected == actual);
     return actual;
 }
+
 bool MOperand::is_mem_rr() const noexcept
 {
     bool expected = std::holds_alternative<MEMrr>(storage_);
@@ -288,6 +312,7 @@ bool MOperand::is_mem_rr() const noexcept
     assert(expected == actual);
     return actual;
 }
+
 bool MOperand::is_mem_rix() const noexcept
 {
     bool expected = std::holds_alternative<MEMrix>(storage_);
@@ -295,6 +320,7 @@ bool MOperand::is_mem_rix() const noexcept
     assert(expected == actual);
     return actual;
 }
+
 bool MOperand::is_valid() const noexcept
 {
     bool expected = !std::holds_alternative<std::monostate>(storage_);
@@ -354,6 +380,10 @@ std::string MOperand::to_string() const
     else if (is_label())
     {
         oss << "label(" << label() << ")";
+    }
+    else if (is_basic_block())
+    {
+        oss << "bb(" << basic_block()->label() << ")";
     }
     return oss.str();
 }
@@ -704,6 +734,7 @@ void MachineBasicBlock::append(std::unique_ptr<MachineInst> mi)
 {
     mf_.mark_global_positions_dirty();
     mf_.live_range_analyzer()->mark_dirty();
+    mi->parent_bb_ = this;
     insts_.push_back(std::move(mi));
 }
 
@@ -714,12 +745,37 @@ MachineBasicBlock::iterator MachineBasicBlock::locate(const MachineInst *mi)
     return it;
 }
 
+MachineBasicBlock *MachineBasicBlock::next_physical_block() const
+{
+    auto it = mf_.locate(this);
+    if (it == mf_.basic_blocks().end())
+    {
+        return nullptr;
+    }
+    it++;
+    if (it == mf_.basic_blocks().end())
+    {
+        return nullptr;
+    }
+    return it->get();
+}
+MachineBasicBlock *MachineBasicBlock::prev_physical_block() const
+{
+    auto it = mf_.locate(this);
+    if (it == mf_.basic_blocks().begin())
+    {
+        return nullptr;
+    }
+    it--;
+    return it->get();
+}
+
 void MachineBasicBlock::add_successor(MachineBasicBlock *successor)
 {
     mf_.mark_global_positions_dirty();
     mf_.live_range_analyzer()->mark_dirty();
-    successors_.push_back(successor);
-    successor->predecessors_.push_back(this);
+    successors_.insert(successor);
+    successor->predecessors_.insert(this);
 }
 
 void MachineBasicBlock::remove_successor(MachineBasicBlock *successor)
@@ -732,6 +788,28 @@ void MachineBasicBlock::remove_successor(MachineBasicBlock *successor)
         successors_.erase(it);
         successor->predecessors_.erase(std::find(successor->predecessors_.begin(),
                                                  successor->predecessors_.end(),
+                                                 this));
+    }
+}
+
+void MachineBasicBlock::add_predecessor(MachineBasicBlock *predecessor)
+{
+    mf_.mark_global_positions_dirty();
+    mf_.live_range_analyzer()->mark_dirty();
+    predecessors_.insert(predecessor);
+    predecessor->successors_.insert(this);
+}
+
+void MachineBasicBlock::remove_predecessor(MachineBasicBlock *predecessor)
+{
+    mf_.mark_global_positions_dirty();
+    mf_.live_range_analyzer()->mark_dirty();
+    auto it = std::find(predecessors_.begin(), predecessors_.end(), predecessor);
+    if (it != predecessors_.end())
+    {
+        predecessors_.erase(it);
+        predecessor->successors_.erase(std::find(predecessor->successors_.begin(),
+                                                 predecessor->successors_.end(),
                                                  this));
     }
 }
@@ -754,17 +832,10 @@ size_t MachineBasicBlock::global_end_inclusive() const
     return mf_.get_global_instr_pos((*it).get());
 }
 
-std::string MachineBasicBlock::get_label() const
-{
-    if (!label_.empty())
-        return label_;
-    return "BB" + std::to_string(number_);
-}
-
 std::string MachineBasicBlock::to_string() const
 {
     std::ostringstream oss;
-    oss << get_label() << ":\n";
+    oss << label() << ":\n";
     for (const auto &inst : insts_)
     {
         oss << "  " << inst->to_string() << "\n";
@@ -830,7 +901,7 @@ unsigned MachineFunction::create_vreg(unsigned register_class_id, unsigned size,
 const VRegInfo &MachineFunction::get_vreg_info(unsigned reg) const
 {
     auto it = vreg_infos_.find(reg);
-    assert(it != vreg_infos_.end() && "Invalid virtual register!");
+    MO_ASSERT(it != vreg_infos_.end(), "Invalid virtual register: %u", reg);
     return it->second;
 }
 
@@ -862,7 +933,7 @@ std::string MachineFunction::to_string() const
 //===----------------------------------------------------------------------===//
 // TargetRegisterInfo Implementation
 //===----------------------------------------------------------------------===//
-const std::vector<unsigned> TargetRegisterInfo::get_reg_classes(unsigned reg) const
+const std::vector<unsigned> TargetRegisterInfo::get_classes_of_reg(unsigned reg) const
 {
     static const std::vector<unsigned> empty_reg_list_;
 
@@ -876,6 +947,14 @@ const std::vector<unsigned> TargetRegisterInfo::get_reg_classes(unsigned reg) co
         if (reg_descs_[reg].rc_mask.test(i))
             result.push_back(i);
     }
+    return result;
+}
+
+const std::vector<RegisterClass *> TargetRegisterInfo::get_reg_classes() const
+{
+    std::vector<RegisterClass *> result;
+    for (const auto &rc : register_classes_)
+        result.push_back(rc.get());
     return result;
 }
 
@@ -1004,15 +1083,21 @@ std::vector<unsigned> TargetRegisterInfo::get_allocation_order(unsigned reg_clas
 bool TargetRegisterInfo::can_allocate_reg(unsigned reg, bool ignore_reserved) const
 {
     if (reg >= reg_descs_.size())
+    {
         return false;
+    }
 
     // Check if the register is allocatable
     if (!reg_descs_[reg].is_allocatable)
+    {
         return false;
+    }
 
     // If reserved registers are not ignored, check if the register is reserved
     if (!ignore_reserved && reg_descs_[reg].is_reserved)
+    {
         return false;
+    }
 
     return true;
 }
@@ -1040,33 +1125,20 @@ unsigned TargetRegisterInfo::get_suitable_reg_class(unsigned vreg) const
 // MachineFunction Implementation
 //===----------------------------------------------------------------------===//
 
-bool MachineFunction::allocate_registers(RegisterAllocatorFactory::AllocatorType type)
+RegAllocResult MachineFunction::allocate_registers(RegisterAllocator &allocator)
 {
-    if (registers_allocated_)
-        return true; // Already allocated
-
-    // Create allocator if not already set
-    if (!reg_allocator_)
-    {
-        reg_allocator_ = RegisterAllocatorFactory::create_allocator(type, *this);
-    }
-
-    // Ensure global instruction positions are computed
-    ensure_global_positions_computed();
+    if (reg_alloc_result_ && (*reg_alloc_result_).successful)
+        return *reg_alloc_result_; // Already allocated
 
     // Compute live ranges (if needed)
     lra_->compute();
 
     // Run register allocation
-    RegAllocResult result = reg_allocator_->allocate_registers();
+    RegAllocResult result = allocator.allocate_registers();
 
-    if (result.successful)
-    {
-        registers_allocated_ = true;
-        return true;
-    }
+    reg_alloc_result_ = result;
 
-    return false;
+    return result;
 }
 
 int MachineFunction::create_register_spill_slot(unsigned vreg, unsigned reg_class_id)
@@ -1099,7 +1171,325 @@ void MachineModule::set_target_info(const TargetRegisterInfo *tri,
     tii_ = tii;
 }
 
-const std::vector<std::unique_ptr<MachineBasicBlock>> &MachineFunction::basicblocks() const
+const std::vector<std::unique_ptr<MachineBasicBlock>> &MachineFunction::basic_blocks() const
 {
     return blocks_;
+}
+
+MachineFunction::iterator MachineFunction::locate(const MachineBasicBlock *mbb)
+{
+    auto ret = std::find_if(blocks_.begin(), blocks_.end(),
+                            [mbb](const std::unique_ptr<MachineBasicBlock> &ptr)
+                            {
+                                return ptr.get() == mbb;
+                            });
+    return ret;
+}
+void MachineFunction::build_cfg()
+{
+    auto &mf = *this;
+    auto tii = parent()->target_inst_info();
+
+    // 清除所有基本块现有的CFG边
+    for (auto &mbb : mf.basic_blocks())
+    {
+        mbb->clear_cfg();
+    }
+
+    // 遍历每个基本块，建立新的CFG边
+    for (auto it = mf.basic_blocks().begin(); it != mf.basic_blocks().end(); ++it)
+    {
+        MachineBasicBlock *cur_mbb = it->get();
+
+        // 查找终止指令（最后一条指令且标记为Terminator）
+        MachineInst *terminator = nullptr;
+        if (!cur_mbb->instructions().empty())
+        {
+            auto &last_inst = cur_mbb->instructions().back();
+            if (last_inst->has_flag(MIFlag::Terminator))
+            {
+                terminator = last_inst.get();
+            }
+        }
+
+        std::unordered_set<MachineBasicBlock *> out_branch_targets;
+        MachineBasicBlock *out_fall_through = nullptr;
+
+        if (terminator)
+        {
+            // 分析分支指令获取目标
+            tii->analyze_branch(*cur_mbb, terminator, out_branch_targets, out_fall_through);
+
+            // 添加显式分支目标
+            for (auto target : out_branch_targets)
+            {
+                if (target)
+                {
+                    cur_mbb->add_successor(target);
+                    target->add_predecessor(cur_mbb);
+                }
+            }
+
+            // 添加fall-through目标
+            if (out_fall_through)
+            {
+                cur_mbb->add_successor(out_fall_through);
+                out_fall_through->add_predecessor(cur_mbb);
+            }
+        }
+        else
+        {
+            // 无终止指令时自动添加顺序后继
+            auto next_it = std::next(it);
+            if (next_it != mf.basic_blocks().end())
+            {
+                MachineBasicBlock *next_mbb = next_it->get();
+                cur_mbb->add_successor(next_mbb);
+                next_mbb->add_predecessor(cur_mbb);
+            }
+        }
+    }
+}
+
+void MachineFunction::dump_cfg(std::ostream &out) const
+{
+    auto &mf_ = *this;
+    auto tii = mf_.parent()->target_inst_info();
+
+    lra_->compute(); // 确保信息是最新的
+
+    out << "digraph CFG {\n";
+    out << "  node [shape=rectangle];\n";
+
+    // 输出基本块节点
+    for (const auto &bb : mf_.basic_blocks())
+    {
+        out << "  " << bb->label() << " [fontname=\"consolas\";label=\""
+            << bb->label() << " [" << bb->global_start() << ", " << bb->global_end_inclusive() << "]\\l";
+
+        // 输出指令
+        for (const auto &inst : bb->instructions())
+        {
+            unsigned pos = mf_.get_global_instr_pos(inst.get());
+            out << std::setw(4) << pos << ": " << inst->to_string(tii) << "\\l"; // 假设 MachineInstr 有 to_string 方法
+        }
+
+        // 输出 Use/Def
+        out << "USE: {";
+        for (unsigned reg : lra_->block_info(bb.get()).use)
+        {
+            out << reg << " ";
+        }
+        out << "}\\l";
+
+        out << "DEF: {";
+        for (unsigned reg : lra_->block_info(bb.get()).def)
+        {
+            out << reg << " ";
+        }
+        out << "}\\l";
+
+        // 输出 In/Out
+        out << " IN: {";
+        for (unsigned reg : lra_->block_info(bb.get()).in)
+        {
+            out << reg << " ";
+        }
+        out << "}\\l";
+
+        out << "OUT: {";
+        for (unsigned reg : lra_->block_info(bb.get()).out)
+        {
+            out << reg << " ";
+        }
+        out << "}\\l";
+
+        out << "\"];\n";
+    }
+
+    // 输出边
+    for (const auto &bb : mf_.basic_blocks())
+    {
+        for (auto succ : bb->successors())
+        {
+            out << "  " << bb->label() << " -> " << succ->label() << ";\n";
+        }
+        if (bb->successors().size() == 0)
+        {
+            out << "  # " << bb->label() << " has no successors\n";
+        }
+    }
+
+    out << "}\n";
+}
+
+void MachineFunction::export_cfg_to_json(std::ostream &os) const
+{
+
+    auto &mf_ = *this;
+    auto tii = mf_.parent()->target_inst_info();
+    auto lra_ = mf_.live_range_analyzer();
+    lra_->compute();
+
+    std::set<unsigned> preg_set, vreg_set;
+
+    // 收集所有寄存器
+    for (const auto &[reg, lr] : lra_->get_all_live_ranges())
+    {
+        if (lr->is_allocated())
+        {
+            preg_set.insert(reg);
+        }
+        else
+        {
+            vreg_set.insert(reg);
+        }
+    }
+
+    // Start of JSON object
+    os << "{\n";
+
+    // Basic Blocks
+    os << "\"basic_blocks\": [\n";
+    bool first_bb = true;
+    for (const auto &bb : mf_.basic_blocks())
+    {
+        if (!first_bb)
+        {
+            os << ",\n";
+        }
+        first_bb = false;
+
+        const auto &bi = lra_->block_info(bb.get());
+
+        os << "{\n";
+        os << "\"label\": \"" << bb->label() << "\",\n";
+        os << "\"start\": " << bb->global_start() << ",\n";
+        os << "\"end\": " << bb->global_end_inclusive() << ",\n";
+
+        // Instructions
+        os << "\"instructions\": [\n";
+        bool first_inst = true;
+        for (const auto &inst : bb->instructions())
+        {
+            if (!first_inst)
+            {
+                os << ",\n";
+            }
+            first_inst = false;
+
+            unsigned pos = mf_.get_global_instr_pos(inst.get());
+            os << "{\n";
+            os << "\"pos\": " << pos << ",\n";
+            std::string escaped_string = escape_json_string(inst->to_string(tii));
+            os << "\"text\": \"" << escaped_string << "\",\n";
+
+            // Active Registers
+            os << "\"active_pregs\": [";
+            bool first_preg = true;
+            for (const auto &[reg, lr] : lra_->get_all_live_ranges())
+            {
+                for (const auto &interval : lr->intervals())
+                {
+                    if (lr->is_allocated() && interval.start() <= pos && pos < interval.end())
+                    {
+                        if (!first_preg)
+                            os << ", ";
+                        os << reg;
+                        first_preg = false;
+                    }
+                }
+            }
+            os << "],\n";
+
+            os << "\"active_vregs\": [";
+            bool first_vreg = true;
+            for (const auto &[reg, lr] : lra_->get_all_live_ranges())
+            {
+                for (const auto &interval : lr->intervals())
+                {
+                    if (!lr->is_allocated() && interval.start() <= pos && pos < interval.end())
+                    {
+                        if (!first_vreg)
+                            os << ", ";
+                        os << reg;
+                        first_vreg = false;
+                    }
+                }
+            }
+            os << "]\n";
+
+            os << "}";
+        }
+        os << "\n"
+           << "],\n";
+
+        os << "\"use\": [" << mo_join(bi.use, ",") << "],\n";
+        os << "\"def\": [" << mo_join(bi.def, ",") << "],\n";
+        os << "\"in\": [" << mo_join(bi.in, ",") << "],\n";
+        os << "\"out\": [" << mo_join(bi.out, ",") << "]\n";
+
+        os << "}";
+    }
+    os << "\n"
+       << "],\n";
+
+    // Edges
+    os << "\"edges\": [\n";
+    bool first_edge = true;
+    for (const auto &bb : mf_.basic_blocks())
+    {
+        for (auto succ : bb->successors())
+        {
+            if (!first_edge)
+            {
+                os << ",\n";
+            }
+            first_edge = false;
+            os << "{\n";
+            os << "\"from\": \"" << bb->label() << "\",\n";
+            os << "\"to\": \"" << succ->label() << "\"\n";
+            os << "}";
+        }
+    }
+    os << "\n"
+       << "],\n";
+
+    // Physical Registers
+    os << "\"physical_regs\": [";
+    bool first_preg_set = true;
+    for (unsigned reg : preg_set)
+    {
+        if (!first_preg_set)
+            os << ", ";
+        os << reg;
+        first_preg_set = false;
+    }
+    os << "],\n";
+
+    // Virtual Registers
+    os << "\"virtual_regs\": [";
+    bool first_vreg_set = true;
+    for (unsigned reg : vreg_set)
+    {
+        if (!first_vreg_set)
+            os << ", ";
+        os << reg;
+        first_vreg_set = false;
+    }
+    os << "]\n";
+
+    // End of JSON object
+    os << "}\n";
+}
+
+MachineBasicBlock *MachineFunction::get_basic_block_by_label(const std::string &label) const
+{
+    auto it = std::find_if(blocks_.begin(), blocks_.end(), [label](const std::unique_ptr<MachineBasicBlock> &ptr)
+                           { return ptr->label() == label; });
+    if (it == blocks_.end())
+    {
+        return nullptr;
+    }
+    return it->get();
 }

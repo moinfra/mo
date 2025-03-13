@@ -81,26 +81,6 @@ const std::vector<int> &MachineFrame::frame_layout() const
     return layout_order_;
 }
 
-size_t MachineFrame::get_frame_size() const
-{
-    // 确保布局已更新
-    frame_layout();
-    return total_frame_size_;
-}
-
-size_t MachineFrame::get_frame_index_offset(int index) const
-{
-    // 确保布局已更新
-    frame_layout();
-    auto it = frame_offsets_.find(index);
-    if (it != frame_offsets_.end())
-    {
-        return it->second;
-    }
-    // 错误处理：无效的 index
-    throw std::out_of_range("Invalid frame index");
-}
-
 // Enhanced frame index management
 bool MachineFrame::has_frame_index(Value *value) const
 {
@@ -168,8 +148,49 @@ size_t MachineFrame::get_frame_index_offset(int index) const
     throw std::out_of_range("Invalid frame index");
 }
 
-size_t MachineFrame::get_frame_size() const
+size_t MachineFrame::get_total_frame_size() const
 {
     frame_layout();
     return total_frame_size_;
+}
+
+bool MachineFrame::is_valid_index(int index) const
+{
+    return frame_objects_.find(index) != frame_objects_.end();
+}
+// factory methods
+int MachineFrame::create_fixed_size(Value *value, int64_t size, unsigned alignment)
+{
+    return create_impl(value, size, alignment, FrameObjectMetadata::Flags::IsFixedSize);
+}
+
+// 创建可变大小对象（如 alloca）
+int MachineFrame::create_variable_size(Value *value, unsigned alignment)
+{
+    return create_impl(value, -1, alignment, FrameObjectMetadata::Flags::IsVariableSize);
+}
+
+// 创建 SIMD 变量（固定大小 + 高对齐）
+int MachineFrame::create_simd_variable(Value *value, int64_t size, unsigned simd_alignment)
+{
+    auto flags = FrameObjectMetadata::Flags::IsFixedSize | FrameObjectMetadata::Flags::NeedsRealign;
+    return create_impl(value, size, simd_alignment, flags);
+}
+
+// 创建溢出槽（固定大小 + 溢出标记）
+int MachineFrame::create_spill_slot(unsigned regClassID, int64_t size, unsigned alignment)
+{
+    auto flags = FrameObjectMetadata::IsFixedSize | FrameObjectMetadata::IsSpillSlot;
+    int idx = create_impl(nullptr, size, alignment, flags);
+
+    // 关键：检查元数据是否存在
+    if (FrameObjectMetadata *meta = get_metadata(idx))
+    {
+        meta->spill_rc_id = regClassID;
+        return idx;
+    }
+    else
+    {
+        throw std::runtime_error("Failed to create spill slot: invalid frame index");
+    }
 }

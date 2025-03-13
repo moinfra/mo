@@ -75,48 +75,20 @@ public:
     int create_frame_object(FrameObjectMetadata frame_object_info);
     const FrameObjectMetadata *get_frame_object(int index) const;
     size_t get_frame_index_offset(int index) const;
-    size_t get_frame_size() const;
-    bool is_valid_index(int index) const
-    {
-        return frame_objects_.find(index) != frame_objects_.end();
-    }
+    size_t get_total_frame_size() const;
+    bool is_valid_index(int index) const;
     // Stack frame layout
     const std::vector<int> &frame_layout() const;
 
     // factory methods
-    int createFixedSize(Value *value, int64_t size, unsigned alignment)
-    {
-        return create_impl(value, size, alignment, FrameObjectMetadata::Flags::IsFixedSize);
-    }
+    int create_fixed_size(Value *value, int64_t size, unsigned alignment);
 
     // 创建可变大小对象（如 alloca）
-    int createVariableSize(Value *value, unsigned alignment)
-    {
-        return create_impl(value, -1, alignment, FrameObjectMetadata::Flags::IsVariableSize);
-    }
+    int create_variable_size(Value *value, unsigned alignment);
 
     // 创建 SIMD 变量（固定大小 + 高对齐）
-    int createSIMDVariable(Value *value, int64_t size, unsigned simd_alignment)
-    {
-        auto flags = FrameObjectMetadata::Flags::IsFixedSize | FrameObjectMetadata::Flags::NeedsRealign;
-        return create_impl(value, size, simd_alignment, flags);
-    }
+    int create_simd_variable(Value *value, int64_t size, unsigned simd_alignment);
 
     // 创建溢出槽（固定大小 + 溢出标记）
-    int createSpillSlot(unsigned regClassID, int64_t size, unsigned alignment)
-    {
-        auto flags = FrameObjectMetadata::IsFixedSize | FrameObjectMetadata::IsSpillSlot;
-        int idx = create_impl(nullptr, size, alignment, flags);
-
-        // 关键：检查元数据是否存在
-        if (FrameObjectMetadata *meta = get_metadata(idx))
-        {
-            meta->spill_rc_id = regClassID;
-            return idx;
-        }
-        else
-        {
-            throw std::runtime_error("Failed to create spill slot: invalid frame index");
-        }
-    }
+    int create_spill_slot(unsigned regClassID, int64_t size, unsigned alignment);
 };
