@@ -103,3 +103,16 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "lsra_test",
+    srcs = ["lsra_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:machine",
+        "//src/targets:asimov_target",
+        "//src/vm:asimov_vm",
+        "//src/reg_alloc:lsra",
+        "@googletest//:gtest_main",
+    ],
+)

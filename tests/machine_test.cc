@@ -71,12 +71,12 @@ TEST(MachineFunctionTest, FrameObjectLayout)
     Value *dummy1 = mod.get_constant_int(32, 666);
     Value *dummy2 = mod.get_constant_int(32, 777);
 
-    int idx1 = mf.create_frame_object(dummy1);
-    int idx2 = mf.create_frame_object(dummy2);
+    int idx1 = mf.frame()->create_frame_object(dummy1);
+    int idx2 = mf.frame()->create_frame_object(dummy2);
 
     EXPECT_NE(idx1, idx2);
-    EXPECT_EQ(mf.get_frame_index(dummy1), idx1);
-    EXPECT_EQ(mf.get_frame_index(dummy2), idx2);
+    EXPECT_EQ(mf.frame()->get_frame_index(dummy1), idx1);
+    EXPECT_EQ(mf.frame()->get_frame_index(dummy2), idx2);
 }
 
 TEST(MOperandTest, CreateAndTypeCheck)
@@ -180,10 +180,10 @@ TEST(MachineFunctionTest, FrameObjectManagement)
     info.alignment = 4;
     info.flags = FrameObjectMetadata::IsFixedSize;
 
-    int idx = mf.create_frame_object(info);
+    int idx = mf.frame()->create_frame_object(info);
     EXPECT_GE(idx, 0);
 
-    const FrameObjectMetadata *retrieved = mf.get_frame_object(idx);
+    const FrameObjectMetadata *retrieved = mf.frame()->get_frame_object(idx);
     EXPECT_EQ(retrieved->size, 8);
     EXPECT_EQ(retrieved->alignment, 4);
     EXPECT_EQ(retrieved->flags, FrameObjectMetadata::IsFixedSize);

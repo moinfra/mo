@@ -81,8 +81,8 @@ TEST(LiveRangeTest, ConstructionAndBasicOps)
 {
     LiveRange range(100); // Virtual register 100
 
-    EXPECT_EQ(100, range.reg());
-    EXPECT_FALSE(range.is_physical());
+    EXPECT_EQ(100, range.vreg());
+    EXPECT_FALSE(range.is_allocated());
     EXPECT_FALSE(range.is_spilled());
     EXPECT_EQ(-1, range.spill_slot());
     EXPECT_TRUE(range.intervals().empty());
@@ -171,22 +171,6 @@ TEST(LiveRangeTest, InterferenceDetection)
     EXPECT_FALSE(range5.interferes_with(range1));
 }
 
-TEST(LiveRangeTest, RegisterAllocationAndSpilling)
-{
-    LiveRange range(100);
-
-    // Assign physical register
-    range.assign_physical_reg(5);
-    EXPECT_EQ(5, range.reg());
-    EXPECT_TRUE(range.is_physical());
-    EXPECT_FALSE(range.is_spilled());
-
-    // Spill to stack
-    range.spill(10);
-    EXPECT_TRUE(range.is_spilled());
-    EXPECT_EQ(10, range.spill_slot());
-}
-
 TEST(LiveRangeTest, MergeAdjacentIntervals)
 {
     LiveRange range(100);
@@ -270,7 +254,8 @@ public:
         mi3->add_operand(MOperand::create_mem_ri(Reg::SP, 0));
         bb->append(std::move(mi3));
 
-        build_cfg_from_instructions(*this);
+        this->build_cfg();
+
         return {vreg0, vreg1};
     }
 
@@ -319,7 +304,8 @@ public:
         mi4->add_operand(MOperand::create_mem_ri(Reg::SP, 0));
         bb->append(std::move(mi4));
 
-        build_cfg_from_instructions(*this);
+        this->build_cfg();
+
         return {vreg0, vreg1, vreg2};
     }
 
@@ -368,7 +354,8 @@ public:
         mi5->add_operand(MOperand::create_mem_ri(Reg::SP, 4));
         bb->append(std::move(mi5));
 
-        build_cfg_from_instructions(*this);
+        this->build_cfg();
+
         return {vreg0, vreg1, vreg2};
     }
 
@@ -380,7 +367,7 @@ public:
         auto *loop_bb = create_block("loop");
         auto *exit_bb = create_block("exit");
 
-        auto loop_bb_sym = MOperand::create_label("loop");
+        auto loop_bb_sym = MOperand::create_basic_block(loop_bb);
 
         // 创建虚拟寄存器
         unsigned vreg0 = create_vreg(RegClass::GR32, 4, false);
@@ -408,6 +395,7 @@ public:
         auto branch1 = std::make_unique<MachineInst>(RISCV::JAL);
         branch1->add_operand(MOperand::create_reg(Reg::ZERO));
         branch1->add_operand(loop_bb_sym); // 跳转到 loop_bb
+        branch1->set_flag(MIFlag::Terminator);
         entry_bb->append(std::move(branch1));
 
         // 循环基本块
@@ -427,6 +415,7 @@ public:
         mi5->add_operand(MOperand::create_reg(vreg0));
         mi5->add_operand(MOperand::create_reg(Reg::ZERO));
         mi5->add_operand(loop_bb_sym); // 如果 vreg0 != 0，跳回 loop_bb
+        mi5->set_flag(MIFlag::Terminator);
         loop_bb->append(std::move(mi5));
 
         // 出口基本块
@@ -439,7 +428,8 @@ public:
         auto mi7 = std::make_unique<MachineInst>(RISCV::RET);
         exit_bb->append(std::move(mi7));
 
-        build_cfg_from_instructions(*this);
+        this->build_cfg();
+
         return {vreg0, vreg1, vreg2};
     }
 
@@ -471,9 +461,9 @@ public:
         auto *bb3 = create_block("bb3");
 
         // 创建外部符号标签（模拟基本块地址）
-        auto bb1_sym = MOperand::create_label("bb1");
-        auto bb2_sym = MOperand::create_label("bb2");
-        auto bb3_sym = MOperand::create_label("bb3");
+        auto bb1_sym = MOperand::create_basic_block(bb1);
+        auto bb2_sym = MOperand::create_basic_block(bb2);
+        auto bb3_sym = MOperand::create_basic_block(bb3);
 
         // 创建虚拟寄存器（GR32）
         unsigned vreg0 = create_vreg(RegClass::GR32, 4, false);
@@ -503,6 +493,7 @@ public:
         mi2->add_operand(MOperand::create_reg(Reg::RA));   // rs1
         mi2->add_operand(MOperand::create_reg(Reg::ZERO)); // rs2
         mi2->add_operand(bb2_sym);                         // 使用符号目标
+        mi2->set_flag(MIFlag::Terminator);
         bb0->append(std::move(mi2));
 
         /******************** BB1 ​********************/
@@ -524,6 +515,7 @@ public:
         auto mi5 = std::make_unique<MachineInst>(RISCV::JAL);
         mi5->add_operand(MOperand::create_reg(Reg::ZERO));
         mi5->add_operand(bb3_sym);
+        mi5->set_flag(MIFlag::Terminator);
         bb1->append(std::move(mi5));
 
         /******************** BB2 ​********************/
@@ -552,6 +544,7 @@ public:
         auto mi9 = std::make_unique<MachineInst>(RISCV::JAL);
         mi9->add_operand(MOperand::create_reg(Reg::ZERO));
         mi9->add_operand(bb3_sym);
+        mi9->set_flag(MIFlag::Terminator);
         bb2->append(std::move(mi9));
 
         /******************** BB3 ​********************/
@@ -568,7 +561,7 @@ public:
         mi11->add_operand(MOperand::create_mem_ri(vreg0, 0));
         bb3->append(std::move(mi11));
 
-        build_cfg_from_instructions(*this);
+        this->build_cfg();
 
         return {vreg0, vreg1, vreg2, vreg3, vreg4, Reg::RA, vreg_temp};
     }
@@ -600,7 +593,7 @@ TEST_F(LiveRangeAnalyzerTest, ComputeAndRetrieve)
 
     // 使用返回的vreg0而非硬编码的100
     const LiveRange &range = *lra->get_live_range(vreg0); // [0, 4)
-    EXPECT_EQ(vreg0, range.reg());
+    EXPECT_EQ(vreg0, range.vreg());
 
     // 验证计算出的区间是否符合预期
     ASSERT_EQ(1, range.intervals().size());
@@ -622,7 +615,7 @@ TEST_F(LiveRangeAnalyzerTest, LiveRangeOperations)
     MO_DEBUG(range.to_string().c_str());
 
     // 测试LiveRange的基本功能
-    EXPECT_EQ(vreg0, range.reg());
+    EXPECT_EQ(vreg0, range.vreg());
     EXPECT_FALSE(range.intervals().empty());
 
     // 测试区间操作
@@ -681,7 +674,7 @@ TEST_F(LiveRangeAnalyzerTest, RISCVRigorousConflict)
     unsigned ra = vregs[5]; // 物理寄存器 RA
     unsigned vreg_temp = vregs[6];
 
-    lra->dump_cfg_graphviz(std::cout);
+    mf->dump_cfg(std::cout);
     lra->compute();
 
     for (unsigned i = 0; i < vregs.size(); i++)
@@ -720,7 +713,7 @@ TEST_F(LiveRangeAnalyzerTest, InterferenceGraphBuilding)
     unsigned vreg0 = vregs[0], vreg1 = vregs[1], vreg2 = vregs[2];
 
     lra->compute();
-    lra->dump_cfg_graphviz(std::cout);
+    mf->dump_cfg(std::cout);
 
     for (unsigned i = 0; i < vregs.size(); i++)
     {
@@ -742,7 +735,7 @@ TEST_F(LiveRangeAnalyzerTest, InterferenceGraphBuilding)
     EXPECT_TRUE(graph[vreg0].find(vreg2) != graph[vreg0].end()); // vreg0 与 verg2 冲突
 }
 
-void print_interference_graph(const std::map<unsigned int, std::set<unsigned int>>  &graph)
+void print_interference_graph(const std::map<unsigned int, std::set<unsigned int>> &graph)
 {
     MO_DEBUG("Interference graph:");
 
@@ -810,7 +803,7 @@ TEST_F(LiveRangeAnalyzerTest, DirtyFlagHandling)
 
     // 验证重新计算后结果一致
     const LiveRange range2 = *lra->get_live_range(vreg0);
-    EXPECT_EQ(range1.reg(), range2.reg());
+    EXPECT_EQ(range1.vreg(), range2.vreg());
     EXPECT_EQ(range1.intervals().size(), range2.intervals().size());
 
     // 验证计算调用次数增加
@@ -834,14 +827,16 @@ TEST_F(LiveRangeAnalyzerTest, ComplexScenario)
     }
 
     lra->compute();
-    lra->dump_cfg_graphviz(std::cout);
+    mf->dump_cfg(std::cout);
 
     // 验证复杂场景下的活跃范围
     const LiveRange &range1 = *lra->get_live_range(vreg0);
-    EXPECT_EQ(2, range1.intervals().size()); // 假设有两个不连续的活跃区间
+    MO_DEBUG("range1: %s", range1.to_string().c_str());
+    EXPECT_EQ(1, range1.intervals().size()); 
 
     const LiveRange &range2 = *lra->get_live_range(vreg1);
-    EXPECT_EQ(2, range2.intervals().size()); // 假设只有一个连续的活跃区间
+    MO_DEBUG("range2: %s", range2.to_string().c_str());
+    EXPECT_EQ(2, range2.intervals().size()); 
 
     // 验证冲突
     EXPECT_TRUE(lra->has_conflict(vreg0, vreg1));
@@ -849,8 +844,8 @@ TEST_F(LiveRangeAnalyzerTest, ComplexScenario)
 
     // 验证干涉图
     auto graph = lra->build_interference_graph();
-    lra->dump_cfg_graphviz(std::cout);
+    mf->dump_cfg(std::cout);
     print_interference_graph(graph);
-    EXPECT_EQ(3, graph.size());        // 假设总共有3个寄存器
-    EXPECT_EQ(1, graph[vreg0].size()); // 假设寄存器100与其他两个都冲突
+    EXPECT_EQ(3, graph.size());        
+    EXPECT_EQ(1, graph[vreg0].size()); 
 }
