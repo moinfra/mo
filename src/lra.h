@@ -151,31 +151,7 @@ public:
         return intervals_[0];
     }
 
-    std::vector<std::unique_ptr<LiveRange>> atomized_ranges()
-    {
-        std::vector<std::unique_ptr<LiveRange>> ret;
-        ret.reserve(intervals_.size());
-
-        for (LiveInterval interval_ : intervals_)
-        {
-            LiveInterval copied(interval_);
-            std::unique_ptr<LiveRange> new_range(new LiveRange(vreg_));
-            copied.parent_ = new_range.get();
-            new_range->intervals_.push_back(copied);
-            new_range->preg_ = preg_;
-            new_range->is_allocated_ = is_allocated_;
-            new_range->is_spilled_ = is_spilled_;
-            new_range->spill_slot_ = spill_slot_;
-
-            new_range->def_insts_ = copied.def_insts();
-            new_range->use_insts_ = copied.use_insts();
-
-            assert(new_range->is_atomized() && "New range is not atomized.");
-            ret.emplace_back(std::move(new_range));
-        }
-
-        return ret;
-    }
+    std::vector<std::unique_ptr<LiveRange>> atomized_ranges(MachineFunction &mf);
 };
 
 const AliasCheckFn none_alias = [](unsigned reg1, unsigned reg2)

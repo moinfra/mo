@@ -151,6 +151,51 @@ void LiveRange::merge_intervals()
     }
     intervals_.swap(merged);
 }
+std::vector<std::unique_ptr<LiveRange>> LiveRange::atomized_ranges(MachineFunction &mf)
+{
+
+    std::vector<std::unique_ptr<LiveRange>> ret;
+    ret.reserve(intervals_.size());
+
+    bool is_first_interval = true;
+    for (LiveInterval interval_ : intervals_)
+    {
+        LiveInterval copied(interval_);
+
+        // 区间分裂之后，要创建新的变量，这样能确保以 Interval 为单位的分配器能够正确分配
+
+        auto new_vreg = is_first_interval ? vreg_ : mf.clone_vreg(vreg_);
+        std::unique_ptr<LiveRange> new_range(new LiveRange(new_vreg));
+        copied.parent_ = new_range.get();
+        new_range->intervals_.push_back(copied);
+        new_range->preg_ = preg_;
+        new_range->is_allocated_ = is_allocated_;
+        new_range->is_spilled_ = is_spilled_;
+        new_range->spill_slot_ = spill_slot_;
+
+        new_range->def_insts_ = copied.def_insts();
+        new_range->use_insts_ = copied.use_insts();
+
+        if (!is_first_interval) // 替换新区间对变量的使用
+        {
+            MO_DEBUG("New vreg cloned: %u -> %u", vreg_, new_vreg);
+            for (auto &bb : mf.basic_blocks())
+            {
+                for (auto &it : bb->instructions())
+                {
+                    it->replace_reg(vreg_, new_vreg);
+                }
+            }
+        }
+
+        assert(new_range->is_atomized() && "New range is not atomized.");
+        ret.emplace_back(std::move(new_range));
+
+        is_first_interval = false;
+    }
+
+    return ret;
+}
 
 //===----------------------------------------------------------------------===//
 // Live Range Analysis Implementation
