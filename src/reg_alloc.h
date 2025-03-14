@@ -44,6 +44,7 @@ protected:
 
     // Track physical register assignments
     std::map<unsigned, unsigned> vreg_to_preg_map_;
+    std::map<unsigned, unsigned> vreg_to_tmp_preg_map_; // used for spilling
 
     // Track spill slots
     std::map<unsigned, int> vreg_to_spill_slot_;
@@ -55,6 +56,7 @@ protected:
     // Utility methods for derived allocators
     virtual void initialize_allocation();
     virtual bool assign_physical_reg(unsigned vreg, unsigned preg);
+    virtual bool assign_temp_physical_reg(unsigned vreg, unsigned preg);
     virtual int allocate_spill_slot(unsigned vreg);
 
 public:
@@ -63,13 +65,18 @@ public:
 
     // Main allocation method to be implemented by derived classes
     virtual RegAllocResult allocate_registers() = 0;
-
+    virtual void apply();
+    //  TODO: 1. Check if each vregs is assigned to a preg or spill slot
+    //  TODO: 2. Check if no vreg is assigned to two different pregs or spill slots
+    //  TODO: 3. Check if any two conflicting vregs are assigned to different pregs or spill slots
+    virtual void validate_allocation() {}
     // Common interface methods
     std::optional<unsigned> get_assigned_reg(unsigned vreg) const;
     bool is_spilled(unsigned vreg) const;
     int get_spill_slot(unsigned vreg) const;
 
     std::map<unsigned, unsigned> get_vreg_to_preg_map() const { return vreg_to_preg_map_; }
+    std::map<unsigned, unsigned> get_vreg_to_tmp_preg_map() const { return vreg_to_tmp_preg_map_; }
     std::map<unsigned, int> get_vreg_to_spill_slot() const { return vreg_to_spill_slot_; }
     unsigned get_num_spills() const { return num_spills_; }
     unsigned get_num_copies() const { return num_copies_; }
