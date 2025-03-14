@@ -21,16 +21,16 @@ namespace ASIMOV
         {
             reg_descs_[i] = {
                 .spill_cost = 6, // 默认溢出代价
-                .is_callee_saved = false,
+                // .is_callee_saved = false,
                 .is_reserved = false,
                 .is_allocatable = true,
                 .primary_rc_id = GR32,
                 .rc_mask = 0x1 // 位掩码对应GR32
             };
-
-            reg_descs_[R5].is_allocatable = false;
-            reg_descs_[R5].is_reserved = false;
         }
+
+        reg_descs_[R5].is_allocatable = false;
+        reg_descs_[R5].is_reserved = false;
 
         // 标记保留寄存器（不可分配）
         for (auto reg : RESERVED_REGS)
@@ -40,17 +40,15 @@ namespace ASIMOV
             reg_descs_[reg].spill_cost = 0; // 保留寄存器无需溢出
         }
 
-        // 特殊处理栈指针R6
-        reg_descs_[R6].spill_cost = 0; // 栈指针不可溢出
-        reg_descs_[R6].is_callee_saved = true;
+        // 特殊处理栈指针R7
+        reg_descs_[R7].spill_cost = 0; // 栈指针不可溢出
 
         // 配置被调用者保存的寄存器
-        for (auto reg : callee_saved_map_[CallingConv::C])
+        for (auto reg : call_conventions_[CallingConv::C].callee_saved_regs)
         {
             auto rc = reg_descs_[reg].primary_rc_id;
             if (rc == GR32)
             {
-                reg_descs_[reg].is_callee_saved = true;
                 reg_descs_[reg].spill_cost = 10; // 更高溢出代价
             }
         }
@@ -60,7 +58,7 @@ namespace ASIMOV
         {
             reg_descs_[i] = {
                 .spill_cost = 8, // 浮点默认溢出代价
-                .is_callee_saved = false,
+                // .is_callee_saved = false,
                 .is_reserved = false,
                 .is_allocatable = true,
                 .primary_rc_id = FP32,
@@ -69,12 +67,11 @@ namespace ASIMOV
         }
 
         // 配置被调用者保存的浮点寄存器
-        for (auto reg : callee_saved_map_[CallingConv::C])
+        for (auto reg : call_conventions_[CallingConv::C].callee_saved_regs)
         {
             auto rc = reg_descs_[reg].primary_rc_id;
             if (rc == FP32)
             {
-                reg_descs_[reg].is_callee_saved = true;
                 reg_descs_[reg].spill_cost = 12; // 更高溢出代价
             }
         }
@@ -134,7 +131,7 @@ namespace ASIMOV
             return OP_TYPE_R;
         case MOVW:
         case MOVD:
-        case MOV:
+        case LI:
             return OP_TYPE_I;
         case JMP:
             return OP_TYPE_J;
@@ -152,17 +149,14 @@ namespace ASIMOV
 
     void ASIMOVRegisterInfo::initializeCallingConventions()
     {
-        // 确保调用约定映射有足够空间
-        callee_saved_map_.reserve(CallingConv::ID::NUM_CALLING_CONV);
-        caller_saved_map_.reserve(CallingConv::ID::NUM_CALLING_CONV);
-
         // 定义被调用者保存的寄存器 (Callee-saved)
         // 这些寄存器在函数调用前后需要保持不变，如果函数内部修改了这些寄存器，需要负责保存和恢复
         std::vector<unsigned> callee_saved = {
-            Reg::R5, // 示例：R5 是被调用者保存的
             Reg::R6, // 栈指针通常是被调用者保存的
             Reg::R7  // 示例：R7 也是被调用者保存的
         };
+
+        call_conventions_[CallingConv::C].callee_saved_regs.insert(callee_saved.begin(), callee_saved.end());
 
         // 定义调用者保存的寄存器 (Caller-saved)
         // 这些寄存器在函数调用前后可能被改变，调用者需要负责保存和恢复
@@ -181,29 +175,21 @@ namespace ASIMOV
             Reg::F6,
             Reg::F7};
 
-        // 设置C调用约定
-        callee_saved_map_[CallingConv::C] = callee_saved;
-        caller_saved_map_[CallingConv::C] = caller_saved;
-
-        // 参数传递规则
-        ArgPassingRule c_rule;
-
-        // 整型参数使用R0-R3
-        c_rule.int_regs = {
-            Reg::R0,
-            Reg::R1,
-            Reg::R2,
-            Reg::R3};
-
-        // 浮点参数使用F0-F3
-        c_rule.fp_regs = {
-            Reg::F0,
-            Reg::F1,
-            Reg::F2,
-            Reg::F3};
-
         // 设置C调用约定的参数传递规则
-        arg_rules_[CallingConv::C] = c_rule;
+        call_conventions_[CallingConv::C].arg_passing = {
+            .int_regs = {
+                Reg::R0,
+                Reg::R1,
+                Reg::R2,
+                Reg::R3},
+            .fp_regs = {Reg::F0, Reg::F1, Reg::F2, Reg::F3},
+            .stack_align = 4,
+            .shadow_space = false,
+        };
+
+        call_conventions_[CallingConv::C].temp_regs.insert(Reg::R5); // 临时寄存器
+
+        MO_DEBUG("Initialized calling conventions for ASIMOV target %p\n", &call_conventions_);
     }
 
     // 操作码到字符串映射
@@ -239,8 +225,8 @@ namespace ASIMOV
             return "JZ";
         case JNZ:
             return "JNZ";
-        case MOV:
-            return "MOV";
+        case LI:
+            return "LI";
         case MOVW:
             return "MOVW";
         case MOVD:
@@ -355,7 +341,7 @@ namespace ASIMOV
             }
 
             const auto &mem = MI.operands().back().mem_ri();
-            if (mem.base_reg == R6 && mem.offset % 4 != 0)
+            if (mem.base_reg == R7 && mem.offset % 4 != 0)
             {
                 error_msg = "Stack access requires 4-byte alignment";
                 return false;
@@ -432,16 +418,16 @@ namespace ASIMOV
             // 保存返回地址到栈
             mbb.parent()->frame()->create_fixed_size(nullptr, SIZE_DWORD, ALIGN);
 
-            // STORE R7, [R6]
+            // STORE R7, [R7]
             auto store = std::make_unique<MachineInst>(STORE);
             store->add_operand(MOperand::create_reg(R7));
-            store->add_operand(MOperand::create_mem_ri(R6, 0));
+            store->add_operand(MOperand::create_mem_ri(R7, 0));
             mbb.insert(mii, std::move(store));
 
-            // SUB R6, R6, 4 (栈向下增长)
+            // SUB R7, R7, 4 (栈向下增长)
             auto sub = std::make_unique<MachineInst>(SUB);
-            sub->add_operand(MOperand::create_reg(R6, true));
-            sub->add_operand(MOperand::create_reg(R6));
+            sub->add_operand(MOperand::create_reg(R7, true));
+            sub->add_operand(MOperand::create_reg(R7));
             sub->add_operand(MOperand::create_imm(4));
             mbb.insert(mii, std::move(sub));
 
@@ -463,17 +449,17 @@ namespace ASIMOV
             // 2. 调整栈指针
             // 3. 返回跳转
 
-            // ADD R6, R6, 4
+            // ADD R7, R7, 4
             auto add = std::make_unique<MachineInst>(ADD);
-            add->add_operand(MOperand::create_reg(R6, true));
-            add->add_operand(MOperand::create_reg(R6));
+            add->add_operand(MOperand::create_reg(R7, true));
+            add->add_operand(MOperand::create_reg(R7));
             add->add_operand(MOperand::create_imm(4));
             mbb.insert(mii, std::move(add));
 
-            // LOAD R7, [R6]
+            // LOAD R7, [R7]
             auto load = std::make_unique<MachineInst>(LOAD);
             load->add_operand(MOperand::create_reg(R7, true));
-            load->add_operand(MOperand::create_mem_ri(R6, 0));
+            load->add_operand(MOperand::create_mem_ri(R7, 0));
             mbb.insert(mii, std::move(load));
 
             // JMP R7
@@ -484,7 +470,7 @@ namespace ASIMOV
             mi.erase_from_parent();
             return;
         }
-        case MOV:
+        case LI:
         {
             // 展开MOV到MOVW/MOVD
             if (mi.operands().size() != 2)
@@ -665,7 +651,7 @@ namespace ASIMOV
         return false;
     }
 
-    void ASIMOVTargetInstInfo::insert_load_from_stack(
+    MachineBasicBlock::iterator ASIMOVTargetInstInfo::insert_load_from_stack(
         MachineBasicBlock &mbb,
         MachineBasicBlock::iterator insert_point,
         unsigned dest_reg, int frame_index,
@@ -677,15 +663,15 @@ namespace ASIMOV
 
         int total_offset = mf.frame()->get_frame_index_offset(frame_index) + offset;
 
-        // 生成: LOAD dest, [R6 + offset]
+        // 生成: LOAD dest, [R7 + offset]
         auto mi = std::make_unique<MachineInst>(LOAD);
         mi->add_operand(MOperand::create_reg(dest_reg, true));
         mi->add_operand(MOperand::create_mem_ri(base_reg, total_offset));
 
-        mbb.insert(insert_point, std::move(mi));
+        return mbb.insert(insert_point, std::move(mi));
     }
 
-    void ASIMOVTargetInstInfo::insert_store_to_stack(
+    MachineBasicBlock::iterator ASIMOVTargetInstInfo::insert_store_to_stack(
         MachineBasicBlock &mbb,
         MachineBasicBlock::iterator insert_point,
         unsigned src_reg, int frame_index,
@@ -694,12 +680,12 @@ namespace ASIMOV
         auto mf = mbb.parent();
         int total_offset = mf->frame()->get_frame_index_offset(frame_index) + offset;
 
-        // 生成: STORE src, [R6 + offset]
+        // 生成: STORE src, [R7 + offset]
         auto mi = std::make_unique<MachineInst>(STORE);
         mi->add_operand(MOperand::create_reg(src_reg));
-        mi->add_operand(MOperand::create_mem_ri(R6, total_offset));
+        mi->add_operand(MOperand::create_mem_ri(R7, total_offset));
 
-        mbb.insert(insert_point, std::move(mi));
+        return mbb.insert(insert_point, std::move(mi));
     }
 
     bool ASIMOVTargetInstInfo::is_legal_immediate(int64_t imm, unsigned size) const

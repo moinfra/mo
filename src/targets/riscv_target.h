@@ -115,10 +115,6 @@ namespace RISCV
         void initializeRegisters(ABIVersion abi);
         void initializeRegisterClasses(ABIVersion abi);
         void initializeCallingConventions(ABIVersion abi);
-
-        std::array<RegisterDesc, 65> reg_descs_; // 64个寄存器 + PC
-        std::vector<std::vector<unsigned>> callee_saved_map_;
-        std::vector<std::vector<unsigned>> caller_saved_map_;
     };
     // RISC-V 指令操作码定义
 
@@ -587,15 +583,15 @@ namespace RISCV
                            MachineFunction &MF) const override;
 
         // Implement stack load/store methods
-        void insert_load_from_stack(MachineBasicBlock &mbb,
-                                    MachineBasicBlock::iterator insert_point,
-                                    unsigned dest_reg, int frame_index,
-                                    int64_t offset = 0) const override;
+        MachineBasicBlock::iterator insert_load_from_stack(MachineBasicBlock &mbb,
+                                                           MachineBasicBlock::iterator insert_point,
+                                                           unsigned dest_reg, int frame_index,
+                                                           int64_t offset = 0) const override;
 
-        void insert_store_to_stack(MachineBasicBlock &mbb,
-                                   MachineBasicBlock::iterator insert_point,
-                                   unsigned src_reg, int frame_index,
-                                   int64_t offset = 0) const override;
+        MachineBasicBlock::iterator insert_store_to_stack(MachineBasicBlock &mbb,
+                                                          MachineBasicBlock::iterator insert_point,
+                                                          unsigned src_reg, int frame_index,
+                                                          int64_t offset = 0) const override;
         bool analyze_branch(
             MachineBasicBlock &mbb,
             MachineInst *terminator,

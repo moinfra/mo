@@ -22,7 +22,6 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
     for (unsigned reg = Reg::ZERO; reg <= Reg::T6; ++reg)
     {
         reg_descs_[reg].spill_cost = 6;
-        reg_descs_[reg].is_callee_saved = false;
         reg_descs_[reg].is_reserved = false;
         reg_descs_[reg].is_allocatable = true;
         reg_descs_[reg].primary_rc_id = 0; // 默认属于整型寄存器类
@@ -52,7 +51,6 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
 
     for (auto reg : callee_saved_int)
     {
-        reg_descs_[reg].is_callee_saved = true;
         reg_descs_[reg].spill_cost = 10; // 更高的溢出代价
     }
 
@@ -64,7 +62,6 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
         for (unsigned reg = Reg::F0; reg <= Reg::F31; ++reg)
         {
             reg_descs_[reg].spill_cost = 8;
-            reg_descs_[reg].is_callee_saved = false;
             reg_descs_[reg].is_reserved = false;
             reg_descs_[reg].is_allocatable = true;
             reg_descs_[reg].primary_rc_id = 1; // 默认属于浮点寄存器类
@@ -80,7 +77,6 @@ void RISCVRegisterInfo::initializeRegisters(ABIVersion abi)
 
         for (auto reg : callee_saved_fp)
         {
-            reg_descs_[reg].is_callee_saved = true;
             reg_descs_[reg].spill_cost = 12;
         }
     }
@@ -243,7 +239,7 @@ void RISCVRegisterInfo::initializeRegisterClasses(ABIVersion abi)
             (reg >= Reg::F8 && reg <= Reg::F9) ||
             (reg >= Reg::F18 && reg <= Reg::F27))
         {
-            reg_descs_[reg].is_callee_saved = true;
+            call_conventions_[CallingConv::C].callee_saved_regs.insert(reg);
         }
     }
 }
@@ -251,9 +247,6 @@ void RISCVRegisterInfo::initializeRegisterClasses(ABIVersion abi)
 // 初始化调用约定
 void RISCVRegisterInfo::initializeCallingConventions(ABIVersion abi)
 {
-    // 确保调用约定映射有足够空间
-    callee_saved_map_.resize(CallingConv::ID::NUM_CALLING_CONV);
-    caller_saved_map_.resize(CallingConv::ID::NUM_CALLING_CONV);
 
     // 整型被调用者保存寄存器
     std::vector<unsigned> callee_saved = {
@@ -293,28 +286,37 @@ void RISCVRegisterInfo::initializeCallingConventions(ABIVersion abi)
         caller_saved.insert(caller_saved.end(), caller_saved_fp.begin(), caller_saved_fp.end());
     }
 
-    // 设置C调用约定
-    callee_saved_map_[CallingConv::C] = callee_saved;
-    caller_saved_map_[CallingConv::C] = caller_saved;
-
-    // 参数传递规则
-    ArgPassingRule c_rule;
-
-    // 整型参数使用a0-a7
-    c_rule.int_regs = {
-        Reg::A0, Reg::A1, Reg::A2, Reg::A3,
-        Reg::A4, Reg::A5, Reg::A6, Reg::A7};
-
-    // 浮点参数使用fa0-fa7（如果支持）
-    if (has_float)
-    {
-        c_rule.fp_regs = {
-            Reg::F10, Reg::F11, Reg::F12, Reg::F13,
-            Reg::F14, Reg::F15, Reg::F16, Reg::F17};
+    std::vector<unsigned> fp_regs;
+    if(has_float) {
+        fp_regs = {
+            Reg::F10,
+            Reg::F11,
+            Reg::F12,
+            Reg::F13,
+            Reg::F14,
+            Reg::F15,
+            Reg::F16,
+            Reg::F17,
+        };
     }
 
-    // 设置C调用约定的参数传递规则
-    arg_rules_[CallingConv::C] = c_rule;
+    call_conventions_[CallingConv::C].callee_saved_regs.insert(callee_saved.begin(), callee_saved.end());
+    call_conventions_[CallingConv::C].caller_saved_regs.insert(caller_saved.begin(), caller_saved.end());
+    call_conventions_[CallingConv::C].arg_passing = {
+        .int_regs = {
+            Reg::A0,
+            Reg::A1,
+            Reg::A2,
+            Reg::A3,
+            Reg::A4,
+            Reg::A5,
+            Reg::A6,
+            Reg::A7,
+        },
+        .fp_regs = fp_regs,
+        .stack_align = 4,
+        .shadow_space = false,
+    };
 }
 
 //===----------------------------------------------------------------------===//
@@ -1200,10 +1202,10 @@ void RISCVTargetInstInfo::expand_j(MachineBasicBlock &MBB, MachineBasicBlock::it
     MBB.erase(mii);
 }
 
-void RISCVTargetInstInfo::insert_load_from_stack(MachineBasicBlock &mbb,
-                                                 MachineBasicBlock::iterator insert_point,
-                                                 unsigned dest_reg, int frame_index,
-                                                 int64_t offset) const
+MachineBasicBlock::iterator RISCVTargetInstInfo::insert_load_from_stack(MachineBasicBlock &mbb,
+                                                                        MachineBasicBlock::iterator insert_point,
+                                                                        unsigned dest_reg, int frame_index,
+                                                                        int64_t offset) const
 {
     // 获取函数和帧索引信息
     MachineFunction *mf = mbb.parent();
@@ -1250,12 +1252,12 @@ void RISCVTargetInstInfo::insert_load_from_stack(MachineBasicBlock &mbb,
     auto instr = std::make_unique<MachineInst>(load_op, ops);
     instr->set_flag(MIFlag::MayLoad);
 
-    mbb.insert(insert_point, std::move(instr));
+    return mbb.insert(insert_point, std::move(instr));
 }
-void RISCVTargetInstInfo::insert_store_to_stack(MachineBasicBlock &mbb,
-                                                MachineBasicBlock::iterator insert_point,
-                                                unsigned src_reg, int frame_index,
-                                                int64_t offset) const
+MachineBasicBlock::iterator RISCVTargetInstInfo::insert_store_to_stack(MachineBasicBlock &mbb,
+                                                                       MachineBasicBlock::iterator insert_point,
+                                                                       unsigned src_reg, int frame_index,
+                                                                       int64_t offset) const
 {
     // 获取函数和帧索引信息
     MachineFunction *mf = mbb.parent();
@@ -1302,7 +1304,7 @@ void RISCVTargetInstInfo::insert_store_to_stack(MachineBasicBlock &mbb,
     auto instr = std::make_unique<MachineInst>(store_op, ops);
     instr->set_flag(MIFlag::MayStore);
 
-    mbb.insert(insert_point, std::move(instr));
+    return mbb.insert(insert_point, std::move(instr));
 }
 
 namespace RISCV

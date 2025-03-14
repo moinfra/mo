@@ -34,7 +34,7 @@ namespace ASIMOV
         R2,
         R3,
         R4,
-        R5,
+        R5, // 临时寄存器
         R6, // SP 栈指针寄存器
         R7, // BP 基址指针寄存器（不强制要求）
             // 浮点寄存器 (F0-F7)
@@ -45,7 +45,7 @@ namespace ASIMOV
         F4,
         F5,
         F6,
-        F7,
+        F7, // 临时寄存器
 
         TOTAL_REG
     };
@@ -70,7 +70,7 @@ namespace ASIMOV
         NOP,         // nop (无操作数)
         HALT = 0xFF, // halt (无操作数)
         // 伪指令
-        MOV,  // 根据 imm 展开为 movw 或 movd
+        LI,  // 根据 imm 展开为 movw 或 movd
         CMP,  // cmp rd, rs1, rs2 (R-type) 展开为 sub rd, rs1, rs2
         RET,  // ret (无操作数)
         CALL, // call target (J-type)
@@ -86,7 +86,7 @@ namespace ASIMOV
     };
 
     constexpr std::array<Reg, 2> RESERVED_REGS = {
-        Reg::R6, // 栈指针
+        Reg::R7, // 栈指针
     };
 
     // 寄存器信息类
@@ -94,6 +94,7 @@ namespace ASIMOV
     {
     public:
         explicit ASIMOVRegisterInfo();
+        ~ASIMOVRegisterInfo() { MO_DEBUG("ASIMOVRegisterInfo destroyed %p \n", this); }
 
     private:
         void initializeRegisters();
@@ -130,12 +131,12 @@ namespace ASIMOV
         bool legalize_inst(MachineBasicBlock &mbb, MachineBasicBlock::iterator mii,
                            MachineFunction &mf) const override;
 
-        void insert_load_from_stack(MachineBasicBlock &mbb, MachineBasicBlock::iterator insert_point,
-                                    unsigned dest_reg, int frame_index,
-                                    int64_t offset) const override;
-        void insert_store_to_stack(MachineBasicBlock &mbb, MachineBasicBlock::iterator insert_point,
-                                   unsigned src_reg, int frame_index,
-                                   int64_t offset) const override;
+        MachineBasicBlock::iterator insert_load_from_stack(MachineBasicBlock &mbb, MachineBasicBlock::iterator insert_point,
+                                                           unsigned dest_reg, int frame_index,
+                                                           int64_t offset) const override;
+        MachineBasicBlock::iterator insert_store_to_stack(MachineBasicBlock &mbb, MachineBasicBlock::iterator insert_point,
+                                                          unsigned src_reg, int frame_index,
+                                                          int64_t offset) const override;
         bool analyze_branch(
             MachineBasicBlock &mbb,
             MachineInst *terminator,
@@ -159,6 +160,7 @@ namespace ASIMOV
             MachineFrame &frame = *mf.frame();
             int stack_size = frame.get_total_frame_size();
 
+            // 分配栈空间
             if (stack_size > 0)
             {
                 // SUB R6, R6, stack_size
@@ -176,6 +178,7 @@ namespace ASIMOV
             MachineFrame &frame = *mf.frame();
             int stack_size = frame.get_total_frame_size();
 
+            // 释放栈空间
             if (stack_size > 0)
             {
                 // ADD R6, R6, stack_size
