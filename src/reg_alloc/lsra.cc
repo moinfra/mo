@@ -1,7 +1,6 @@
 #include "lsra.h"
 #include "../lra.h"
 #include "../machine.h"
-#include "spillgen.h"
 
 void LinearScanRegisterAllocator::initialize()
 {
@@ -12,8 +11,7 @@ void LinearScanRegisterAllocator::initialize()
     {
         if (MachineFunction::is_virtual_reg(reg))
         {
-            auto vreg = reg;
-            for (auto &range : lr->atomized_ranges())
+            for (auto &range : lr->atomized_ranges(mf_))
             {
                 auto range_ptr = range.get();
                 ranges_.push_back(std::move(range));
@@ -136,9 +134,17 @@ LiveRange *LinearScanRegisterAllocator::choose_register_to_spill(unsigned curren
 
 bool LinearScanRegisterAllocator::allocate_register_for(LiveRange *lr)
 {
+    auto vreg = lr->vreg();
+    if (auto preg_it = vreg_to_preg_map_.find(vreg); preg_it != vreg_to_preg_map_.end())
+    {
+        MO_DEBUG("Register for vreg %u already assigned to preg %u", vreg, preg_it->second);
+        lr->assign(preg_it->second);
+        return true;
+    }
+
     MO_ASSERT(!lr->is_allocated(), "Expected virtual register");
-    MO_DEBUG("Attempting to allocate register for vreg %u", lr->vreg());
-    std::vector<unsigned> candidates = get_allocatable_regs(lr->vreg());
+    MO_DEBUG("Attempting to allocate register for vreg %u", vreg);
+    std::vector<unsigned> candidates = get_allocatable_regs(vreg);
 
     // 寻找最佳物理寄存器
     for (unsigned preg : candidates)
@@ -147,9 +153,9 @@ bool LinearScanRegisterAllocator::allocate_register_for(LiveRange *lr)
         PhysRegState &state = phys_reg_states_[preg];
         if (state.available && !has_conflict(lr, preg))
         {
-            MO_DEBUG("  Allocating physical register: %u for vreg %u", preg, lr->vreg());
+            MO_DEBUG("  Allocating physical register: %u for vreg %u", preg, vreg);
             lr->assign(preg);
-            assign_physical_reg(lr->vreg(), preg);
+            assign_physical_reg(vreg, preg);
             state.available = false;
             state.assigned_range = lr;
             state.last_use_pos = lr->atomized_interval().end();
@@ -165,7 +171,7 @@ bool LinearScanRegisterAllocator::allocate_register_for(LiveRange *lr)
             MO_DEBUG("  Conflict with current live range");
         }
     }
-    MO_DEBUG("Failed to allocate register for vreg %u", lr->vreg());
+    MO_DEBUG("Failed to allocate register for vreg %u", vreg);
     return false;
 }
 
@@ -187,10 +193,15 @@ void LinearScanRegisterAllocator::spill_live_range(LiveRange *lr)
 {
     MO_ASSERT(lr->is_allocated(), "Expected physical register");
     MO_DEBUG("Spilling range of preg %u", lr->vreg());
-    int slot = allocate_spill_slot(lr->vreg());
-    unsigned preg = lr->preg();
+    auto slot = allocate_spill_slot(lr->vreg());
+    auto vreg_rc = mf_.get_vreg_info(lr->vreg()).register_class_id_;
+    auto tmp_regs = tri_.get_temp_regs(mf_.call_convention(), vreg_rc);
+    MO_ASSERT(tmp_regs.size() > 0, "No temporary registers available for spilling");
+    assign_temp_physical_reg(lr->vreg(), tmp_regs[0]);
+    auto preg = lr->preg();
 
     MO_DEBUG("Freeing physical register: %u", preg);
+
     auto &state = phys_reg_states_[preg];
     MO_ASSERT(state.assigned_range == lr, "Expected assigned range");
     state.available = true;

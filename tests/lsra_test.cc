@@ -238,6 +238,9 @@ TEST(LSRATest, Test)
     mf.build_cfg();
     mf.dump_cfg(std::cout);
 
+    std::stringstream ss_ori;
+    mf.export_text(ss_ori);
+
     std::ofstream cfg_file("cfg.json");
     mf.export_cfg_to_json(cfg_file);
     cfg_file.close();
@@ -250,15 +253,33 @@ TEST(LSRATest, Test)
     LinearScanRegisterAllocator allocator(mf);
     RegAllocResult result = allocator.allocate_registers();
     MO_DEBUG(result.to_string().c_str());
+    EXPECT_TRUE(result.successful);
     auto allocation = allocator.get_vreg_to_preg_map();
-    for (auto [vreg, preg] : allocation) {
+    for (auto [vreg, preg] : allocation)
+    {
         MO_DEBUG("vreg: %u -> preg: %u", vreg, preg);
     }
+    auto tmp_allocation = allocator.get_vreg_to_tmp_preg_map();
+    for (auto [vreg, preg] : tmp_allocation)
+    {
+        MO_DEBUG("vreg: %u -> preg: %u (tmp)", vreg, preg);
+    }
     auto spillslots = allocator.get_vreg_to_spill_slot();
-    for (auto [vreg, slot] : spillslots) {
+    for (auto [vreg, slot] : spillslots)
+    {
         MO_DEBUG("vreg: %u -> slot: %d", vreg, slot);
     }
-    EXPECT_TRUE(result.successful);
+
+    allocator.apply();
+    std::stringstream ss_alloc;
+    mf.export_text(ss_alloc);
+
+    MO_DEBUG("Before allocation:\n"
+             "%s",
+             ss_ori.str().c_str());
+    MO_DEBUG("--------------\n"
+             "After allocation:\n%s",
+             ss_alloc.str().c_str());
 }
 
 // TEST(LSRATest, Test)
