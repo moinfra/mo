@@ -36,6 +36,66 @@ class Value;
 #define MO_MAX_RC 16
 
 //===----------------------------------------------------------------------===//
+// Calling Convention
+//===----------------------------------------------------------------------===//
+
+struct ArgLocation
+{
+    enum LocType
+    {
+        Register,
+        Stack
+    };
+    LocType type_;
+    unsigned reg_or_offset_;
+};
+
+struct RetLocation : ArgLocation
+{
+    bool is_in_memory_; // Return value passed through memory
+};
+
+class CallingConv
+{
+private:
+public:
+    enum ID: unsigned
+    {
+        C,    // C calling convention
+        Fast, // Fast call
+        Vector,
+        NUM_CALLING_CONV
+    };
+
+    virtual ~CallingConv() = default;
+
+    virtual void analyze_call(MachineFunction &mf,
+                              const std::vector<Value *> &args,
+                              std::vector<ArgLocation> &locations) const = 0;
+    virtual void analyze_return(MachineFunction &mf, const Value *return_value,
+                                RetLocation &location) const = 0;
+};
+
+struct ArgPassingRule
+{
+    std::vector<unsigned> int_regs; // int param reg sequence
+    std::vector<unsigned> fp_regs;  // float param reg sequence
+    unsigned stack_align = 16;      // stack alignment
+    bool shadow_space = false;      // shadow space for windows x64 calling convention
+};
+
+struct CallingConventionRules
+{
+    std::set<unsigned> callee_saved_regs; // 本约定下被调用者保存的寄存器
+    std::set<unsigned> caller_saved_regs; // 本约定下调用者保存的寄存器
+    std::set<unsigned> temp_regs;         // 
+    ArgPassingRule arg_passing;           // 参数传递规则
+    unsigned shadow_space_size = 0;       // 调用栈保留空间
+    bool supports_tail_call = false;      // 是否支持尾调用优化
+    std::vector<unsigned> return_regs;    // 返回值寄存器（多返回时）
+};
+
+//===----------------------------------------------------------------------===//
 // Machine Operand Types
 //===----------------------------------------------------------------------===//
 
@@ -275,8 +335,8 @@ public:
     void erase(iterator pos);
     void append(std::unique_ptr<MachineInst> mi);
     iterator locate(const MachineInst *mi);
-    MachineBasicBlock* next_physical_block() const;
-    MachineBasicBlock* prev_physical_block() const;
+    MachineBasicBlock *next_physical_block() const;
+    MachineBasicBlock *prev_physical_block() const;
 
     // CFG management
     const std::unordered_set<MachineBasicBlock *> &predecessors() const { return predecessors_; }
@@ -384,12 +444,15 @@ public:
     iterator locate(const MachineBasicBlock *mbb);
     void build_cfg();
     void dump_cfg(std::ostream &out) const;
+    void export_text(std::ostream &out) const;
     void export_cfg_to_json(std::ostream &out) const;
-    MachineBasicBlock* get_basic_block_by_label(const std::string& label) const;
+    MachineBasicBlock *get_basic_block_by_label(const std::string &label) const;
 
     // Virtual register management
     unsigned create_vreg(unsigned register_class_id, unsigned size = 4,
                          bool is_fp = false, Value *original_value = nullptr);
+    unsigned clone_vreg(unsigned vreg);
+
     const VRegInfo &get_vreg_info(unsigned reg) const;
 
     // Helper function to ensure global positions are computed
@@ -410,6 +473,8 @@ public:
         return global_instr_positions_.at(mi);
     }
 
+    CallingConv::ID call_convention() const { return CallingConv::C; }
+
     std::unique_ptr<PressureTracker> compute_pressure() const;
 
     MachineModule *parent() const { return mm_; }
@@ -423,57 +488,16 @@ public:
 //===----------------------------------------------------------------------===//
 
 //===----------------------------------------------------------------------===//
-// Calling Convention
-//===----------------------------------------------------------------------===//
-
-struct ArgLocation
-{
-    enum LocType
-    {
-        Register,
-        Stack
-    };
-    LocType type_;
-    unsigned reg_or_offset_;
-};
-
-class CallingConv
-{
-public:
-    enum ID
-    {
-        C,    // C calling convention
-        Fast, // Fast call
-        Vector,
-        NUM_CALLING_CONV
-    };
-
-    struct RetLocation : ArgLocation
-    {
-        bool is_in_memory_; // Return value passed through memory
-    };
-
-    virtual ~CallingConv() = default;
-
-    virtual void analyze_call(MachineFunction &mf,
-                              const std::vector<Value *> &args,
-                              std::vector<ArgLocation> &locations) const = 0;
-    virtual void analyze_return(MachineFunction &mf, const Value *return_value,
-                                RetLocation &location) const = 0;
-};
-
-//===----------------------------------------------------------------------===//
 // Target Register Information
 //===----------------------------------------------------------------------===//
 
 struct RegisterDesc
 {
-    unsigned int spill_cost; // Register spill cost
-    bool is_callee_saved;    // Callee-saved
-    bool is_reserved;        // Reserved
-    bool is_allocatable;     // Allocatable
-    unsigned primary_rc_id;  // Primary register class ID
-    std::bitset<16> rc_mask; // Register class mask
+    unsigned int spill_cost; // 基础溢出成本（硬件相关）
+    bool is_reserved;        // 是否硬件保留（如栈指针）
+    bool is_allocatable;     // 是否可分配（硬件限制）
+    unsigned primary_rc_id;  // 主寄存器类
+    std::bitset<16> rc_mask; // 所有寄存器类
 };
 
 /// Target register class - represents a set of registers
@@ -484,14 +508,6 @@ struct RegisterClass
     std::vector<unsigned> regs; // List of registers
     unsigned copy_cost;         // Register-to-register copy cost
     unsigned weight;            // Weight for pressure calculation
-};
-
-struct ArgPassingRule
-{
-    std::vector<unsigned> int_regs; // int param reg sequence
-    std::vector<unsigned> fp_regs;  // float param reg sequence
-    unsigned stack_align = 16;      // stack alignment
-    bool shadow_space = false;      // shadow space for windows x64 calling convention
 };
 
 /// Target register information
@@ -505,10 +521,7 @@ protected:
     std::vector<std::unique_ptr<RegisterClass>> register_classes_;
 
     // Calling convention related data
-    std::unordered_map<CallingConv::ID, ArgPassingRule> arg_rules_;
-    std::unordered_map<CallingConv::ID, std::vector<unsigned>> callee_saved_map_;
-    std::unordered_map<CallingConv::ID, std::vector<unsigned>> caller_saved_map_;
-
+    std::unordered_map<CallingConv::ID, CallingConventionRules> call_conventions_;
     // Precomputed alias relationship (reg -> set of aliases)
     std::vector<std::unordered_set<unsigned>> alias_map_;
 
@@ -520,7 +533,9 @@ public:
         : reg_descs_(num_regs), alias_map_(num_regs) {}
 
     //===---------------- Register Attribute Queries -------------------===//
-    bool is_callee_saved(unsigned reg) const { return reg_descs_[reg].is_callee_saved; }
+    bool is_callee_saved(CallingConv::ID cc, unsigned reg) const { return call_conventions_.at(cc).callee_saved_regs.count(reg); }
+    bool is_caller_saved(CallingConv::ID cc, unsigned reg) const { return call_conventions_.at(cc).caller_saved_regs.count(reg); }
+    bool is_temp_reg(CallingConv::ID cc, unsigned reg) const { return call_conventions_.at(cc).temp_regs.count(reg); }
     bool is_reserved_reg(unsigned reg) const { return reg_descs_[reg].is_reserved; }
     unsigned get_spill_cost(unsigned reg) const { return reg_descs_[reg].spill_cost; }
     unsigned get_primary_reg_class(unsigned reg) const
@@ -528,7 +543,7 @@ public:
         return reg_descs_[reg].primary_rc_id;
     }
     const std::vector<unsigned> get_classes_of_reg(unsigned reg) const;
-    const std::vector<RegisterClass*> get_reg_classes() const;
+    const std::vector<RegisterClass *> get_reg_classes() const;
     unsigned get_reg_class_weight(unsigned register_class_id) const;
     unsigned get_reg_weight(unsigned reg) const;
 
@@ -537,8 +552,9 @@ public:
     RegisterClass *get_reg_class(unsigned register_class_id) const;
 
     //===---------------- Calling Convention Related ----------------------===//
-    const std::vector<unsigned> &get_callee_saved_regs(CallingConv::ID cc) const;
-    const std::vector<unsigned> &get_caller_saved_regs(CallingConv::ID cc) const;
+    const std::set<unsigned> &get_callee_saved_regs(CallingConv::ID cc) const { return call_conventions_.at(cc).callee_saved_regs; } 
+    const std::set<unsigned> &get_caller_saved_regs(CallingConv::ID cc) const { return call_conventions_.at(cc).caller_saved_regs; } 
+    const std::set<unsigned> &get_temp_regs(CallingConv::ID cc) const { return call_conventions_.at(cc).temp_regs; } 
 
     //===---------------- Alias Relationship Handling ----------------------===//
     void add_alias(unsigned reg, unsigned alias, bool bidirectional = true);
@@ -546,6 +562,7 @@ public:
     void get_aliases(unsigned reg, std::vector<unsigned> &aliases) const;
 
     //===---------------- Register allocation support ----------------------===//
+    virtual std::vector<unsigned> get_temp_regs(CallingConv::ID cc, unsigned reg_class_id) const;
     virtual std::vector<unsigned> get_allocatable_regs(unsigned reg_class_id) const;
     virtual std::vector<unsigned> get_allocation_order(unsigned reg_class_id) const;
     virtual bool can_allocate_reg(unsigned reg, bool ignore_reserved = false) const;
@@ -607,15 +624,15 @@ public:
                                MachineFunction &mf) const = 0;
 
     // Spill/reload generation
-    virtual void insert_load_from_stack(MachineBasicBlock &mbb,
-                                        MachineBasicBlock::iterator insert_point,
-                                        unsigned dest_reg, int frame_index,
-                                        int64_t offset = 0) const = 0;
+    virtual MachineBasicBlock::iterator insert_load_from_stack(MachineBasicBlock &mbb,
+                                                               MachineBasicBlock::iterator insert_point,
+                                                               unsigned dest_reg, int frame_index,
+                                                               int64_t offset = 0) const = 0;
 
-    virtual void insert_store_to_stack(MachineBasicBlock &mbb,
-                                       MachineBasicBlock::iterator insert_point,
-                                       unsigned src_reg, int frame_index,
-                                       int64_t offset = 0) const = 0;
+    virtual MachineBasicBlock::iterator insert_store_to_stack(MachineBasicBlock &mbb,
+                                                              MachineBasicBlock::iterator insert_point,
+                                                              unsigned src_reg, int frame_index,
+                                                              int64_t offset = 0) const = 0;
 
     virtual bool analyze_branch(
         MachineBasicBlock &mbb,
@@ -623,7 +640,6 @@ public:
         std::unordered_set<MachineBasicBlock *> &branch_targets /*out*/,
         MachineBasicBlock *&fall_through /*out*/
     ) const = 0;
-
 };
 
 //===----------------------------------------------------------------------===//

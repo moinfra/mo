@@ -415,7 +415,8 @@ std::string MachineInst::to_string(const TargetInstInfo *target_info) const
     if (target_info)
     {
         // If target info is available, query opcode name
-        oss << target_info->opcode_name(opcode_);
+
+        oss << std::setw(8) << target_info->opcode_name(opcode_);
     }
     else
     {
@@ -530,6 +531,7 @@ void MachineInst::replace_reg(unsigned old_reg, unsigned new_reg)
 
             // Create a new register operand and preserve flags
             op = MOperand::create_reg(new_reg, is_def);
+            continue;
         }
 
         // Replace base register in memory operands
@@ -537,6 +539,7 @@ void MachineInst::replace_reg(unsigned old_reg, unsigned new_reg)
         {
             MOperand::MEMri mem = op.mem_ri();
             op = MOperand::create_mem_ri(new_reg, mem.offset);
+            continue;
         }
 
         // Replace register-register memory operands
@@ -549,6 +552,7 @@ void MachineInst::replace_reg(unsigned old_reg, unsigned new_reg)
                 unsigned new_index = (mem.index_reg == old_reg) ? new_reg : mem.index_reg;
                 op = MOperand::create_mem_rr(new_base, new_index);
             }
+            continue;
         }
 
         // Replace scaled index memory operands
@@ -561,6 +565,7 @@ void MachineInst::replace_reg(unsigned old_reg, unsigned new_reg)
                 unsigned new_index = (mem.index_reg == old_reg) ? new_reg : mem.index_reg;
                 op = MOperand::create_mem_rix(new_base, new_index, mem.scale, mem.offset);
             }
+            continue;
         }
     }
 }
@@ -898,6 +903,11 @@ unsigned MachineFunction::create_vreg(unsigned register_class_id, unsigned size,
     return next_vreg_++;
 }
 
+unsigned MachineFunction::clone_vreg(unsigned vreg) {
+    vreg_infos_[next_vreg_] = vreg_infos_[vreg];
+    return next_vreg_++;
+}
+
 const VRegInfo &MachineFunction::get_vreg_info(unsigned reg) const
 {
     auto it = vreg_infos_.find(reg);
@@ -1003,27 +1013,6 @@ RegisterClass *TargetRegisterInfo::get_reg_class(unsigned register_class_id) con
     return register_classes_[register_class_id].get();
 }
 
-const std::vector<unsigned> &TargetRegisterInfo::get_callee_saved_regs(CallingConv::ID cc) const
-{
-    static const std::vector<unsigned> empty_reg_list_;
-
-    auto it = callee_saved_map_.find(cc);
-    if (it != callee_saved_map_.end())
-        return it->second;
-
-    return empty_reg_list_;
-}
-
-const std::vector<unsigned> &TargetRegisterInfo::get_caller_saved_regs(CallingConv::ID cc) const
-{
-    static const std::vector<unsigned> empty_reg_list_;
-
-    auto it = caller_saved_map_.find(cc);
-    if (it != caller_saved_map_.end())
-        return it->second;
-
-    return empty_reg_list_;
-}
 void TargetRegisterInfo::add_alias(unsigned reg, unsigned alias, bool bidirectional)
 {
     if (reg >= alias_map_.size() || alias >= alias_map_.size())
@@ -1068,6 +1057,22 @@ std::vector<unsigned> TargetRegisterInfo::get_allocatable_regs(unsigned reg_clas
     {
         if (can_allocate_reg(reg))
             result.push_back(reg);
+    }
+
+    return result;
+}
+
+std::vector<unsigned> TargetRegisterInfo::get_temp_regs(CallingConv::ID cc, unsigned reg_class_id) const
+{
+    std::vector<unsigned> result;
+
+    MO_ASSERT(call_conventions_.count(cc), "Unsupport calling convention: %u", cc);
+    const CallingConventionRules &rules = call_conventions_.at(cc);
+
+    MO_ASSERT(rules.temp_regs.size() > 0, "No temporary registers for calling convention: %u %p", cc, &rules);
+    for (auto reg : rules.temp_regs)
+    {
+        result.push_back(reg);
     }
 
     return result;
@@ -1251,10 +1256,23 @@ void MachineFunction::build_cfg()
     }
 }
 
+void MachineFunction::export_text(std::ostream &out) const
+{
+    ensure_global_positions_computed();
+    auto tii = parent()->target_inst_info();
+    for (const auto &bb : basic_blocks())
+    {
+        out << bb->label() << ":\n";
+        for (const auto &inst : *bb.get())
+        {
+            unsigned pos = get_global_instr_pos(inst.get());
+            out << std::setw(4) << pos << ": " << inst->to_string(tii) << "\n";
+        }
+    }
+}
 void MachineFunction::dump_cfg(std::ostream &out) const
 {
-    auto &mf_ = *this;
-    auto tii = mf_.parent()->target_inst_info();
+    auto tii = parent()->target_inst_info();
 
     lra_->compute(); // 确保信息是最新的
 
@@ -1262,7 +1280,7 @@ void MachineFunction::dump_cfg(std::ostream &out) const
     out << "  node [shape=rectangle];\n";
 
     // 输出基本块节点
-    for (const auto &bb : mf_.basic_blocks())
+    for (const auto &bb : basic_blocks())
     {
         out << "  " << bb->label() << " [fontname=\"consolas\";label=\""
             << bb->label() << " [" << bb->global_start() << ", " << bb->global_end_inclusive() << "]\\l";
@@ -1270,8 +1288,8 @@ void MachineFunction::dump_cfg(std::ostream &out) const
         // 输出指令
         for (const auto &inst : bb->instructions())
         {
-            unsigned pos = mf_.get_global_instr_pos(inst.get());
-            out << std::setw(4) << pos << ": " << inst->to_string(tii) << "\\l"; // 假设 MachineInstr 有 to_string 方法
+            unsigned pos = get_global_instr_pos(inst.get());
+            out << std::setw(4) << pos << ": " << inst->to_string(tii) << "\\l";
         }
 
         // 输出 Use/Def
@@ -1308,7 +1326,7 @@ void MachineFunction::dump_cfg(std::ostream &out) const
     }
 
     // 输出边
-    for (const auto &bb : mf_.basic_blocks())
+    for (const auto &bb : basic_blocks())
     {
         for (auto succ : bb->successors())
         {
@@ -1325,10 +1343,8 @@ void MachineFunction::dump_cfg(std::ostream &out) const
 
 void MachineFunction::export_cfg_to_json(std::ostream &os) const
 {
-
-    auto &mf_ = *this;
-    auto tii = mf_.parent()->target_inst_info();
-    auto lra_ = mf_.live_range_analyzer();
+    auto tii = parent()->target_inst_info();
+    auto lra_ = live_range_analyzer();
     lra_->compute();
 
     std::set<unsigned> preg_set, vreg_set;
@@ -1352,7 +1368,7 @@ void MachineFunction::export_cfg_to_json(std::ostream &os) const
     // Basic Blocks
     os << "\"basic_blocks\": [\n";
     bool first_bb = true;
-    for (const auto &bb : mf_.basic_blocks())
+    for (const auto &bb : basic_blocks())
     {
         if (!first_bb)
         {
@@ -1378,7 +1394,7 @@ void MachineFunction::export_cfg_to_json(std::ostream &os) const
             }
             first_inst = false;
 
-            unsigned pos = mf_.get_global_instr_pos(inst.get());
+            unsigned pos = get_global_instr_pos(inst.get());
             os << "{\n";
             os << "\"pos\": " << pos << ",\n";
             std::string escaped_string = escape_json_string(inst->to_string(tii));
@@ -1437,7 +1453,7 @@ void MachineFunction::export_cfg_to_json(std::ostream &os) const
     // Edges
     os << "\"edges\": [\n";
     bool first_edge = true;
-    for (const auto &bb : mf_.basic_blocks())
+    for (const auto &bb : basic_blocks())
     {
         for (auto succ : bb->successors())
         {
