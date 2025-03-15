@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <style>
+        .vactive {
+            background: #eee !important;
+        }
+
+        .pactive {
+            background: #ccc !important;
+        }
+
+        .bb-label {
+            font-weight: bold;
+            background: #f0f0f0;
+        }
+
+        th {
+            position: sticky;
+            top: 0;
+            background: white;
+        }
+
+        table {
+            border-collapse: collapse;
+            font-family: monospace;
+        }
+
+        td,
+        th {
+            border: 1px solid #ddd;
+            padding: 4px 8px;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+
+<body>
+    <table id="cfgTable">
+        <thead></thead>
+        <tbody></tbody>
+    </table>
+
+    <script>
+        fetch('/cfg.json')
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP error! Status: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                const buildHeader = () => {
+                    const thead = document.querySelector('#cfgTable thead');
+                    const tr = document.createElement('tr');
+
+                    // 固定列
+                    ['Label', '#', 'Instruction'].forEach(text => {
+                        const th = document.createElement('th');
+                        th.textContent = text;
+                        tr.appendChild(th);
+                    });
+
+                    // 物理寄存器列
+                    Array.from(data.physical_regs).sort((a, b) => a - b).forEach(reg => {
+                        const th = document.createElement('th');
+                        th.className = 'preg-col';
+                        th.textContent = `R${reg}`;
+                        tr.appendChild(th);
+                    });
+
+                    // 虚拟寄存器列
+                    Array.from(data.virtual_regs).sort((a, b) => a - b).forEach(reg => {
+                        const th = document.createElement('th');
+                        th.className = 'vreg-col';
+                        th.textContent = `R${reg}`;
+                        tr.appendChild(th);
+                    });
+
+                    thead.appendChild(tr);
+                };
+
+                const buildBody = () => {
+                    const tbody = document.querySelector('#cfgTable tbody');
+                    const preg_list = Array.from(data.physical_regs).sort((a, b) => a - b);
+                    const vreg_list = Array.from(data.virtual_regs).sort((a, b) => a - b);
+
+                    data.basic_blocks.forEach(bb => {
+                        bb.instructions.forEach((inst, idx) => {
+                            const tr = document.createElement('tr');
+
+                            // 标签列（仅第一条显示）
+                            const tdLabel = document.createElement('td');
+                            if (idx === 0) {
+                                tdLabel.className = 'bb-label';
+                                tdLabel.textContent = bb.label;
+                            }
+                            tr.appendChild(tdLabel);
+
+                            // 指令编号
+                            const tdPos = document.createElement('td');
+                            tdPos.textContent = inst.pos;
+                            tr.appendChild(tdPos);
+
+                            // 指令文本
+                            const tdInst = document.createElement('td');
+                            tdInst.textContent = inst.text;
+                            tr.appendChild(tdInst);
+
+                            // 物理寄存器活跃状态
+                            preg_list.forEach(reg => {
+                                const td = document.createElement('td');
+                                if (inst.active_pregs.includes(reg)) {
+                                    td.className = 'pactive';
+                                }
+                                tr.appendChild(td);
+                            });
+
+                            // 虚拟寄存器活跃状态
+                            vreg_list.forEach(reg => {
+                                const td = document.createElement('td');
+                                if (inst.active_vregs.includes(reg)) {
+                                    td.className = 'vactive';
+                                }
+                                tr.appendChild(td);
+                            });
+
+                            tbody.appendChild(tr);
+                        });
+                    });
+                };
+
+                buildHeader();
+                buildBody();
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const errorDiv = document.createElement('div');
+                errorDiv.style.color = 'red';
+                errorDiv.textContent = `An error occurred: ${error.message}`;
+                document.body.insertBefore(errorDiv, document.querySelector('#cfgTable')); // 在表格前插入错误信息
+            });
+    </script>
+</body>
+
+</html>
