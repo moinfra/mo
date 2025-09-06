@@ -304,7 +304,7 @@ namespace RISCV
         OP_TYPE_R4
     };
 
-    OpType opcode_to_type(RISCV::Opcode op)
+    inline OpType opcode_to_type(RISCV::Opcode op)
     {
         switch (op)
         {
@@ -390,7 +390,7 @@ namespace RISCV
         }
     }
 
-    const char *opcode_to_str(RISCV::Opcode op)
+    inline const char *opcode_to_str(RISCV::Opcode op)
     {
         switch (op)
         {

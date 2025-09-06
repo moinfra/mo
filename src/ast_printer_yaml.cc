@@ -1,4 +1,5 @@
 #include "ast_printer_yaml.h"
+#include "mo_debug.h"
 #include <sstream>
 #include <iomanip>
 #include <cassert>
@@ -545,7 +546,7 @@ string ASTPrinter::print(const SizeofExpr &expr)
     }
     else
     {
-        unreachable();
+        MO_UNREACHABLE();
     }
     leave_scope();
     return oss.str();
@@ -769,6 +770,26 @@ string ASTPrinter::print(const FunctionPointerExpr &expr)
     }
     leave_scope();
     oss << indent() << "return_type: " << print_type(*expr.return_type) << "\n";
+    leave_scope();
+    return oss.str();
+}
+
+string ASTPrinter::print(const GlobalDecl &global_decl)
+{
+    ostringstream oss;
+    oss << indent() << "global_decl:\n";
+    enter_scope();
+    oss << indent() << "is_exported: " << (global_decl.is_exported ? "true" : "false") << "\n";
+    oss << indent() << "name: \"" << escape_string(global_decl.name) << "\"\n";
+    oss << indent() << "type: " << print_type(*global_decl.type) << "\n";
+    oss << indent() << "is_const: " << (global_decl.is_const ? "true" : "false") << "\n";
+    if (global_decl.init_expr)
+    {
+        oss << indent() << "initializer:\n";
+        enter_scope();
+        oss << print(*global_decl.init_expr);
+        leave_scope();
+    }
     leave_scope();
     return oss.str();
 }

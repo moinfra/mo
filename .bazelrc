@@ -1,0 +1,4 @@
+# Set minimum macOS version to 10.13 (required for std::variant support)
+build --macos_minimum_os=10.13
+build --copt=-mmacosx-version-min=10.13
+build --linkopt=-mmacosx-version-min=10.13
