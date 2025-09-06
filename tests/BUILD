@@ -116,3 +116,15 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "target_base_test",
+    srcs = ["target_base_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:ir",
+        "//src:machine",
+        "//src/targets:target_base",
+        "@googletest//:gtest_main",
+    ],
+)
