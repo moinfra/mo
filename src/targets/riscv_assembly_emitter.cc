@@ -211,6 +211,24 @@ std::string RISCVAssemblyEmitter::emitInstruction(const MachineInst& inst) {
             return "# malformed addi instruction";
         }
         
+        case RISCV::LW: {
+            // lw rd, offset(rs1)
+            if (inst.operands().size() >= 2) {
+                return "lw " + formatOperand(inst.operands()[0]) + ", " +
+                             formatOperand(inst.operands()[1]);
+            }
+            return "# malformed lw instruction";
+        }
+        
+        case RISCV::SW: {
+            // sw rs2, offset(rs1) 
+            if (inst.operands().size() >= 2) {
+                return "sw " + formatOperand(inst.operands()[0]) + ", " +
+                             formatOperand(inst.operands()[1]);
+            }
+            return "# malformed sw instruction";
+        }
+        
         case RISCV::JALR: {
             // jalr rd, rs1, offset
             if (inst.operands().size() >= 3) {

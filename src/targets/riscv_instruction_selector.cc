@@ -37,6 +37,12 @@ bool RISCVInstructionSelector::selectInstructions(const Function& ir_func,
         bb_map[ir_bb] = machine_bb;
     }
     
+    // Generate function prologue in the first basic block
+    if (!ir_func.basic_blocks().empty()) {
+        auto* entry_bb = bb_map[ir_func.basic_blocks()[0]];
+        generateFunctionPrologue(*entry_bb);
+    }
+    
     // Second pass: Process instructions in each basic block
     for (const auto ir_bb : ir_func.basic_blocks()) {
         auto* machine_bb = bb_map[ir_bb];
@@ -133,7 +139,7 @@ bool RISCVInstructionSelector::selectSingleInstruction(const Instruction& ir_ins
         }
         
         case ::Opcode::Ret: {
-            // IR: ret i32 %val  →  RISC-V: mv a0, vreg_val; ret
+            // IR: ret i32 %val  →  RISC-V: epilogue + mv a0, vreg_val; ret
             if (ir_inst.operands().size() > 0) {
                 // Move return value to a0 register
                 auto ret_val_reg = getVirtualRegForValue(ir_inst.operand(0));
@@ -147,6 +153,9 @@ bool RISCVInstructionSelector::selectSingleInstruction(const Instruction& ir_ins
                 );
                 mbb.append(std::move(mv_inst));
             }
+            
+            // Generate function epilogue before return
+            generateFunctionEpilogue(mbb);
             
             // Generate ret instruction (jalr x0, ra, 0)
             auto ret_inst = std::make_unique<MachineInst>(
@@ -283,6 +292,75 @@ unsigned RISCVInstructionSelector::getRegisterForValue(const Value* ir_value) {
 
 unsigned RISCVInstructionSelector::createVirtualRegister() {
     return next_virtual_reg_++;
+}
+
+//===----------------------------------------------------------------------===//
+// Function Prologue/Epilogue Generation (Commit 7)
+//===----------------------------------------------------------------------===//
+
+void RISCVInstructionSelector::generateFunctionPrologue(MachineBasicBlock& machine_bb) {
+    // RISC-V function prologue according to calling convention:
+    // 1. Save return address (ra) to stack
+    // 2. Adjust stack pointer (allocate stack frame)
+    // 3. Save callee-saved registers
+    // 4. Set frame pointer (optional)
+    
+    // For simple functions, we use a minimal prologue:
+    // addi sp, sp, -16    ; allocate 16-byte stack frame
+    // sw ra, 12(sp)       ; save return address
+    
+    // Allocate 16-byte stack frame
+    auto frame_alloc_inst = std::make_unique<MachineInst>(
+        static_cast<unsigned>(RISCV::ADDI),
+        std::vector<MOperand>{
+            MOperand::create_reg(static_cast<unsigned>(RISCV::SP), true),   // def: sp
+            MOperand::create_reg(static_cast<unsigned>(RISCV::SP), false),  // use: sp  
+            MOperand::create_imm(-16)                                       // immediate: -16
+        }
+    );
+    machine_bb.append(std::move(frame_alloc_inst));
+    
+    // Save return address to stack
+    auto save_ra_inst = std::make_unique<MachineInst>(
+        static_cast<unsigned>(RISCV::SW),
+        std::vector<MOperand>{
+            MOperand::create_reg(static_cast<unsigned>(RISCV::RA), false),  // use: ra
+            MOperand::create_mem_ri(static_cast<unsigned>(RISCV::SP), 12)   // mem: 12(sp)
+        }
+    );
+    machine_bb.append(std::move(save_ra_inst));
+}
+
+void RISCVInstructionSelector::generateFunctionEpilogue(MachineBasicBlock& machine_bb) {
+    // RISC-V function epilogue according to calling convention:
+    // 1. Restore callee-saved registers  
+    // 2. Restore return address (ra) from stack
+    // 3. Deallocate stack frame (restore stack pointer)
+    
+    // For simple functions, we use a minimal epilogue:
+    // lw ra, 12(sp)       ; restore return address
+    // addi sp, sp, 16     ; deallocate 16-byte stack frame
+    
+    // Restore return address from stack  
+    auto restore_ra_inst = std::make_unique<MachineInst>(
+        static_cast<unsigned>(RISCV::LW),
+        std::vector<MOperand>{
+            MOperand::create_reg(static_cast<unsigned>(RISCV::RA), true),   // def: ra
+            MOperand::create_mem_ri(static_cast<unsigned>(RISCV::SP), 12)   // mem: 12(sp)
+        }
+    );
+    machine_bb.append(std::move(restore_ra_inst));
+    
+    // Deallocate stack frame
+    auto frame_dealloc_inst = std::make_unique<MachineInst>(
+        static_cast<unsigned>(RISCV::ADDI),
+        std::vector<MOperand>{
+            MOperand::create_reg(static_cast<unsigned>(RISCV::SP), true),   // def: sp
+            MOperand::create_reg(static_cast<unsigned>(RISCV::SP), false),  // use: sp
+            MOperand::create_imm(16)                                        // immediate: +16  
+        }
+    );
+    machine_bb.append(std::move(frame_dealloc_inst));
 }
 
 } // namespace RISCV

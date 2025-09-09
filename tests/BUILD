@@ -211,3 +211,19 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "function_lowering_test",
+    srcs = ["function_lowering_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:ir",
+        "//src:ir_builder",
+        "//src:machine",
+        "//src/codegen:machine_module",
+        "//src/targets:riscv_target",
+        "//src/targets:riscv_instruction_selector",
+        "//src/targets:riscv_assembly_emitter",
+        "@googletest//:gtest_main",
+    ],
+)

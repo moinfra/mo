@@ -95,6 +95,14 @@ private:
     /// @param ir_value IR value
     /// @return Virtual register number
     unsigned getVirtualRegForValue(const Value* ir_value);
+    
+    /// Generate function prologue (Commit 7 addition)
+    /// @param machine_bb Machine basic block to add prologue to
+    void generateFunctionPrologue(MachineBasicBlock& machine_bb);
+    
+    /// Generate function epilogue (Commit 7 addition)  
+    /// @param machine_bb Machine basic block to add epilogue to
+    void generateFunctionEpilogue(MachineBasicBlock& machine_bb);
 
 private:
     // Next available virtual register number
