@@ -166,3 +166,16 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "assembly_emitter_test",
+    srcs = ["assembly_emitter_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:ir",
+        "//src:machine",
+        "//src/codegen:assembly_emitter",
+        "//src/targets:riscv_assembly_emitter",
+        "@googletest//:gtest_main",
+    ],
+)

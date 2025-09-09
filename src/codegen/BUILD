@@ -19,3 +19,13 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "assembly_emitter",
+    srcs = ["assembly_emitter.cc"],
+    hdrs = ["assembly_emitter.h"],
+    deps = [
+        "//src:machine",
+    ],
+    visibility = ["//visibility:public"],
+)

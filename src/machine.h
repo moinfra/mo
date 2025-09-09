@@ -689,6 +689,8 @@ public:
 
     const TargetInstInfo *target_inst_info() const { return tii_; }
     const TargetRegisterInfo *target_reg_info() const { return tri_; }
+    
+    const std::vector<std::unique_ptr<MachineFunction>>& functions() const { return functions_; }
 };
 
 //===----------------------------------------------------------------------===//
