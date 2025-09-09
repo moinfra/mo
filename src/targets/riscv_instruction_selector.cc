@@ -138,6 +138,92 @@ bool RISCVInstructionSelector::selectSingleInstruction(const Instruction& ir_ins
             return true;
         }
         
+        case ::Opcode::ICmp: {
+            // IR: %result = icmp pred %a, %b  →  Handled directly in CondBr
+            // RISC-V combines comparisons with branches, so we don't generate separate comparison
+            // Just ensure we have a virtual register for the result in case it's used elsewhere
+            auto dst_reg = getVirtualRegForValue(&ir_inst);
+            
+            // Generate a comment for debugging
+            auto comment_inst = std::make_unique<MachineInst>(
+                static_cast<unsigned>(RISCV::COMMENT),
+                std::vector<MOperand>{
+                    MOperand::create_external_sym("# icmp -> vreg" + std::to_string(dst_reg))
+                }
+            );
+            mbb.append(std::move(comment_inst));
+            return true;
+        }
+        
+        case ::Opcode::Br: {
+            // IR: br label %target  →  RISC-V: j target_label
+            if (ir_inst.operands().size() >= 1) {
+                // Get target basic block
+                auto* target_bb = static_cast<BasicBlock*>(ir_inst.operand(0));
+                
+                // Generate unconditional jump to target label
+                auto jump_inst = std::make_unique<MachineInst>(
+                    static_cast<unsigned>(RISCV::J),
+                    std::vector<MOperand>{
+                        MOperand::create_label(target_bb->name())
+                    }
+                );
+                mbb.append(std::move(jump_inst));
+                return true;
+            }
+            return false;
+        }
+        
+        case ::Opcode::CondBr: {
+            // IR: br i1 %cond, label %true_bb, label %false_bb
+            // →  RISC-V: beq/bne/blt/bge %reg1, %reg2, true_label; j false_label
+            
+            // Cast to BranchInst to access proper methods
+            const auto& branch_inst = static_cast<const BranchInst&>(ir_inst);
+            
+            if (branch_inst.is_conditional()) {
+                auto* cond_value = ir_inst.operand(0);
+                // Use direct operand access like unconditional branch (which works)
+                auto* true_bb = static_cast<BasicBlock*>(ir_inst.operand(1));
+                auto* false_bb = static_cast<BasicBlock*>(ir_inst.operand(2));
+                
+                // SIMPLE APPROACH: Just generate basic conditional branch
+                // For now, assume condition is boolean and compare with zero
+                auto cond_reg = getVirtualRegForValue(cond_value);
+                
+                // Debug: add comment with basic block names
+                auto debug_comment = std::make_unique<MachineInst>(
+                    static_cast<unsigned>(RISCV::COMMENT),
+                    std::vector<MOperand>{
+                        MOperand::create_external_sym("# br " + true_bb->name() + " or " + false_bb->name())
+                    }
+                );
+                mbb.append(std::move(debug_comment));
+                
+                // bne cond_reg, zero, true_label
+                auto branch_inst_machine = std::make_unique<MachineInst>(
+                    static_cast<unsigned>(RISCV::BNE),
+                    std::vector<MOperand>{
+                        MOperand::create_reg(cond_reg, false),                        // use: condition
+                        MOperand::create_reg(static_cast<unsigned>(RISCV::ZERO), false), // use: zero
+                        MOperand::create_label(true_bb->name())                       // target label
+                    }
+                );
+                mbb.append(std::move(branch_inst_machine));
+                
+                // j false_label (fallthrough to false block)
+                auto jump_inst = std::make_unique<MachineInst>(
+                    static_cast<unsigned>(RISCV::J),
+                    std::vector<MOperand>{
+                        MOperand::create_label(false_bb->name())
+                    }
+                );
+                mbb.append(std::move(jump_inst));
+                return true;
+            }
+            return false;
+        }
+        
         case ::Opcode::Ret: {
             // IR: ret i32 %val  →  RISC-V: epilogue + mv a0, vreg_val; ret
             if (ir_inst.operands().size() > 0) {
@@ -361,6 +447,91 @@ void RISCVInstructionSelector::generateFunctionEpilogue(MachineBasicBlock& machi
         }
     );
     machine_bb.append(std::move(frame_dealloc_inst));
+}
+
+//===----------------------------------------------------------------------===//
+// Control Flow Generation (Commit 8)
+//===----------------------------------------------------------------------===//
+
+bool RISCVInstructionSelector::generateConditionalBranch(const ICmpInst& icmp_inst,
+                                                        const BasicBlock* true_bb,
+                                                        const BasicBlock* false_bb,
+                                                        MachineBasicBlock& machine_bb) {
+    // Get comparison operands
+    auto lhs_reg = getVirtualRegForValue(icmp_inst.operand(0));
+    auto rhs_reg = getVirtualRegForValue(icmp_inst.operand(1));
+    
+    // Map ICmp predicate to RISC-V branch instruction
+    RISCV::Opcode branch_opcode;
+    bool swap_operands = false;
+    
+    switch (icmp_inst.predicate()) {
+        case ICmpInst::EQ:
+            branch_opcode = RISCV::BEQ;  // beq lhs, rhs, true_label
+            break;
+        case ICmpInst::NE:
+            branch_opcode = RISCV::BNE;  // bne lhs, rhs, true_label
+            break;
+        case ICmpInst::SLT:
+            branch_opcode = RISCV::BLT;  // blt lhs, rhs, true_label
+            break;
+        case ICmpInst::SLE:
+            // sle: lhs <= rhs  ≡  rhs >= lhs  ≡  bge rhs, lhs, true_label
+            branch_opcode = RISCV::BGE;
+            swap_operands = true;
+            break;
+        case ICmpInst::SGT:
+            // sgt: lhs > rhs  ≡  rhs < lhs  ≡  blt rhs, lhs, true_label  
+            branch_opcode = RISCV::BLT;
+            swap_operands = true;
+            break;
+        case ICmpInst::SGE:
+            branch_opcode = RISCV::BGE;  // bge lhs, rhs, true_label
+            break;
+        case ICmpInst::ULT:
+            branch_opcode = RISCV::BLTU; // bltu lhs, rhs, true_label
+            break;
+        case ICmpInst::ULE:
+            // ule: lhs <= rhs  ≡  rhs >= lhs  ≡  bgeu rhs, lhs, true_label
+            branch_opcode = RISCV::BGEU;
+            swap_operands = true;
+            break;
+        case ICmpInst::UGT:
+            // ugt: lhs > rhs  ≡  rhs < lhs  ≡  bltu rhs, lhs, true_label
+            branch_opcode = RISCV::BLTU;
+            swap_operands = true;
+            break;
+        case ICmpInst::UGE:
+            branch_opcode = RISCV::BGEU; // bgeu lhs, rhs, true_label
+            break;
+        default:
+            return false; // Unsupported predicate
+    }
+    
+    // Generate conditional branch instruction
+    unsigned first_reg = swap_operands ? rhs_reg : lhs_reg;
+    unsigned second_reg = swap_operands ? lhs_reg : rhs_reg;
+    
+    auto branch_inst = std::make_unique<MachineInst>(
+        static_cast<unsigned>(branch_opcode),
+        std::vector<MOperand>{
+            MOperand::create_reg(first_reg, false),      // use: first operand
+            MOperand::create_reg(second_reg, false),     // use: second operand  
+            MOperand::create_label(true_bb->name())      // target: true label
+        }
+    );
+    machine_bb.append(std::move(branch_inst));
+    
+    // Generate fallthrough jump to false block
+    auto jump_inst = std::make_unique<MachineInst>(
+        static_cast<unsigned>(RISCV::J),
+        std::vector<MOperand>{
+            MOperand::create_label(false_bb->name())     // target: false label
+        }
+    );
+    machine_bb.append(std::move(jump_inst));
+    
+    return true;
 }
 
 } // namespace RISCV

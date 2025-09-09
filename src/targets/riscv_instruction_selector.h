@@ -103,6 +103,17 @@ private:
     /// Generate function epilogue (Commit 7 addition)  
     /// @param machine_bb Machine basic block to add epilogue to
     void generateFunctionEpilogue(MachineBasicBlock& machine_bb);
+    
+    /// Generate conditional branch from ICmp instruction (Commit 8 addition)
+    /// @param icmp_inst ICmp instruction providing the condition
+    /// @param true_bb Target basic block for true condition
+    /// @param false_bb Target basic block for false condition  
+    /// @param machine_bb Machine basic block to add branch instructions to
+    /// @return True if generation succeeded
+    bool generateConditionalBranch(const ICmpInst& icmp_inst, 
+                                 const BasicBlock* true_bb,
+                                 const BasicBlock* false_bb,
+                                 MachineBasicBlock& machine_bb);
 
 private:
     // Next available virtual register number

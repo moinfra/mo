@@ -143,8 +143,8 @@ std::string RISCVAssemblyEmitter::emitFunction(const MachineFunction& function) 
 std::string RISCVAssemblyEmitter::emitBasicBlock(const MachineBasicBlock& bb) {
     std::stringstream bb_asm;
     
-    // Basic block label (if not the first block)
-    if (!bb.label().empty() && bb.label() != "entry") {
+    // Basic block label (emit for all named blocks - Commit 8 improvement)
+    if (!bb.label().empty()) {
         bb_asm << bb.label() << ":\n";
     }
     
@@ -227,6 +227,84 @@ std::string RISCVAssemblyEmitter::emitInstruction(const MachineInst& inst) {
                              formatOperand(inst.operands()[1]);
             }
             return "# malformed sw instruction";
+        }
+        
+        // Branch Instructions (Commit 8)
+        case RISCV::BEQ: {
+            // beq rs1, rs2, label
+            if (inst.operands().size() >= 3) {
+                return "beq " + formatOperand(inst.operands()[0]) + ", " +
+                              formatOperand(inst.operands()[1]) + ", " +
+                              formatOperand(inst.operands()[2]);
+            }
+            return "# malformed beq instruction";
+        }
+        
+        case RISCV::BNE: {
+            // bne rs1, rs2, label  
+            if (inst.operands().size() >= 3) {
+                return "bne " + formatOperand(inst.operands()[0]) + ", " +
+                              formatOperand(inst.operands()[1]) + ", " +
+                              formatOperand(inst.operands()[2]);
+            }
+            return "# malformed bne instruction";
+        }
+        
+        case RISCV::BLT: {
+            // blt rs1, rs2, label
+            if (inst.operands().size() >= 3) {
+                return "blt " + formatOperand(inst.operands()[0]) + ", " +
+                              formatOperand(inst.operands()[1]) + ", " +
+                              formatOperand(inst.operands()[2]);
+            }
+            return "# malformed blt instruction";
+        }
+        
+        case RISCV::BGE: {
+            // bge rs1, rs2, label
+            if (inst.operands().size() >= 3) {
+                return "bge " + formatOperand(inst.operands()[0]) + ", " +
+                              formatOperand(inst.operands()[1]) + ", " +
+                              formatOperand(inst.operands()[2]);
+            }
+            return "# malformed bge instruction";
+        }
+        
+        case RISCV::BLTU: {
+            // bltu rs1, rs2, label
+            if (inst.operands().size() >= 3) {
+                return "bltu " + formatOperand(inst.operands()[0]) + ", " +
+                               formatOperand(inst.operands()[1]) + ", " +
+                               formatOperand(inst.operands()[2]);
+            }
+            return "# malformed bltu instruction";
+        }
+        
+        case RISCV::BGEU: {
+            // bgeu rs1, rs2, label
+            if (inst.operands().size() >= 3) {
+                return "bgeu " + formatOperand(inst.operands()[0]) + ", " +
+                               formatOperand(inst.operands()[1]) + ", " +
+                               formatOperand(inst.operands()[2]);
+            }
+            return "# malformed bgeu instruction";
+        }
+        
+        case RISCV::J: {
+            // j label
+            if (inst.operands().size() >= 1) {
+                return "j " + formatOperand(inst.operands()[0]);
+            }
+            return "# malformed j instruction";
+        }
+        
+        case RISCV::JAL: {
+            // jal rd, label
+            if (inst.operands().size() >= 2) {
+                return "jal " + formatOperand(inst.operands()[0]) + ", " +
+                              formatOperand(inst.operands()[1]);
+            }
+            return "# malformed jal instruction";
         }
         
         case RISCV::JALR: {
@@ -335,6 +413,8 @@ std::string RISCVAssemblyEmitter::formatOperand(const MOperand& operand) const {
         return std::to_string(operand.imm());
     } else if (operand.is_external_sym()) {
         return operand.external_sym();
+    } else if (operand.is_label()) {
+        return operand.label();  // Commit 8: Support for branch target labels
     } else if (operand.is_mem_ri()) {
         auto mem_operand = operand.mem_ri();
         return std::to_string(mem_operand.offset) + "(" + 

@@ -1056,7 +1056,8 @@ std::string ConstantAggregate::as_string() const
 // ‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾‾
 BranchInst::BranchInst(BasicBlock *target, BasicBlock *parent,
                        std::vector<Value *> ops)
-    : Instruction(Opcode::Br, Type::get_void_type(parent->parent_function()->parent_module()),
+    : Instruction(ops.size() == 3 ? Opcode::CondBr : Opcode::Br,  // Fix: Use CondBr for 3 operands
+                  Type::get_void_type(parent->parent_function()->parent_module()),
                   parent, ops),
       true_bb_(target),
       false_bb_(nullptr) {}
