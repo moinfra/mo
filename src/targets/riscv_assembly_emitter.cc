@@ -157,22 +157,143 @@ std::string RISCVAssemblyEmitter::emitBasicBlock(const MachineBasicBlock& bb) {
 }
 
 std::string RISCVAssemblyEmitter::emitInstruction(const MachineInst& inst) {
-    // TODO: Implement actual instruction emission based on opcode
-    // For now, return a placeholder to make tests pass
-    (void)inst;  // Suppress unused parameter warning
-    return "nop  # placeholder instruction";
+    // Phase 1.5 - Commit 5.3: Real RISC-V assembly emission
+    auto opcode = static_cast<RISCV::Opcode>(inst.opcode());
+    
+    switch (opcode) {
+        case RISCV::ADD: {
+            // add rd, rs1, rs2
+            if (inst.operands().size() >= 3) {
+                return "add " + formatOperand(inst.operands()[0]) + ", " +
+                              formatOperand(inst.operands()[1]) + ", " +
+                              formatOperand(inst.operands()[2]);
+            }
+            return "# malformed add instruction";
+        }
+        
+        case RISCV::ADDI: {
+            // addi rd, rs1, imm
+            if (inst.operands().size() >= 3) {
+                return "addi " + formatOperand(inst.operands()[0]) + ", " +
+                               formatOperand(inst.operands()[1]) + ", " +
+                               formatOperand(inst.operands()[2]);
+            }
+            return "# malformed addi instruction";
+        }
+        
+        case RISCV::JALR: {
+            // jalr rd, rs1, offset
+            if (inst.operands().size() >= 3) {
+                auto& rd = inst.operands()[0];
+                auto& rs1 = inst.operands()[1]; 
+                auto& offset = inst.operands()[2];
+                
+                // Special case: ret is jalr x0, ra, 0
+                if (rd.is_reg() && rd.reg() == static_cast<unsigned>(RISCV::ZERO) &&
+                    rs1.is_reg() && rs1.reg() == static_cast<unsigned>(RISCV::RA) &&
+                    offset.is_imm() && offset.imm() == 0) {
+                    return "ret";
+                }
+                
+                return "jalr " + formatOperand(rd) + ", " +
+                               formatOperand(rs1) + ", " + 
+                               formatOperand(offset);
+            }
+            return "# malformed jalr instruction";
+        }
+        
+        case RISCV::COMMENT: {
+            // Comment pseudo-instruction
+            if (inst.operands().size() >= 1) {
+                return formatOperand(inst.operands()[0]);
+            }
+            return "# empty comment";
+        }
+        
+        default:
+            return "# unknown opcode: " + std::to_string(inst.opcode());
+    }
 }
 
 std::string RISCVAssemblyEmitter::formatRegister(unsigned reg) const {
-    // TODO: Map register numbers to RISC-V register names
-    // For now, return a generic format
-    return "x" + std::to_string(reg);
+    // Phase 1.5 - Commit 5.3: Real RISC-V register formatting
+    
+    // Handle virtual registers (>= 1000)
+    if (reg >= 1000) {
+        return "vreg" + std::to_string(reg);
+    }
+    
+    // Handle RISC-V physical registers
+    switch (reg) {
+        // Zero register
+        case static_cast<unsigned>(RISCV::ZERO): return "zero";
+        
+        // Return address
+        case static_cast<unsigned>(RISCV::RA):   return "ra";
+        
+        // Stack pointer
+        case static_cast<unsigned>(RISCV::SP):   return "sp";
+        
+        // Global pointer  
+        case static_cast<unsigned>(RISCV::GP):   return "gp";
+        
+        // Thread pointer
+        case static_cast<unsigned>(RISCV::TP):   return "tp";
+        
+        // Argument/return registers
+        case static_cast<unsigned>(RISCV::A0):   return "a0";
+        case static_cast<unsigned>(RISCV::A1):   return "a1";
+        case static_cast<unsigned>(RISCV::A2):   return "a2";
+        case static_cast<unsigned>(RISCV::A3):   return "a3";
+        case static_cast<unsigned>(RISCV::A4):   return "a4";
+        case static_cast<unsigned>(RISCV::A5):   return "a5";
+        case static_cast<unsigned>(RISCV::A6):   return "a6";
+        case static_cast<unsigned>(RISCV::A7):   return "a7";
+        
+        // Saved registers
+        case static_cast<unsigned>(RISCV::S0):   return "s0";
+        case static_cast<unsigned>(RISCV::S1):   return "s1";
+        case static_cast<unsigned>(RISCV::S2):   return "s2";
+        case static_cast<unsigned>(RISCV::S3):   return "s3";
+        case static_cast<unsigned>(RISCV::S4):   return "s4";
+        case static_cast<unsigned>(RISCV::S5):   return "s5";
+        case static_cast<unsigned>(RISCV::S6):   return "s6";
+        case static_cast<unsigned>(RISCV::S7):   return "s7";
+        case static_cast<unsigned>(RISCV::S8):   return "s8";
+        case static_cast<unsigned>(RISCV::S9):   return "s9";
+        case static_cast<unsigned>(RISCV::S10):  return "s10";
+        case static_cast<unsigned>(RISCV::S11):  return "s11";
+        
+        // Temporary registers
+        case static_cast<unsigned>(RISCV::T0):   return "t0";
+        case static_cast<unsigned>(RISCV::T1):   return "t1";
+        case static_cast<unsigned>(RISCV::T2):   return "t2";
+        case static_cast<unsigned>(RISCV::T3):   return "t3";
+        case static_cast<unsigned>(RISCV::T4):   return "t4";
+        case static_cast<unsigned>(RISCV::T5):   return "t5";
+        case static_cast<unsigned>(RISCV::T6):   return "t6";
+        
+        // Default: use x notation for any other register
+        default:
+            return "x" + std::to_string(reg);
+    }
 }
 
 std::string RISCVAssemblyEmitter::formatOperand(const MOperand& operand) const {
-    // TODO: Format different operand types
-    (void)operand;  // Suppress unused parameter warning
-    return "operand";
+    // Phase 1.5 - Commit 5.3: Real operand formatting
+    if (operand.is_reg()) {
+        return formatRegister(operand.reg());
+    } else if (operand.is_imm()) {
+        return std::to_string(operand.imm());
+    } else if (operand.is_external_sym()) {
+        return operand.external_sym();
+    } else if (operand.is_mem_ri()) {
+        auto mem_operand = operand.mem_ri();
+        return std::to_string(mem_operand.offset) + "(" + 
+               formatRegister(mem_operand.base_reg) + ")";
+    } else {
+        return "# unknown operand type";
+    }
 }
 
 std::string RISCVAssemblyEmitter::formatImmediate(int64_t imm) const {

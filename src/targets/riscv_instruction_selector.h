@@ -3,10 +3,15 @@
 
 #include "../codegen/instruction_selector.h"
 #include "riscv_target.h"
+#include <map>
 
 // Forward declarations
 class TargetRegisterInfo;
 class TargetInstInfo;
+class Value;
+class Instruction;
+class BasicBlock;
+class MachineBasicBlock;
 
 namespace RISCV {
 
@@ -80,9 +85,23 @@ private:
     /// @return New virtual register number
     unsigned createVirtualRegister();
 
+    /// Select instruction for a single IR instruction (Phase 1.5 addition)
+    /// @param ir_inst IR instruction
+    /// @param machine_bb Target machine basic block to append to
+    /// @return True if selection succeeded
+    bool selectSingleInstruction(const Instruction& ir_inst, MachineBasicBlock& machine_bb);
+    
+    /// Get virtual register for IR value (Phase 1.5 addition)
+    /// @param ir_value IR value
+    /// @return Virtual register number
+    unsigned getVirtualRegForValue(const Value* ir_value);
+
 private:
     // Next available virtual register number
     unsigned next_virtual_reg_ = 1000;  // Start virtual regs at 1000
+    
+    // IR value to virtual register mapping (Phase 1.5 addition)
+    std::map<const Value*, unsigned> ir_value_to_vreg_;
 };
 
 } // namespace RISCV

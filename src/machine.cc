@@ -1509,3 +1509,49 @@ MachineBasicBlock *MachineFunction::get_basic_block_by_label(const std::string &
     }
     return it->get();
 }
+
+//===----------------------------------------------------------------------===//
+// Missing Function Implementations (Phase 1.5 - Commit 5.1)
+//===----------------------------------------------------------------------===//
+
+bool MachineInst::is_operand_def(unsigned index) const noexcept
+{
+    // Basic implementation: first operand is usually the definition
+    if (index >= ops_.size()) return false;
+    
+    // For most instructions, operand 0 is the definition
+    // This is a simplified implementation - real implementation would
+    // check instruction-specific operand patterns
+    return index == 0 && ops_[index].is_def();
+}
+
+unsigned MachineBasicBlock::get_max_instr_position() const
+{
+    return insts_.empty() ? 0 : static_cast<unsigned>(insts_.size() - 1);
+}
+
+void MachineFunction::set_register_allocator(std::unique_ptr<RegisterAllocator> allocator)
+{
+    reg_allocator_ = std::move(allocator);
+}
+
+std::unique_ptr<PressureTracker> MachineFunction::compute_pressure() const
+{
+    if (!mm_ || !mm_->target_reg_info()) {
+        return nullptr;
+    }
+    
+    auto tracker = std::make_unique<PressureTracker>(*mm_->target_reg_info());
+    
+    // Basic implementation: compute pressure for all live ranges
+    // This is simplified - real implementation would iterate through
+    // live range analyzer results
+    if (lra_) {
+        // TODO: Add live range intervals to pressure tracker
+        // for (const auto& live_range : lra_->getLiveRanges()) {
+        //     tracker->add_interval(live_range);
+        // }
+    }
+    
+    return tracker;
+}

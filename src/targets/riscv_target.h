@@ -296,7 +296,10 @@ namespace RISCV
         CALL = 0x9000006F, // 调用函数 (伪指令)
 
         // J-type (JAL): [imm][rd(x0)][opcode]
-        J = 0x9000007F // 无条件跳转 (伪指令)
+        J = 0x9000007F, // 无条件跳转 (伪指令)
+
+        // Phase 1.5 addition: Special pseudo-instruction for comments/debugging
+        COMMENT = 0xFFFFFFFF // Comment pseudo-instruction
     };
 
     enum OpType
