@@ -214,6 +214,12 @@ namespace RISCV
         // R-type: [funct7(0100000)][rs2][rs1][funct3(000)][rd][opcode]
         SUB = 0x40000033, // Subtract
 
+        // R-type: [funct7(0000001)][rs2][rs1][funct3(000)][rd][opcode] - RV32M/RV64M
+        MUL = 0x02000033, // Multiply (low 32 bits)
+
+        // R-type: [funct7(0000001)][rs2][rs1][funct3(100)][rd][opcode] - RV32M/RV64M
+        DIV = 0x02004033, // Divide (signed)
+
         // R-type: [funct7(0000000)][rs2][rs1][funct3(001)][rd][opcode]
         SLL = 0x1033, // Shift Left Logical
 
@@ -372,6 +378,8 @@ namespace RISCV
         // R-type 指令
         case RISCV::ADD:
         case RISCV::SUB:
+        case RISCV::MUL:
+        case RISCV::DIV:
         case RISCV::SLL:
         case RISCV::SLT:
         case RISCV::SLTU:
@@ -481,6 +489,10 @@ namespace RISCV
             return "ADD";
         case RISCV::SUB:
             return "SUB";
+        case RISCV::MUL:
+            return "MUL";
+        case RISCV::DIV:
+            return "DIV";
         case RISCV::SLL:
             return "SLL";
         case RISCV::SLT:

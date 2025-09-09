@@ -171,6 +171,36 @@ std::string RISCVAssemblyEmitter::emitInstruction(const MachineInst& inst) {
             return "# malformed add instruction";
         }
         
+        case RISCV::SUB: {
+            // sub rd, rs1, rs2
+            if (inst.operands().size() >= 3) {
+                return "sub " + formatOperand(inst.operands()[0]) + ", " +
+                              formatOperand(inst.operands()[1]) + ", " +
+                              formatOperand(inst.operands()[2]);
+            }
+            return "# malformed sub instruction";
+        }
+        
+        case RISCV::MUL: {
+            // mul rd, rs1, rs2
+            if (inst.operands().size() >= 3) {
+                return "mul " + formatOperand(inst.operands()[0]) + ", " +
+                              formatOperand(inst.operands()[1]) + ", " +
+                              formatOperand(inst.operands()[2]);
+            }
+            return "# malformed mul instruction";
+        }
+        
+        case RISCV::DIV: {
+            // div rd, rs1, rs2
+            if (inst.operands().size() >= 3) {
+                return "div " + formatOperand(inst.operands()[0]) + ", " +
+                              formatOperand(inst.operands()[1]) + ", " +
+                              formatOperand(inst.operands()[2]);
+            }
+            return "# malformed div instruction";
+        }
+        
         case RISCV::ADDI: {
             // addi rd, rs1, imm
             if (inst.operands().size() >= 3) {

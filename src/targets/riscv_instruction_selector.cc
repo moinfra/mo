@@ -78,6 +78,60 @@ bool RISCVInstructionSelector::selectSingleInstruction(const Instruction& ir_ins
             return true;
         }
         
+        case ::Opcode::Sub: {
+            // IR: %result = sub i32 %a, %b  →  RISC-V: sub vreg_result, vreg_a, vreg_b
+            auto dst_reg = getVirtualRegForValue(&ir_inst);
+            auto src1_reg = getVirtualRegForValue(ir_inst.operand(0));
+            auto src2_reg = getVirtualRegForValue(ir_inst.operand(1));
+            
+            auto sub_inst = std::make_unique<MachineInst>(
+                static_cast<unsigned>(RISCV::SUB),
+                std::vector<MOperand>{
+                    MOperand::create_reg(dst_reg, true),   // def
+                    MOperand::create_reg(src1_reg, false), // use  
+                    MOperand::create_reg(src2_reg, false)  // use
+                }
+            );
+            mbb.append(std::move(sub_inst));
+            return true;
+        }
+        
+        case ::Opcode::Mul: {
+            // IR: %result = mul i32 %a, %b  →  RISC-V: mul vreg_result, vreg_a, vreg_b
+            auto dst_reg = getVirtualRegForValue(&ir_inst);
+            auto src1_reg = getVirtualRegForValue(ir_inst.operand(0));
+            auto src2_reg = getVirtualRegForValue(ir_inst.operand(1));
+            
+            auto mul_inst = std::make_unique<MachineInst>(
+                static_cast<unsigned>(RISCV::MUL),
+                std::vector<MOperand>{
+                    MOperand::create_reg(dst_reg, true),   // def
+                    MOperand::create_reg(src1_reg, false), // use  
+                    MOperand::create_reg(src2_reg, false)  // use
+                }
+            );
+            mbb.append(std::move(mul_inst));
+            return true;
+        }
+        
+        case ::Opcode::SDiv: {
+            // IR: %result = sdiv i32 %a, %b  →  RISC-V: div vreg_result, vreg_a, vreg_b
+            auto dst_reg = getVirtualRegForValue(&ir_inst);
+            auto src1_reg = getVirtualRegForValue(ir_inst.operand(0));
+            auto src2_reg = getVirtualRegForValue(ir_inst.operand(1));
+            
+            auto div_inst = std::make_unique<MachineInst>(
+                static_cast<unsigned>(RISCV::DIV),
+                std::vector<MOperand>{
+                    MOperand::create_reg(dst_reg, true),   // def
+                    MOperand::create_reg(src1_reg, false), // use  
+                    MOperand::create_reg(src2_reg, false)  // use
+                }
+            );
+            mbb.append(std::move(div_inst));
+            return true;
+        }
+        
         case ::Opcode::Ret: {
             // IR: ret i32 %val  →  RISC-V: mv a0, vreg_val; ret
             if (ir_inst.operands().size() > 0) {
