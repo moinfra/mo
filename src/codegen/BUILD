@@ -8,3 +8,14 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "instruction_selector",
+    srcs = ["instruction_selector.cc"],
+    hdrs = ["instruction_selector.h"],
+    deps = [
+        "//src:ir",
+        "//src:machine",
+    ],
+    visibility = ["//visibility:public"],
+)

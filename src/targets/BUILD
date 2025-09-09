@@ -17,6 +17,17 @@ cc_library(
 )
 
 cc_library(
+    name = "riscv_instruction_selector",
+    srcs = ["riscv_instruction_selector.cc"],
+    hdrs = ["riscv_instruction_selector.h"],
+    deps = [
+        ":riscv_target",
+        "//src/codegen:instruction_selector",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "asimov_target",
     srcs = ["asimov_target.cc"],
     hdrs = ["asimov_target.h"],

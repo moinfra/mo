@@ -8,7 +8,7 @@ using namespace RISCV;
 //===----------------------------------------------------------------------===//
 
 RISCVRegisterInfo::RISCVRegisterInfo(ABIVersion abi)
-    : TargetRegisterInfo(64)
+    : TargetRegisterInfo(64), abi_version_(abi)
 {
     initializeRegisters(abi);
     initializeRegisterClasses(abi);

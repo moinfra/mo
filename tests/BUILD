@@ -153,3 +153,16 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "instruction_selector_test",
+    srcs = ["instruction_selector_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:ir",
+        "//src:machine",
+        "//src/codegen:instruction_selector",
+        "//src/targets:riscv_instruction_selector",
+        "@googletest//:gtest_main",
+    ],
+)

@@ -112,11 +112,15 @@ namespace RISCV
     {
     public:
         explicit RISCVRegisterInfo(ABIVersion abi = ABIVersion::LP64D);
+        
+        ABIVersion getABIVersion() const { return abi_version_; }
 
     private:
         void initializeRegisters(ABIVersion abi);
         void initializeRegisterClasses(ABIVersion abi);
         void initializeCallingConventions(ABIVersion abi);
+        
+        ABIVersion abi_version_;
     };
     // RISC-V 指令操作码定义
 
