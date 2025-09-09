@@ -98,6 +98,15 @@ private:
                                  const BasicBlock* true_bb,
                                  const BasicBlock* false_bb,
                                  MachineBasicBlock& machine_bb);
+    
+    /// Handle alloca instruction with pre-calculated stack offset
+    /// @param ir_inst Alloca instruction to process
+    /// @param machine_bb Machine basic block to add instructions to
+    /// @param alloca_offsets Map of alloca instructions to their stack offsets
+    /// @return True if generation succeeded
+    bool selectAllocaInstruction(const Instruction& ir_inst,
+                               MachineBasicBlock& machine_bb,
+                               const std::map<const Instruction*, int>& alloca_offsets);
 
 private:
     // Next available virtual register number
@@ -105,6 +114,9 @@ private:
     
     // IR value to virtual register mapping (Phase 1.5 addition)
     std::map<const Value*, unsigned> ir_value_to_vreg_;
+    
+    // Current function's stack frame size
+    int frame_size_ = 16;  // Default minimal frame size
 };
 
 } // namespace RISCV

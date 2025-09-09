@@ -28,6 +28,23 @@ bool RISCVInstructionSelector::selectInstructions(const Function& ir_func,
     ir_value_to_vreg_.clear();
     next_virtual_reg_ = 1000;
     
+    // Pre-pass: Calculate stack frame requirements for allocas
+    std::map<const Instruction*, int> alloca_offsets;
+    int current_frame_offset = 0;
+    
+    for (const auto ir_bb : ir_func.basic_blocks()) {
+        for (auto it = ir_bb->begin(); it != ir_bb->end(); ++it) {
+            if (it->opcode() == ::Opcode::Alloca) {
+                // Allocate 4 bytes for each alloca (assuming i32 for simplicity)
+                current_frame_offset -= 4;  // Stack grows downward
+                alloca_offsets[&(*it)] = current_frame_offset;  // Store instruction pointer, not iterator
+            }
+        }
+    }
+    
+    // Store the frame size for prologue/epilogue generation
+    frame_size_ = (-current_frame_offset) + 16; // Add space for saved registers
+    
     // Map to track IR basic blocks to machine basic blocks
     std::map<const BasicBlock*, MachineBasicBlock*> bb_map;
     
@@ -49,7 +66,12 @@ bool RISCVInstructionSelector::selectInstructions(const Function& ir_func,
         
         // Process each instruction in the basic block
         for (auto it = ir_bb->begin(); it != ir_bb->end(); ++it) {
-            if (!selectSingleInstruction(*it, *machine_bb)) {
+            if (it->opcode() == ::Opcode::Alloca) {
+                // Handle alloca with pre-calculated offset
+                if (!selectAllocaInstruction(*it, *machine_bb, alloca_offsets)) {
+                    return false;
+                }
+            } else if (!selectSingleInstruction(*it, *machine_bb)) {
                 // Failed to select instruction - this is not necessarily an error
                 // in our minimal implementation, just continue
             }
@@ -138,6 +160,48 @@ bool RISCVInstructionSelector::selectSingleInstruction(const Instruction& ir_ins
             return true;
         }
         
+        // Note: Alloca is now handled separately in selectAllocaInstruction
+        
+        case ::Opcode::Store: {
+            // IR: store i32 %value, i32* %ptr  →  RISC-V: sw %value, 0(%ptr)
+            if (ir_inst.operands().size() >= 2) {
+                auto value_reg = getVirtualRegForValue(ir_inst.operand(0));  // value to store
+                auto ptr_reg = getVirtualRegForValue(ir_inst.operand(1));    // destination pointer
+                
+                // Generate store instruction: sw value_reg, 0(ptr_reg)
+                auto store_inst = std::make_unique<MachineInst>(
+                    static_cast<unsigned>(RISCV::SW),
+                    std::vector<MOperand>{
+                        MOperand::create_reg(value_reg, false),                     // use: value
+                        MOperand::create_mem_ri(ptr_reg, 0)                         // mem: 0(ptr)
+                    }
+                );
+                mbb.append(std::move(store_inst));
+                return true;
+            }
+            return false;
+        }
+        
+        case ::Opcode::Load: {
+            // IR: %result = load i32, i32* %ptr  →  RISC-V: lw %result, 0(%ptr)
+            if (ir_inst.operands().size() >= 1) {
+                auto dst_reg = getVirtualRegForValue(&ir_inst);
+                auto ptr_reg = getVirtualRegForValue(ir_inst.operand(0));    // source pointer
+                
+                // Generate load instruction: lw dst_reg, 0(ptr_reg)
+                auto load_inst = std::make_unique<MachineInst>(
+                    static_cast<unsigned>(RISCV::LW),
+                    std::vector<MOperand>{
+                        MOperand::create_reg(dst_reg, true),                        // def: result
+                        MOperand::create_mem_ri(ptr_reg, 0)                         // mem: 0(ptr)
+                    }
+                );
+                mbb.append(std::move(load_inst));
+                return true;
+            }
+            return false;
+        }
+        
         case ::Opcode::ICmp: {
             // IR: %result = icmp pred %a, %b  →  Handled directly in CondBr
             // RISC-V combines comparisons with branches, so we don't generate separate comparison
@@ -222,6 +286,70 @@ bool RISCVInstructionSelector::selectSingleInstruction(const Instruction& ir_ins
                 return true;
             }
             return false;
+        }
+        
+        case ::Opcode::Call: {
+            // IR: %result = call i32 @func(i32 %arg1, i32 %arg2)
+            // →  RISC-V: move args to a0-a7, jal ra, func_label, move result from a0
+            
+            const auto& call_inst = static_cast<const CallInst&>(ir_inst);
+            
+            // Get function being called
+            auto* callee = call_inst.operand(0);  // First operand is the function
+            std::string callee_name;
+            
+            // Get function name for the call target
+            if (auto* func = dynamic_cast<const Function*>(callee)) {
+                callee_name = func->name();
+            } else {
+                callee_name = "unknown_func";
+            }
+            
+            // Move arguments to argument registers (a0-a7)
+            // RISC-V calling convention uses a0-a7 for first 8 integer arguments
+            for (size_t i = 1; i < call_inst.operands().size() && i <= 8; i++) {
+                auto arg_reg = getVirtualRegForValue(call_inst.operand(i));
+                unsigned target_reg = static_cast<unsigned>(RISCV::A0) + (i - 1);
+                
+                // Generate move instruction: add a[i], arg_reg, x0
+                auto arg_move_inst = std::make_unique<MachineInst>(
+                    static_cast<unsigned>(RISCV::ADD),
+                    std::vector<MOperand>{
+                        MOperand::create_reg(target_reg, true),                          // def: a[i]
+                        MOperand::create_reg(arg_reg, false),                           // use: argument
+                        MOperand::create_reg(static_cast<unsigned>(RISCV::ZERO), false) // use: x0
+                    }
+                );
+                mbb.append(std::move(arg_move_inst));
+            }
+            
+            // Generate function call: jal ra, callee_name
+            auto call_inst_machine = std::make_unique<MachineInst>(
+                static_cast<unsigned>(RISCV::JAL),
+                std::vector<MOperand>{
+                    MOperand::create_reg(static_cast<unsigned>(RISCV::RA), true),  // def: ra (return address)
+                    MOperand::create_label(callee_name)                           // target: function label
+                }
+            );
+            mbb.append(std::move(call_inst_machine));
+            
+            // If call has return value, move from a0 to result register
+            if (call_inst.type() && !call_inst.type()->is_void()) {
+                auto result_reg = getVirtualRegForValue(&ir_inst);
+                
+                // Generate move instruction: add result_reg, a0, x0
+                auto result_move_inst = std::make_unique<MachineInst>(
+                    static_cast<unsigned>(RISCV::ADD),
+                    std::vector<MOperand>{
+                        MOperand::create_reg(result_reg, true),                          // def: result
+                        MOperand::create_reg(static_cast<unsigned>(RISCV::A0), false),   // use: a0 (return value)
+                        MOperand::create_reg(static_cast<unsigned>(RISCV::ZERO), false)  // use: x0
+                    }
+                );
+                mbb.append(std::move(result_move_inst));
+            }
+            
+            return true;
         }
         
         case ::Opcode::Ret: {
@@ -373,27 +501,27 @@ void RISCVInstructionSelector::generateFunctionPrologue(MachineBasicBlock& machi
     // 3. Save callee-saved registers
     // 4. Set frame pointer (optional)
     
-    // For simple functions, we use a minimal prologue:
-    // addi sp, sp, -16    ; allocate 16-byte stack frame
-    // sw ra, 12(sp)       ; save return address
+    // Use calculated frame size instead of fixed 16 bytes
+    // addi sp, sp, -frame_size   ; allocate calculated stack frame
+    // sw ra, (frame_size-4)(sp)  ; save return address at top of frame
     
-    // Allocate 16-byte stack frame
+    // Allocate calculated stack frame
     auto frame_alloc_inst = std::make_unique<MachineInst>(
         static_cast<unsigned>(RISCV::ADDI),
         std::vector<MOperand>{
             MOperand::create_reg(static_cast<unsigned>(RISCV::SP), true),   // def: sp
             MOperand::create_reg(static_cast<unsigned>(RISCV::SP), false),  // use: sp  
-            MOperand::create_imm(-16)                                       // immediate: -16
+            MOperand::create_imm(-frame_size_)                              // immediate: -frame_size
         }
     );
     machine_bb.append(std::move(frame_alloc_inst));
     
-    // Save return address to stack
+    // Save return address to stack (at offset frame_size-4)
     auto save_ra_inst = std::make_unique<MachineInst>(
         static_cast<unsigned>(RISCV::SW),
         std::vector<MOperand>{
-            MOperand::create_reg(static_cast<unsigned>(RISCV::RA), false),  // use: ra
-            MOperand::create_mem_ri(static_cast<unsigned>(RISCV::SP), 12)   // mem: 12(sp)
+            MOperand::create_reg(static_cast<unsigned>(RISCV::RA), false),          // use: ra
+            MOperand::create_mem_ri(static_cast<unsigned>(RISCV::SP), frame_size_-4) // mem: (frame_size-4)(sp)
         }
     );
     machine_bb.append(std::move(save_ra_inst));
@@ -405,16 +533,16 @@ void RISCVInstructionSelector::generateFunctionEpilogue(MachineBasicBlock& machi
     // 2. Restore return address (ra) from stack
     // 3. Deallocate stack frame (restore stack pointer)
     
-    // For simple functions, we use a minimal epilogue:
-    // lw ra, 12(sp)       ; restore return address
-    // addi sp, sp, 16     ; deallocate 16-byte stack frame
+    // Use calculated frame size instead of fixed 16 bytes
+    // lw ra, (frame_size-4)(sp)  ; restore return address
+    // addi sp, sp, frame_size    ; deallocate calculated stack frame
     
     // Restore return address from stack  
     auto restore_ra_inst = std::make_unique<MachineInst>(
         static_cast<unsigned>(RISCV::LW),
         std::vector<MOperand>{
-            MOperand::create_reg(static_cast<unsigned>(RISCV::RA), true),   // def: ra
-            MOperand::create_mem_ri(static_cast<unsigned>(RISCV::SP), 12)   // mem: 12(sp)
+            MOperand::create_reg(static_cast<unsigned>(RISCV::RA), true),           // def: ra
+            MOperand::create_mem_ri(static_cast<unsigned>(RISCV::SP), frame_size_-4) // mem: (frame_size-4)(sp)
         }
     );
     machine_bb.append(std::move(restore_ra_inst));
@@ -425,7 +553,7 @@ void RISCVInstructionSelector::generateFunctionEpilogue(MachineBasicBlock& machi
         std::vector<MOperand>{
             MOperand::create_reg(static_cast<unsigned>(RISCV::SP), true),   // def: sp
             MOperand::create_reg(static_cast<unsigned>(RISCV::SP), false),  // use: sp
-            MOperand::create_imm(16)                                        // immediate: +16  
+            MOperand::create_imm(frame_size_)                               // immediate: +frame_size  
         }
     );
     machine_bb.append(std::move(frame_dealloc_inst));
@@ -512,6 +640,33 @@ bool RISCVInstructionSelector::generateConditionalBranch(const ICmpInst& icmp_in
         }
     );
     machine_bb.append(std::move(jump_inst));
+    
+    return true;
+}
+
+bool RISCVInstructionSelector::selectAllocaInstruction(const Instruction& ir_inst,
+                                                     MachineBasicBlock& machine_bb,
+                                                     const std::map<const Instruction*, int>& alloca_offsets) {
+    // Get the pre-calculated stack offset for this alloca
+    auto it = alloca_offsets.find(&ir_inst);
+    if (it == alloca_offsets.end()) {
+        return false;  // Alloca not found in offset map
+    }
+    
+    int offset = it->second;
+    auto dst_reg = getVirtualRegForValue(&ir_inst);
+    
+    // Generate address calculation: addi dst_reg, sp, offset
+    // This gives the address where the alloca'd data should be stored
+    auto addr_calc_inst = std::make_unique<MachineInst>(
+        static_cast<unsigned>(RISCV::ADDI),
+        std::vector<MOperand>{
+            MOperand::create_reg(dst_reg, true),                           // def: result pointer
+            MOperand::create_reg(static_cast<unsigned>(RISCV::SP), false), // use: sp
+            MOperand::create_imm(offset)                                   // immediate: stack offset
+        }
+    );
+    machine_bb.append(std::move(addr_calc_inst));
     
     return true;
 }

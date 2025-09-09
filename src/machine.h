@@ -478,6 +478,7 @@ public:
     std::unique_ptr<PressureTracker> compute_pressure() const;
 
     MachineModule *parent() const { return mm_; }
+    Function *ir_func() const { return ir_func_; }
     LiveRangeAnalyzer *live_range_analyzer() const { return lra_.get(); }
     MachineFrame *frame() const { return frame_.get(); }
     std::string to_string() const;

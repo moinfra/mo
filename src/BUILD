@@ -61,6 +61,10 @@ cc_binary(
         ":type_checker", 
         ":ir_generator",
         ":ir_printer",
+        ":machine",
+        "//src/targets:riscv_target",
+        "//src/targets:riscv_instruction_selector",
+        "//src/targets:riscv_assembly_emitter",
     ],
 )
 

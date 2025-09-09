@@ -114,9 +114,14 @@ std::string RISCVAssemblyEmitter::emitGlobalLabels(const MachineModule& module) 
     
     // Emit global labels for all functions
     for (const auto& function : module.functions()) {
-        // TODO: Get function name from IR function
-        // For now, emit a placeholder
-        labels << ".globl function_" << function.get() << "\n";
+        // Get actual function name from IR function
+        std::string func_name;
+        if (function->ir_func()) {
+            func_name = function->ir_func()->name();
+        } else {
+            func_name = "unknown_function";
+        }
+        labels << ".globl " << func_name << "\n";
     }
     
     if (!module.functions().empty()) {
@@ -129,8 +134,16 @@ std::string RISCVAssemblyEmitter::emitGlobalLabels(const MachineModule& module) 
 std::string RISCVAssemblyEmitter::emitFunction(const MachineFunction& function) {
     std::stringstream func_asm;
     
-    // Function label
-    func_asm << "function_" << &function << ":\n";
+    // Get actual function name from IR function
+    std::string func_name;
+    if (function.ir_func()) {
+        func_name = function.ir_func()->name();
+    } else {
+        func_name = "unknown_function";
+    }
+    
+    // Function label with actual name
+    func_asm << func_name << ":\n";
     
     // Emit each basic block
     for (const auto& bb : function.basic_blocks()) {
