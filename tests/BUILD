@@ -179,3 +179,19 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "end_to_end_basic_test",
+    srcs = ["end_to_end_basic_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:ir",
+        "//src:ir_builder",
+        "//src:machine",
+        "//src/codegen:machine_module",
+        "//src/targets:riscv_target",
+        "//src/targets:riscv_instruction_selector",
+        "//src/targets:riscv_assembly_emitter",
+        "@googletest//:gtest_main",
+    ],
+)
