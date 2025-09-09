@@ -2,3 +2,15 @@
 build --macos_minimum_os=10.13
 build --copt=-mmacosx-version-min=10.13
 build --linkopt=-mmacosx-version-min=10.13
+
+# Coverage configuration
+coverage --combined_report=lcov
+coverage --instrumentation_filter="//src/..."
+coverage --collect_code_coverage
+
+# Coverage build flags to generate .gcno/.gcda files
+coverage --copt=--coverage
+coverage --linkopt=--coverage
+
+# Use custom gcov wrapper to fix macOS compatibility issues
+coverage --action_env=GCOV=/Users/zijingzhang/personal/mo/scripts/gcov-wrapper

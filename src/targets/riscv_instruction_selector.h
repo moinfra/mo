@@ -64,22 +64,6 @@ private:
     /// Helper method to determine ABI version from register info
     ABIVersion determineABIVersion(const TargetRegisterInfo* reg_info);
     
-    /// Select instructions for a basic block
-    /// @param ir_bb IR basic block
-    /// @param machine_bb Target machine basic block
-    /// @return True if selection succeeded
-    bool selectBasicBlock(const BasicBlock& ir_bb, MachineBasicBlock& machine_bb);
-    
-    /// Select instruction for a single IR instruction
-    /// @param ir_inst IR instruction
-    /// @param machine_bb Target machine basic block to append to
-    /// @return True if selection succeeded
-    bool selectInstruction(const Instruction& ir_inst, MachineBasicBlock& machine_bb);
-    
-    /// Get RISC-V register for IR value
-    /// @param ir_value IR value
-    /// @return RISC-V register number, or INVALID_REG if not found
-    unsigned getRegisterForValue(const Value* ir_value);
     
     /// Create a new virtual register
     /// @return New virtual register number

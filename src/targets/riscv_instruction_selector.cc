@@ -283,10 +283,11 @@ unsigned RISCVInstructionSelector::getVirtualRegForValue(const Value* ir_value) 
     unsigned new_vreg = next_virtual_reg_++;
     ir_value_to_vreg_[ir_value] = new_vreg;
     
-    // TODO: In a full implementation, we would also:
-    // 1. Determine the appropriate register class based on the IR value's type
-    // 2. Register the virtual register with the MachineFunction
-    // 3. Handle different register classes (int, float, etc.)
+    // Handle different register classes based on IR value's type
+    // Note: In a full implementation, we would:
+    // 1. Check the type and assign appropriate register class
+    // 2. Register this with MachineFunction
+    // For now, all virtual registers are treated as general-purpose
     
     return new_vreg;
 }
@@ -354,27 +355,8 @@ ABIVersion RISCVInstructionSelector::determineABIVersion(const TargetRegisterInf
     return riscv_reg_info->getABIVersion();
 }
 
-bool RISCVInstructionSelector::selectBasicBlock(const BasicBlock& ir_bb, 
-                                               MachineBasicBlock& machine_bb) {
-    // TODO: Implement basic block instruction selection
-    (void)ir_bb;        // Suppress unused parameter warning
-    (void)machine_bb;   // Suppress unused parameter warning
-    return true;
-}
 
-bool RISCVInstructionSelector::selectInstruction(const Instruction& ir_inst,
-                                                MachineBasicBlock& machine_bb) {
-    // TODO: Implement single instruction selection
-    (void)ir_inst;      // Suppress unused parameter warning
-    (void)machine_bb;   // Suppress unused parameter warning
-    return true;
-}
 
-unsigned RISCVInstructionSelector::getRegisterForValue(const Value* ir_value) {
-    // TODO: Implement register allocation for IR values
-    (void)ir_value;     // Suppress unused parameter warning
-    return createVirtualRegister();  // For now, create a new virtual register
-}
 
 unsigned RISCVInstructionSelector::createVirtualRegister() {
     return next_virtual_reg_++;

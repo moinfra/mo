@@ -87,3 +87,5 @@ external/
 # IDE specific files
 .vscode/
 .idea/
+
+coverage_reports

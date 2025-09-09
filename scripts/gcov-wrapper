@@ -1,0 +1,170 @@
+#!/bin/bash
+#
+# gcov wrapper script to fix Bazel compatibility issues on macOS
+#
+# This script detects whether Bazel is trying to use:
+# 1. Traditional gcov with .gcno/.gcda files
+# 2. LLVM coverage with .profraw/.profdata files
+# 3. LLVM LCOV generation from .profdata files
+# And routes to the appropriate tool with correct arguments
+#
+
+# Paths to coverage tools
+REAL_GCOV="/usr/bin/gcov"
+LLVM_PROFDATA="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-profdata"
+LLVM_COV="/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/llvm-cov"
+
+# Log all gcov calls for debugging
+echo "gcov-wrapper: Called with args: $*" >> /tmp/gcov-wrapper.log
+
+# Check if this is LLVM profdata format (contains .profraw or .profdata files)
+USE_LLVM=0
+GENERATE_LCOV=0
+PROFDATA_FILE=""
+BINARY_FILE=""
+
+IS_MERGE=0
+for arg in "$@"; do
+    if [[ "$arg" == "merge" ]]; then
+        IS_MERGE=1
+    elif [[ "$arg" == *.profraw ]] || [[ "$arg" == *.profdata ]]; then
+        USE_LLVM=1
+        if [[ "$arg" == *.profdata ]]; then
+            PROFDATA_FILE="$arg"
+        fi
+    elif [[ -x "$arg" ]] && [[ ! "$arg" =~ \.(profraw|profdata|gcno|gcda)$ ]]; then
+        # This might be a binary file for llvm-cov export
+        BINARY_FILE="$arg"
+    fi
+done
+
+# LCOV generation is when we have profdata but it's NOT a merge operation
+if [[ $USE_LLVM -eq 1 ]] && [[ $IS_MERGE -eq 0 ]] && [[ -n "$PROFDATA_FILE" ]]; then
+    GENERATE_LCOV=1
+fi
+
+# Debug output
+echo "gcov-wrapper: Original args: $*" >&2
+echo "gcov-wrapper: LLVM detected: $USE_LLVM, GENERATE_LCOV: $GENERATE_LCOV" >&2
+echo "gcov-wrapper: PROFDATA_FILE: $PROFDATA_FILE, BINARY_FILE: $BINARY_FILE" >&2
+
+if [ $USE_LLVM -eq 1 ] && [ $GENERATE_LCOV -eq 1 ] && [ -n "$PROFDATA_FILE" ]; then
+    # Handle LLVM LCOV generation from profdata
+    echo "gcov-wrapper: Generating LCOV from profdata using llvm-cov export" >&2
+    
+    # Find the binary file (test executable)
+    if [ -z "$BINARY_FILE" ]; then
+        # Extract test name from profdata path
+        if [[ "$PROFDATA_FILE" =~ /([^/]+)_test/test/_cc_coverage\.profdata ]]; then
+            TEST_NAME="${BASH_REMATCH[1]}_test"
+            # Try different binary locations
+            for possible_bin in "bazel-bin/tests/$TEST_NAME" "bazel-bin/*/*/$TEST_NAME" "./$TEST_NAME"; do
+                if [ -x "$possible_bin" ]; then
+                    BINARY_FILE="$possible_bin"
+                    echo "gcov-wrapper: Found binary at $possible_bin" >&2
+                    break
+                fi
+            done
+        fi
+    fi
+    
+    if [ -n "$BINARY_FILE" ]; then
+        echo "gcov-wrapper: Using binary: $BINARY_FILE" >&2
+        exec "$LLVM_COV" export -format=lcov "$BINARY_FILE" -instr-profile="$PROFDATA_FILE"
+    else
+        echo "gcov-wrapper: Error - Could not find binary for llvm-cov export" >&2
+        exit 1
+    fi
+elif [ $USE_LLVM -eq 1 ]; then
+    # Handle LLVM profdata format
+    ARGS=()
+    OUTPUT_FILE=""
+    SKIP_NEXT=0
+
+    for arg in "$@"; do
+        if [ $SKIP_NEXT -eq 1 ]; then
+            OUTPUT_FILE="$arg"
+            SKIP_NEXT=0
+            continue
+        fi
+        
+        case "$arg" in
+            merge)
+                ARGS+=("merge")
+                ;;
+            --output)
+                # Skip --output and use the next argument as output file
+                SKIP_NEXT=1
+                ;;
+            --output=*)
+                # Extract output file from --output=file format
+                OUTPUT_FILE="${arg#--output=}"
+                ;;
+            -output)
+                # Convert -output to -o and use next argument
+                SKIP_NEXT=1
+                ;;
+            -output=*)
+                # Extract output file from -output=file format  
+                OUTPUT_FILE="${arg#-output=}"
+                ;;
+            *)
+                # Keep all other arguments as-is
+                ARGS+=("$arg")
+                ;;
+        esac
+    done
+
+    # Add output file if specified
+    if [ -n "$OUTPUT_FILE" ]; then
+        ARGS+=("-o")
+        ARGS+=("$OUTPUT_FILE")
+    fi
+
+    echo "gcov-wrapper: Using llvm-profdata with args: ${ARGS[*]}" >&2
+    exec "$LLVM_PROFDATA" "${ARGS[@]}"
+else
+    # Handle traditional gcov format
+    ARGS=()
+    OUTPUT_DIR=""
+    SKIP_NEXT=0
+
+    for arg in "$@"; do
+        if [ $SKIP_NEXT -eq 1 ]; then
+            SKIP_NEXT=0
+            continue
+        fi
+        
+        case "$arg" in
+            --output)
+                # Skip --output and use the next argument as output directory
+                SKIP_NEXT=1
+                ;;
+            --output=*)
+                # Extract output directory from --output=dir format
+                OUTPUT_DIR="${arg#--output=}"
+                ;;
+            -output)
+                # Convert -output to -o and use next argument
+                SKIP_NEXT=1
+                ;;
+            -output=*)
+                # Extract output directory from -output=dir format  
+                OUTPUT_DIR="${arg#-output=}"
+                ;;
+            *)
+                # Keep all other arguments as-is
+                ARGS+=("$arg")
+                ;;
+        esac
+    done
+
+    # Add output directory if specified
+    if [ -n "$OUTPUT_DIR" ]; then
+        ARGS+=("-o")
+        ARGS+=("$OUTPUT_DIR")
+    fi
+
+    echo "gcov-wrapper: Using gcov with args: ${ARGS[*]}" >&2
+    exec "$REAL_GCOV" "${ARGS[@]}"
+fi
