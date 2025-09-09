@@ -3,11 +3,13 @@
 #pragma once
 
 #include "../machine.h"
+#include "target_base.h"
 #include <array>
 #include <vector>
 #include <bitset>
 #include <string>
 #include <stdexcept>
+#include <memory>
 
 namespace RISCV
 {
@@ -630,4 +632,47 @@ namespace RISCV
     };
 
     void build_cfg_from_instructions(MachineFunction &mf);
+
+    //===----------------------------------------------------------------------===//
+    // RISC-V Target Implementation
+    //===----------------------------------------------------------------------===//
+    
+    /// RISCVTarget - Main target class implementing RISC-V code generation
+    class RISCVTarget : public codegen::TargetBase {
+    private:
+        std::unique_ptr<RISCVRegisterInfo> register_info_;
+        std::unique_ptr<RISCVTargetInstInfo> inst_info_;
+        ABIVersion abi_version_;
+
+    public:
+        /// Constructor with target-specific components
+        RISCVTarget(std::unique_ptr<RISCVRegisterInfo> reg_info,
+                   std::unique_ptr<RISCVTargetInstInfo> inst_info,
+                   ABIVersion abi = ABIVersion::LP64D);
+
+        /// Destructor
+        ~RISCVTarget() override = default;
+
+        /// Generate machine code from IR module
+        std::unique_ptr<MachineModule> generateMachineCode(const Module& ir_module) override;
+        
+        /// Emit RISC-V assembly code from machine module
+        std::string emitAssembly(const MachineModule& machine_module) override;
+        
+        /// Get target name
+        const char* getTargetName() const override;
+        
+        /// Check if target supports a specific feature
+        bool hasFeature(const std::string& feature) const override;
+
+        /// Get register info
+        const RISCVRegisterInfo* getRegisterInfo() const { return register_info_.get(); }
+        
+        /// Get instruction info  
+        const RISCVTargetInstInfo* getInstInfo() const { return inst_info_.get(); }
+        
+        /// Get ABI version
+        ABIVersion getABIVersion() const { return abi_version_; }
+    };
+
 }; // namespace RISCV

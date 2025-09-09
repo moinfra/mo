@@ -1662,4 +1662,82 @@ namespace RISCV
         }
     }
 
+    //===----------------------------------------------------------------------===//
+    // RISCVTarget Implementation
+    //===----------------------------------------------------------------------===//
+
+    RISCVTarget::RISCVTarget(std::unique_ptr<RISCVRegisterInfo> reg_info,
+                            std::unique_ptr<RISCVTargetInstInfo> inst_info,
+                            ABIVersion abi)
+        : register_info_(std::move(reg_info))
+        , inst_info_(std::move(inst_info))
+        , abi_version_(abi)
+    {
+    }
+
+    std::unique_ptr<MachineModule> RISCVTarget::generateMachineCode(const Module& ir_module) {
+        // TODO: Implement IR to machine code generation
+        // For now, return a minimal MachineModule for testing
+        auto machine_module = std::make_unique<MachineModule>(const_cast<Module*>(&ir_module));
+        
+        // Set target info
+        machine_module->set_target_info(register_info_.get(), inst_info_.get());
+        
+        return machine_module;
+    }
+
+    std::string RISCVTarget::emitAssembly(const MachineModule& machine_module) {
+        // TODO: Implement assembly emission
+        // For now, return minimal RISC-V assembly
+        return ".text\n"
+               ".globl main\n"
+               "main:\n"
+               "    li a0, 0\n"
+               "    ret\n";
+    }
+
+    const char* RISCVTarget::getTargetName() const {
+        switch (abi_version_) {
+            case ABIVersion::ILP32:
+            case ABIVersion::ILP32F:
+                return "riscv32";
+            case ABIVersion::LP64:
+            case ABIVersion::LP64F:
+            case ABIVersion::LP64D:
+                return "riscv64";
+            default:
+                return "riscv-unknown";
+        }
+    }
+
+    bool RISCVTarget::hasFeature(const std::string& feature) const {
+        // Basic RISC-V features
+        if (feature == "riscv") return true;
+        if (feature == "i") return true;  // Base integer instruction set
+        if (feature == "m") return true;  // Multiplication and division
+        
+        // ABI-specific features
+        if (feature == "32bit") {
+            return (abi_version_ == ABIVersion::ILP32 ||
+                   abi_version_ == ABIVersion::ILP32F);
+        }
+        if (feature == "64bit") {
+            return (abi_version_ == ABIVersion::LP64 ||
+                   abi_version_ == ABIVersion::LP64F ||
+                   abi_version_ == ABIVersion::LP64D);
+        }
+        
+        // Floating-point features
+        if (feature == "f") {
+            return (abi_version_ == ABIVersion::ILP32F ||
+                   abi_version_ == ABIVersion::LP64F ||
+                   abi_version_ == ABIVersion::LP64D);
+        }
+        if (feature == "d") {
+            return (abi_version_ == ABIVersion::LP64D);
+        }
+        
+        return false;
+    }
+
 } // namespace RISCV

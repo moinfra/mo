@@ -53,6 +53,17 @@ cc_binary(
     deps = [":ast_printer_yaml"],
 )
 
+cc_binary(
+    name = "mo_compiler",
+    srcs = ["mo_compiler.cc"],
+    deps = [
+        ":parser",
+        ":type_checker", 
+        ":ir_generator",
+        ":ir_printer",
+    ],
+)
+
 cc_library(
     name = "ir",
     srcs = ["ir.cc"],

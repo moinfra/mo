@@ -128,3 +128,28 @@ cc_test(
         "@googletest//:gtest_main",
     ],
 )
+
+cc_test(
+    name = "riscv_target_test",
+    srcs = ["riscv_target_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:ir",
+        "//src:machine", 
+        "//src/targets:riscv_target",
+        "@googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "machine_module_test",
+    srcs = ["machine_module_test.cc"],
+    copts = ["-DNDEBUG"],
+    deps = [
+        "//src:ir",
+        "//src:machine",
+        "//src/codegen:machine_module", 
+        "//src/targets:riscv_target",
+        "@googletest//:gtest_main",
+    ],
+)
