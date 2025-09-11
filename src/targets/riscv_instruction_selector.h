@@ -117,6 +117,9 @@ private:
     
     // Current function's stack frame size
     int frame_size_ = 16;  // Default minimal frame size
+    
+    // Current MachineFunction being processed
+    MachineFunction* current_machine_func_ = nullptr;
 };
 
 } // namespace RISCV

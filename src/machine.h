@@ -462,6 +462,7 @@ public:
     RegAllocResult allocate_registers(RegisterAllocator &allocator);
     void set_register_allocator(std::unique_ptr<RegisterAllocator> allocator);
     bool are_registers_allocated() const { return reg_alloc_result_ && (*reg_alloc_result_).successful; }
+    RegisterAllocator* get_register_allocator() const { return reg_allocator_.get(); }
     int create_register_spill_slot(unsigned vreg, unsigned reg_class_id);
 
     // Instruction position management

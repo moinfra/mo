@@ -12,6 +12,7 @@
 #include "targets/riscv_target.h"
 #include "targets/riscv_instruction_selector.h"
 #include "targets/riscv_assembly_emitter.h"
+#include "reg_alloc/lsra.h"
 
 using namespace ast;
 
@@ -100,6 +101,11 @@ int main(int argc, char *argv[])
             // Create machine module
             auto machine_module = std::make_unique<MachineModule>(module.get());
             
+            // Set target info on machine module (this was missing!)
+            const auto* target_reg_info = riscv_target->getRegisterInfo();
+            const auto* target_inst_info = riscv_target->getInstInfo();
+            machine_module->set_target_info(target_reg_info, target_inst_info);
+            
             for (const auto& ir_function : module->functions()) {
                 std::cout << "Processing function: " << ir_function->name() << std::endl;
                 
@@ -107,10 +113,8 @@ int main(int argc, char *argv[])
                 auto* machine_func = machine_module->create_machine_function(ir_function);
                 
                 // Run instruction selection  
-                const auto* reg_info = riscv_target->getRegisterInfo();
-                const auto* inst_info = riscv_target->getInstInfo();
                 
-                RISCV::RISCVInstructionSelector selector(reg_info, inst_info);
+                RISCV::RISCVInstructionSelector selector(target_reg_info, target_inst_info);
                 bool selection_success = selector.selectInstructions(*ir_function, *machine_func);
                 
                 if (!selection_success) {
@@ -120,6 +124,35 @@ int main(int argc, char *argv[])
                 }
                 
                 std::cout << "Instruction selection successful for: " << ir_function->name() << std::endl;
+                
+                // Run register allocation on the machine function
+                std::cout << "Running register allocation for: " << ir_function->name() << std::endl;
+                
+                // Compute live ranges first
+                std::cout << "Computing live ranges..." << std::endl;
+                machine_func->live_range_analyzer()->compute();
+                
+                // Create linear scan register allocator
+                auto allocator = std::make_unique<LinearScanRegisterAllocator>(*machine_func);
+                
+                // Perform register allocation using LSRA
+                std::cout << "Running LSRA algorithm..." << std::endl;
+                RegAllocResult alloc_result = allocator->allocate_registers();
+                
+                if (!alloc_result.successful) {
+                    std::cerr << "LSRA failed: " << alloc_result.error_message << std::endl;
+                    return 1;
+                }
+                
+                std::cout << "LSRA successful: " << alloc_result.num_spills << " spills, " 
+                         << alloc_result.num_copies << " copies" << std::endl;
+                
+                // Apply register allocation results to machine instructions
+                allocator->apply();
+                std::cout << "Applied register allocation to machine instructions" << std::endl;
+                
+                // Store the allocator in the machine function for later access
+                machine_func->set_register_allocator(std::move(allocator));
             }
             
             // Generate RISC-V assembly from the complete machine module

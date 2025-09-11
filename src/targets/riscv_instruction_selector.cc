@@ -24,6 +24,9 @@ bool RISCVInstructionSelector::selectInstructions(const Function& ir_func,
                                                  MachineFunction& machine_func) {
     // Phase 1.5 - Commit 5.2: Real instruction selection implementation
     
+    // Set current machine function for helper methods
+    current_machine_func_ = &machine_func;
+    
     // Clear any existing state
     ir_value_to_vreg_.clear();
     next_virtual_reg_ = 1000;
@@ -407,15 +410,28 @@ unsigned RISCVInstructionSelector::getVirtualRegForValue(const Value* ir_value) 
         return it->second;
     }
     
-    // Create a new virtual register for this IR value
-    unsigned new_vreg = next_virtual_reg_++;
-    ir_value_to_vreg_[ir_value] = new_vreg;
+    // Determine register class based on IR type
+    unsigned reg_class_id = 0; // Default: general purpose register class
+    unsigned size = 4; // Default to 32-bit (4 bytes)
+    bool is_fp = false;
     
-    // Handle different register classes based on IR value's type
-    // Note: In a full implementation, we would:
-    // 1. Check the type and assign appropriate register class
-    // 2. Register this with MachineFunction
-    // For now, all virtual registers are treated as general-purpose
+    const Type* type = ir_value->type();
+    
+    if (type->is_integer()) {
+        reg_class_id = 0; // Integer register class
+        size = (type->bit_width() + 7) / 8; // Convert bits to bytes
+    } else if (type->is_float()) {
+        reg_class_id = 1; // Floating-point register class  
+        is_fp = true;
+        size = (type->bit_width() + 7) / 8; // Convert bits to bytes
+    } else if (type->is_pointer()) {
+        reg_class_id = 0; // Pointers use integer registers
+        size = 8; // 64-bit pointers
+    }
+    
+    // Use MachineFunction's create_vreg method to properly register the virtual register
+    unsigned new_vreg = current_machine_func_->create_vreg(reg_class_id, size, is_fp, const_cast<Value*>(ir_value));
+    ir_value_to_vreg_[ir_value] = new_vreg;
     
     return new_vreg;
 }
@@ -487,7 +503,9 @@ ABIVersion RISCVInstructionSelector::determineABIVersion(const TargetRegisterInf
 
 
 unsigned RISCVInstructionSelector::createVirtualRegister() {
-    return next_virtual_reg_++;
+    // Use MachineFunction's create_vreg method to properly register the virtual register
+    // Default to general purpose register class for anonymous virtual registers
+    return current_machine_func_->create_vreg(0, 4, false, nullptr);
 }
 
 //===----------------------------------------------------------------------===//

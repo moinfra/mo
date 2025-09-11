@@ -59,6 +59,9 @@ private:
     const TargetInstInfo* inst_info_;
     ABIVersion abi_version_;
     
+    /// Current function being emitted (for register allocation context)
+    mutable const MachineFunction* current_function_;
+    
     /// Helper methods for assembly emission
     std::string emitFunction(const MachineFunction& function);
     std::string emitBasicBlock(const MachineBasicBlock& bb);

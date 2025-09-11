@@ -962,9 +962,31 @@ const std::vector<unsigned> TargetRegisterInfo::get_classes_of_reg(unsigned reg)
 
 const std::vector<RegisterClass *> TargetRegisterInfo::get_reg_classes() const
 {
+    std::cout << "DEBUG: get_reg_classes() called" << std::endl;
+    std::cout << "DEBUG: register_classes_.size() = " << register_classes_.size() << std::endl;
+    
     std::vector<RegisterClass *> result;
-    for (const auto &rc : register_classes_)
-        result.push_back(rc.get());
+    
+    std::cout << "DEBUG: About to iterate through register classes" << std::endl;
+    size_t count = 0;
+    for (const auto &rc : register_classes_) {
+        std::cout << "DEBUG: Processing register class " << count << std::endl;
+        
+        if (!rc) {
+            std::cout << "DEBUG: Warning - null register class at index " << count << std::endl;
+            continue;
+        }
+        
+        std::cout << "DEBUG: Getting pointer from unique_ptr" << std::endl;
+        RegisterClass* ptr = rc.get();
+        std::cout << "DEBUG: Got pointer: " << static_cast<void*>(ptr) << std::endl;
+        
+        result.push_back(ptr);
+        count++;
+        std::cout << "DEBUG: Added register class " << count-1 << " to result" << std::endl;
+    }
+    
+    std::cout << "DEBUG: get_reg_classes() returning " << result.size() << " register classes" << std::endl;
     return result;
 }
 

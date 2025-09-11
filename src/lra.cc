@@ -56,7 +56,7 @@ bool LiveInterval::operator<(const LiveInterval &rhs) const
 
 void LiveRange::add_interval(unsigned start, unsigned end)
 {
-    MO_DEBUG("Extend reg %u live range with [%u, %u)", preg_, start, end);
+    MO_DEBUG("Extend reg %u live range with [%u, %u)", vreg_, start, end);
     intervals_.emplace_back(start, end, this);
     merge_intervals(); // Ensure intervals are ordered and non-overlapping
 }

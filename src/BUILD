@@ -62,6 +62,7 @@ cc_binary(
         ":ir_generator",
         ":ir_printer",
         ":machine",
+        "//src/reg_alloc:lsra",
         "//src/targets:riscv_target",
         "//src/targets:riscv_instruction_selector",
         "//src/targets:riscv_assembly_emitter",

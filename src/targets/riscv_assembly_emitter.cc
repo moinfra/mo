@@ -16,6 +16,7 @@ RISCVAssemblyEmitter::RISCVAssemblyEmitter(const TargetRegisterInfo* reg_info,
     : register_info_(reg_info)
     , inst_info_(inst_info)
     , abi_version_(determineABIVersion(reg_info))
+    , current_function_(nullptr)
 {
     assert(reg_info && "Register info cannot be null");
     assert(inst_info && "Instruction info cannot be null");
@@ -134,6 +135,9 @@ std::string RISCVAssemblyEmitter::emitGlobalLabels(const MachineModule& module) 
 std::string RISCVAssemblyEmitter::emitFunction(const MachineFunction& function) {
     std::stringstream func_asm;
     
+    // Set current function for register allocation context
+    current_function_ = &function;
+    
     // Get actual function name from IR function
     std::string func_name;
     if (function.ir_func()) {
@@ -149,6 +153,9 @@ std::string RISCVAssemblyEmitter::emitFunction(const MachineFunction& function) 
     for (const auto& bb : function.basic_blocks()) {
         func_asm << emitBasicBlock(*bb);
     }
+    
+    // Clear current function context
+    current_function_ = nullptr;
     
     return func_asm.str();
 }
@@ -357,8 +364,19 @@ std::string RISCVAssemblyEmitter::emitInstruction(const MachineInst& inst) {
 std::string RISCVAssemblyEmitter::formatRegister(unsigned reg) const {
     // Phase 1.5 - Commit 5.3: Real RISC-V register formatting
     
-    // Handle virtual registers (>= 1000)
+    // Handle virtual registers (>= 1000) - look up allocated physical register
     if (reg >= 1000) {
+        if (current_function_ && current_function_->are_registers_allocated()) {
+            // Get the register allocator that contains the mappings
+            if (auto* reg_alloc = current_function_->get_register_allocator()) {
+                // Look up the assigned physical register
+                if (auto assigned_reg = reg_alloc->get_assigned_reg(reg)) {
+                    // Use the allocated physical register
+                    unsigned phys_reg = *assigned_reg;
+                    return formatRegister(phys_reg); // Recursive call with physical register
+                }
+            }
+        }
         return "vreg" + std::to_string(reg);
     }
     
