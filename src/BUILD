@@ -66,6 +66,9 @@ cc_binary(
         "//src/targets:riscv_target",
         "//src/targets:riscv_instruction_selector",
         "//src/targets:riscv_assembly_emitter",
+        "//src/targets:arm64_target",
+        "//src/targets:arm64_instruction_selector",
+        "//src/targets:arm64_assembly_emitter",
     ],
 )
 

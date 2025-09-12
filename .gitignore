@@ -89,3 +89,62 @@ external/
 .idea/
 
 coverage_reports
+
+#=====================================
+# Mo Compiler Specific Files
+#=====================================
+
+# Generated assembly files
+*.s
+!**/*_template.s      # Keep template files if any
+
+# Generated LLVM IR files
+*.ll
+*.bc
+
+# Generated object files (additional to general ones above)
+*.obj
+
+# Generated executable files in examples
+examples/simple
+examples/helloworld
+examples/test*
+examples/debug*
+
+# Test outputs and temporary files
+test_program*
+*_test.out
+*_debug.out
+*.dump
+*.trace
+
+# Compiler debug output
+*.ast
+*.ir
+*.tokens
+*.parse
+
+# Generated output directories
+*_output/
+riscv_output/
+arm64_output/
+docker/output/
+
+# Runtime files
+core
+core.*
+
+# Profiling data
+*.prof
+gmon.out
+
+# Memory debugging
+*.valgrind
+*.asan
+*.msan
+
+# Coverage files
+*.gcov
+*.gcda
+*.gcno
+lcov.info

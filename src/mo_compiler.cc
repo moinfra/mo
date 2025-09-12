@@ -12,26 +12,52 @@
 #include "targets/riscv_target.h"
 #include "targets/riscv_instruction_selector.h"
 #include "targets/riscv_assembly_emitter.h"
+#include "targets/arm64_target.h"
+#include "targets/arm64_instruction_selector.h"
+#include "targets/arm64_assembly_emitter.h"
 #include "reg_alloc/lsra.h"
 
 using namespace ast;
+
+// Enum for target architecture selection
+enum class TargetArch {
+    RISCV64,
+    ARM64
+};
 
 int main(int argc, char *argv[])
 {
     if (argc < 2)
     {
-        std::cerr << "Usage: " << argv[0] << " <source_file.mo> [--emit-ir]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <source_file.mo> [--emit-ir] [--target=<arch>]" << std::endl;
+        std::cerr << "  Supported targets: riscv64, arm64" << std::endl;
         return 1;
     }
 
     std::string filename = argv[1];
     bool emit_ir = false;
+    TargetArch target_arch = TargetArch::RISCV64;  // Default to RISC-V
 
     // Parse command line options
     for (int i = 2; i < argc; i++)
     {
-        if (std::string(argv[i]) == "--emit-ir")
+        std::string arg = argv[i];
+        if (arg == "--emit-ir") {
             emit_ir = true;
+        } else if (arg.substr(0, 9) == "--target=") {
+            std::string target = arg.substr(9);
+            if (target == "riscv64" || target == "riscv") {
+                target_arch = TargetArch::RISCV64;
+            } else if (target == "arm64" || target == "aarch64") {
+                target_arch = TargetArch::ARM64;
+            } else {
+                std::cerr << "Error: Unknown target architecture: " << target << std::endl;
+                std::cerr << "Supported targets: riscv64, arm64" << std::endl;
+                return 1;
+            }
+        } else {
+            std::cerr << "Warning: Unknown option: " << arg << std::endl;
+        }
     }
 
     // Read source file
@@ -86,27 +112,97 @@ int main(int argc, char *argv[])
             IRPrinter::print_module(*module, std::cout);
         }
 
-        // Step 4: RISC-V Code Generation
-        std::cout << "\n=== RISC-V Code Generation ===" << std::endl;
+        // Step 4: Target-Specific Code Generation
+        const char* target_name = (target_arch == TargetArch::ARM64) ? "ARM64" : "RISC-V";
+        std::cout << "\n=== " << target_name << " Code Generation ===" << std::endl;
         
         try {
-            // Create RISC-V target with LP64D ABI (64-bit with double-precision floating-point)
-            auto reg_info = std::make_unique<RISCV::RISCVRegisterInfo>(RISCV::ABIVersion::LP64D);
-            auto inst_info = std::make_unique<RISCV::RISCVTargetInstInfo>(RISCV::ABIVersion::LP64D);
-            auto riscv_target = std::make_unique<RISCV::RISCVTarget>(std::move(reg_info), std::move(inst_info), RISCV::ABIVersion::LP64D);
-            
-            // Convert IR module to machine representation
-            std::cout << "Converting IR to machine representation..." << std::endl;
-            
-            // Create machine module
+            // Create machine module first
             auto machine_module = std::make_unique<MachineModule>(module.get());
             
-            // Set target info on machine module (this was missing!)
-            const auto* target_reg_info = riscv_target->getRegisterInfo();
-            const auto* target_inst_info = riscv_target->getInstInfo();
-            machine_module->set_target_info(target_reg_info, target_inst_info);
-            
-            for (const auto& ir_function : module->functions()) {
+            // Target-specific setup
+            if (target_arch == TargetArch::ARM64) {
+                // Create ARM64 target with Darwin ABI (for macOS M2)
+                auto reg_info = std::make_unique<ARM64::ARM64RegisterInfo>(ARM64::ABIVersion::DARWIN);
+                auto inst_info = std::make_unique<ARM64::ARM64TargetInstInfo>(ARM64::ABIVersion::DARWIN);
+                auto arm64_target = std::make_unique<ARM64::ARM64Target>(std::move(reg_info), std::move(inst_info), ARM64::ABIVersion::DARWIN);
+                
+                const auto* target_reg_info = arm64_target->getRegisterInfo();
+                const auto* target_inst_info = arm64_target->getInstInfo();
+                machine_module->set_target_info(target_reg_info, target_inst_info);
+                
+                std::cout << "Converting IR to machine representation..." << std::endl;
+                
+                for (const auto& ir_function : module->functions()) {
+                    std::cout << "Processing function: " << ir_function->name() << std::endl;
+                    
+                    auto* machine_func = machine_module->create_machine_function(ir_function);
+                    
+                    // ARM64 instruction selection
+                    ARM64::ARM64InstructionSelector selector(target_reg_info, target_inst_info);
+                    bool selection_success = selector.selectInstructions(*ir_function, *machine_func);
+                    
+                    if (!selection_success) {
+                        std::cerr << "ARM64 instruction selection failed for function: " 
+                                  << ir_function->name() << std::endl;
+                        return 1;
+                    }
+                    
+                    std::cout << "ARM64 instruction selection successful for: " << ir_function->name() << std::endl;
+                    
+                    // Register allocation
+                    std::cout << "Running register allocation for: " << ir_function->name() << std::endl;
+                    machine_func->live_range_analyzer()->compute();
+                    
+                    auto allocator = std::make_unique<LinearScanRegisterAllocator>(*machine_func);
+                    RegAllocResult alloc_result = allocator->allocate_registers();
+                    
+                    if (!alloc_result.successful) {
+                        std::cerr << "ARM64 LSRA failed: " << alloc_result.error_message << std::endl;
+                        return 1;
+                    }
+                    
+                    std::cout << "ARM64 LSRA successful: " << alloc_result.num_spills << " spills, " 
+                             << alloc_result.num_copies << " copies" << std::endl;
+                    
+                    machine_func->set_register_allocation_result(alloc_result);
+                    allocator->apply();
+                    machine_func->set_register_allocator(std::move(allocator));
+                }
+                
+                // Generate ARM64 assembly
+                ARM64::ARM64AssemblyEmitter emitter(arm64_target->getRegisterInfo(), arm64_target->getInstInfo());
+                std::string assembly = emitter.emit(*machine_module);
+                
+                std::cout << "\n--- Generated ARM64 Assembly ---" << std::endl;
+                std::cout << assembly << std::endl;
+                
+                // Write assembly to file with .s extension
+                std::string output_filename = filename.substr(0, filename.find_last_of('.')) + ".s";
+                std::ofstream asm_file(output_filename);
+                if (asm_file.is_open()) {
+                    asm_file << assembly;
+                    asm_file.close();
+                    std::cout << "ARM64 assembly written to: " << output_filename << std::endl;
+                } else {
+                    std::cerr << "Warning: Could not write ARM64 assembly to file " << output_filename << std::endl;
+                }
+                
+                std::cout << "\nARM64 code generation successful!" << std::endl;
+                
+            } else {
+                // Original RISC-V path
+                // Create RISC-V target with LP64D ABI (64-bit with double-precision floating-point)
+                auto reg_info = std::make_unique<RISCV::RISCVRegisterInfo>(RISCV::ABIVersion::LP64D);
+                auto inst_info = std::make_unique<RISCV::RISCVTargetInstInfo>(RISCV::ABIVersion::LP64D);
+                auto riscv_target = std::make_unique<RISCV::RISCVTarget>(std::move(reg_info), std::move(inst_info), RISCV::ABIVersion::LP64D);
+                
+                const auto* target_reg_info = riscv_target->getRegisterInfo();
+                const auto* target_inst_info = riscv_target->getInstInfo();
+                machine_module->set_target_info(target_reg_info, target_inst_info);
+                
+                
+                for (const auto& ir_function : module->functions()) {
                 std::cout << "Processing function: " << ir_function->name() << std::endl;
                 
                 // Create machine function using the module's factory method
@@ -147,36 +243,40 @@ int main(int argc, char *argv[])
                 std::cout << "LSRA successful: " << alloc_result.num_spills << " spills, " 
                          << alloc_result.num_copies << " copies" << std::endl;
                 
+                // Store the allocation result and allocator in machine function for assembly generation
+                machine_func->set_register_allocation_result(alloc_result);
+                
                 // Apply register allocation results to machine instructions
                 allocator->apply();
                 std::cout << "Applied register allocation to machine instructions" << std::endl;
                 
-                // Store the allocator in the machine function for later access
+                // Store the allocator in the machine function for later access during assembly
                 machine_func->set_register_allocator(std::move(allocator));
+                }
+                
+                // Generate RISC-V assembly from the complete machine module
+                RISCV::RISCVAssemblyEmitter emitter(riscv_target->getRegisterInfo(), riscv_target->getInstInfo());
+                std::string assembly = emitter.emit(*machine_module);
+                
+                std::cout << "\n--- Generated RISC-V Assembly ---" << std::endl;
+                std::cout << assembly << std::endl;
+                
+                // Write assembly to file
+                std::string output_filename = filename.substr(0, filename.find_last_of('.')) + ".s";
+                std::ofstream asm_file(output_filename);
+                if (asm_file.is_open()) {
+                    asm_file << assembly;
+                    asm_file.close();
+                    std::cout << "RISC-V assembly written to: " << output_filename << std::endl;
+                } else {
+                    std::cerr << "Warning: Could not write RISC-V assembly to file " << output_filename << std::endl;
+                }
+                
+                std::cout << "\nRISC-V code generation successful!" << std::endl;
             }
-            
-            // Generate RISC-V assembly from the complete machine module
-            RISCV::RISCVAssemblyEmitter emitter(riscv_target->getRegisterInfo(), riscv_target->getInstInfo());
-            std::string assembly = emitter.emit(*machine_module);
-            
-            std::cout << "\n--- Generated RISC-V Assembly ---" << std::endl;
-            std::cout << assembly << std::endl;
-            
-            // Write assembly to file
-            std::string output_filename = filename.substr(0, filename.find_last_of('.')) + ".s";
-            std::ofstream asm_file(output_filename);
-            if (asm_file.is_open()) {
-                asm_file << assembly;
-                asm_file.close();
-                std::cout << "Assembly written to: " << output_filename << std::endl;
-            } else {
-                std::cerr << "Warning: Could not write assembly to file " << output_filename << std::endl;
-            }
-            
-            std::cout << "\nRISC-V code generation successful!" << std::endl;
         }
         catch (const std::exception& e) {
-            std::cerr << "RISC-V code generation failed: " << e.what() << std::endl;
+            std::cerr << target_name << " code generation failed: " << e.what() << std::endl;
             return 1;
         }
 

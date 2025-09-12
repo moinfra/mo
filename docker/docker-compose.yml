@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  riscv-dev:
+    image: davidburela/riscv-emulator
+    platform: linux/amd64
+    container_name: mo-riscv-dev
+    volumes:
+      - ../examples:/workspace/examples:ro
+      - ../scripts:/workspace/scripts:ro
+      - ./output:/workspace/output
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    command: /bin/bash -c "
+      echo 'Setting up RISC-V development environment...' &&
+      apt-get update &&
+      apt-get install -y gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu &&
+      echo 'RISC-V environment ready!' &&
+      echo 'QEMU version:' && qemu-system-riscv64 --version | head -1 &&
+      echo 'GCC version:' && riscv64-linux-gnu-gcc --version | head -1 &&
+      /bin/bash
+      "

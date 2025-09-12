@@ -1,0 +1,58 @@
+# Complete RISC-V Development Environment
+# Based on Ubuntu 22.04 with QEMU and cross-compilation tools
+
+FROM ubuntu:22.04
+
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive
+ENV TZ=UTC
+
+# Install base system and build tools
+RUN apt-get update && apt-get install -y \
+    curl wget git \
+    build-essential \
+    python3 python3-pip \
+    vim nano \
+    unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install QEMU system emulator for RISC-V
+RUN apt-get update && apt-get install -y \
+    qemu-system-misc \
+    qemu-user-static \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install RISC-V cross-compilation toolchain
+RUN apt-get update && apt-get install -y \
+    gcc-riscv64-linux-gnu \
+    binutils-riscv64-linux-gnu \
+    gdb-multiarch \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install additional RISC-V specific tools
+RUN apt-get update && apt-get install -y \
+    opensbi \
+    u-boot-qemu \
+    device-tree-compiler \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create workspace
+WORKDIR /workspace
+
+# Copy our scripts
+COPY scripts/ /workspace/scripts/
+RUN chmod +x /workspace/scripts/*.sh
+
+# Create output directory
+RUN mkdir -p /workspace/output
+
+# Set up environment
+ENV PATH="/workspace/scripts:$PATH"
+
+# Test the installation
+RUN echo "Testing RISC-V toolchain..." && \
+    qemu-system-riscv64 --version | head -1 && \
+    riscv64-linux-gnu-gcc --version | head -1 && \
+    echo "RISC-V environment ready!"
+
+CMD ["/bin/bash"]

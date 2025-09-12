@@ -29,3 +29,16 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "calling_convention",
+    srcs = ["calling_convention.cc"],
+    hdrs = ["calling_convention.h"],
+    deps = [
+        "//src:machine",
+        "//src:ir",
+        "//src/targets:arm64_target",
+        "//src/targets:riscv_target",
+    ],
+    visibility = ["//visibility:public"],
+)
